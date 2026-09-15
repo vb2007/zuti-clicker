@@ -1,6 +1,6 @@
 {
   "name": "zuti-clicker-frontend",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Vue.js frontend project for the game Zuti Clicker.",
   "type": "module",

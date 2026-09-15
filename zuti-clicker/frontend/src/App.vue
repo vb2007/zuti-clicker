@@ -41,7 +41,12 @@ watch(isCompact, (compact) => {
   if (!compact) ui.mobilePanel = "none";
 });
 
-function onKeydown(e: KeyboardEvent) {
+async function onKeydown(e: KeyboardEvent) {
+  if (!e.repeat && e.altKey && e.code === "KeyX") {
+    await save.resetSave();
+    await auth.logout();
+  }
+
   if (e.key === "Escape" && ui.mobilePanel !== "none") ui.mobilePanel = "none";
 }
 onMounted(() => window.addEventListener("keydown", onKeydown));
