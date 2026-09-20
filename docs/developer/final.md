@@ -384,7 +384,7 @@ Utána a statisztikai jeleket súlyozza:
 | `unimodalSpike` | egyetlen mező a minták >90%-át adja | 1 |
 | `uniformShape` | ferdeség < 0.15, tartomány ≤4 | 1 |
 | `sustainedRate` | átlag >22 cps az egész ablakban | 1 |
-| `singleMethodExceedsHumanLimit` | egyetlen bemeneti mód (bal/jobb klikk, billentyű) adja a kattintások ≥95%-át, ÉS annak saját rátája >20 cps | 2 |
+| `singleMethodExceedsHumanLimit` | egyetlen bemeneti mód (`primary`/`secondary`/`enter`/`space` négy közül) adja a kattintások ≥95%-át, ÉS annak saját rátája >20 cps | 2 |
 | `weak:*` (pointer-fizika) | lásd 2. réteg | 1/jel |
 | `untrustedInput` / integritás-jel | bármelyik jelenléte | döntő, azonnali |
 
@@ -399,7 +399,16 @@ szerint a hiteles, tartós egykezes kattintási rekord ~14–16 cps (Guinness:
 igazoltan / ~35–40 cps elméletileg (ideg-vezetési sebesség korlátozza) — és
 ezek rövid versenyburst-ök, nem egy teljes perces tényleges játékmenet. A 20
 cps-es küszöb bőséges tartalékot hagy még a szélsőséges technikáknak is,
-mégis jóval az összesített 45 cps-es burok-plafon alatt marad. A
+mégis jóval az összesített 45 cps-es burok-plafon alatt marad.
+
+Az Enter és a Space **külön** módként számít (`enter`/`space`), nem egy közös
+"billentyűzet" kategóriaként — egy ember, aki mindkét billentyűt váltva
+üti (pl. egy-egy ujjal), a két gomb kombinálásával simán majdnem
+megduplázhatja azt a rátát, amit egyetlen billentyűvel elérne, pontosan
+úgy, ahogy a bal/jobb egérgomb váltogatása is engedett. Ha ezt a két
+billentyűt egy közös kategóriaként kezelné a rendszer, ez a teljesen
+normális, két billentyűs váltogatás 100%-os koncentrációnak tűnne egyetlen
+módban, és tévesen jelzésre kerülne. A
 `methodCounts` mező (`utils/clickTelemetry.ts` / `services/antiCheat.ts`)
 **opcionális** a digest-ben — egy régebbi, gyorsítótárazott kliens, amely még
 nem küldi, sosem kap emiatt 400-at, csak ez az egy jel marad kiértékeletlen.
