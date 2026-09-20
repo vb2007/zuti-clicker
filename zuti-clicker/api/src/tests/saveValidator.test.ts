@@ -138,9 +138,14 @@ describe("evaluateSaveEnvelope — first-ever save (prev = null)", () => {
 });
 
 describe("evaluateSaveEnvelope — monotonicity", () => {
+  // totalTokensEarned is large enough that phdCount: 2 / prestigeCount: 1 are
+  // plausible under the Cauchy-Schwarz PhD bound (see saveValidator.ts) —
+  // a smaller value here would make the fixture itself implausible and any
+  // "unchanged, resync" case would (correctly) get clamped rather than
+  // accepted, which is not what this describe block is testing.
   const prev: PrevSaveSnapshot = {
     tokens: 100,
-    totalTokensEarned: 1000,
+    totalTokensEarned: 3_000_000,
     totalClicks: 50,
     elapsedSeconds: 500,
     phdCount: 2,
@@ -225,7 +230,73 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       })
     );
     expect(verdict.outcome).toBe("reject");
-    if (verdict.outcome === "reject") expect(verdict.reason).toBe("tokens_exceed_after_required_spend");
+    if (verdict.outcome === "reject") expect(verdict.reason).toBe("spend_exceeds_available_budget");
+  });
+
+  // Regression: the affordability of a claimed purchase used to be checked
+  // ONLY by comparing the reported `tokens` balance against
+  // (budget - minSpend) — which trivially passes if the forged save simply
+  // reports tokens: 0 ("I spent everything"), no matter how large minSpend
+  // actually is. Reporting a suspiciously low leftover balance is not proof
+  // the purchase was ever affordable; this must reject regardless of what
+  // `tokens` value accompanies the claim.
+  it("regression: rejects an unaffordable units claim even when tokens is reported as exactly 0", () => {
+    const prev: PrevSaveSnapshot = {
+      tokens: 5,
+      totalTokensEarned: 5,
+      totalClicks: 1,
+      elapsedSeconds: 1,
+      phdCount: 0,
+      prestigeCount: 0,
+      savedAt: new Date(NOW.getTime() - 1000),
+      units: [],
+      upgrades: []
+    };
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: 0, // "spent everything" — must not be a free pass
+        totalTokensEarned: 5,
+        totalClicks: 1,
+        elapsedSeconds: 1,
+        units: [{ unitId: "alpha", owned: 50 }]
+      })
+    );
+    expect(verdict.outcome).toBe("reject");
+    if (verdict.outcome === "reject") expect(verdict.reason).toBe("spend_exceeds_available_budget");
+  });
+
+  // Regression: checkBound's clamp band used to collapse to zero width when
+  // its bound was exactly 0 (bound*REJECT_MULTIPLIER is also 0), so any
+  // float residue above FLOOR in a "spent every last token, nothing earned
+  // or purchased since" save hard-rejected instead of silently clamping like
+  // every other boundary case (maxTokensAfter = 0 here, by construction).
+  it("regression: clamps (not rejects) a tiny float residue when the leftover-tokens bound is exactly 0", () => {
+    const prev: PrevSaveSnapshot = {
+      tokens: 0,
+      totalTokensEarned: 0,
+      totalClicks: 0,
+      elapsedSeconds: 0,
+      phdCount: 0,
+      prestigeCount: 0,
+      savedAt: new Date(NOW.getTime() - 1000),
+      units: [],
+      upgrades: []
+    };
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: 0.0005, // a tiny, plausible float residue above FLOOR (1e-6)
+        totalTokensEarned: 0,
+        totalClicks: 0,
+        elapsedSeconds: 0
+      })
+    );
+    expect(verdict.outcome).not.toBe("reject");
   });
 
   it("accepts a purchase paid for out of earnings within the envelope", () => {
@@ -348,5 +419,45 @@ describe("evaluateSaveEnvelope — prestige/PhD plausibility", () => {
       freshSave({ totalTokensEarned, totalClicks: 30_000, prestigeCount: n, phdCount: n })
     );
     expect(verdict.outcome).not.toBe("reject");
+  });
+
+  // Regression: prestigeCount/phdCount used to have only a hard reject tier
+  // (no clamp), so a value inside the normal "silently clamp" band (bound,
+  // 2x bound] fell through unclamped instead of being corrected — the field
+  // was accepted into the write completely as-claimed.
+  it("regression: clamps (does not pass through unclamped) a prestigeCount within the reject-tolerance band", () => {
+    // bound = totalTokensEarned / PHD_TOKEN_SCALE + PRESTIGE_COUNT_SLACK = 10 + 2 = 12.
+    // 20 is within (12, 24] — inside the clamp band, not a reject.
+    const totalTokensEarned = 10 * PHD_TOKEN_SCALE;
+    const verdict = evaluateSaveEnvelope(
+      null,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({ totalTokensEarned, totalClicks: 100_000, prestigeCount: 20, phdCount: 0 })
+    );
+    expect(verdict.outcome).toBe("clamp");
+    if (verdict.outcome === "clamp") {
+      expect(verdict.clamped.prestigeCount).toBe(12);
+      expect(verdict.reasons).toContain("prestige_count_exceeds_max_possible");
+    }
+  });
+
+  it("regression: clamps (does not pass through unclamped) a phdCount within the reject-tolerance band", () => {
+    // prestigeCount itself is plausible (bound = 20 + 2 = 22, claimed 20 — ok).
+    // phdBound = sqrt(20 * 20 * SCALE / SCALE) + 1 = 21. 30 is within (21, 42].
+    const n = 20;
+    const totalTokensEarned = n * PHD_TOKEN_SCALE;
+    const verdict = evaluateSaveEnvelope(
+      null,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({ totalTokensEarned, totalClicks: 30_000, prestigeCount: n, phdCount: 30 })
+    );
+    expect(verdict.outcome).toBe("clamp");
+    if (verdict.outcome === "clamp") {
+      expect(verdict.clamped.prestigeCount).toBeUndefined();
+      expect(verdict.clamped.phdCount).toBe(21);
+      expect(verdict.reasons).toContain("phd_exceeds_max_possible");
+    }
   });
 });

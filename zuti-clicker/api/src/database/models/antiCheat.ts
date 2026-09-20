@@ -65,6 +65,12 @@ function restrictionMinutesForStrike(strike: number): number {
 // it — a long enough clean stretch should wipe minor accumulated suspicion,
 // not just formal strikes. `lastCleanAt` only ever moves forward by whole
 // STRIKE_DECAY_DAYS increments, so a partial clean stretch isn't lost.
+//
+// `enforced` gates the actual DB write, not the decay computation itself —
+// "monitor" mode must observe what WOULD happen (including how a strike
+// ladder decision would read a decayed state) without ever mutating
+// AntiCheatState, so the decayed values are always computed and returned,
+// only persisted when enforced.
 async function decayIfDue<
   T extends {
     id: number;
@@ -74,7 +80,7 @@ async function decayIfDue<
     suspicionScore: number;
     highRateWindows: number;
   }
->(state: T, now: Date): Promise<T> {
+>(state: T, now: Date, enforced: boolean): Promise<T> {
   if (state.strikeCount <= 0 && state.softClampCount <= 0 && state.suspicionScore <= 0) return state;
   const daysClean = (now.getTime() - state.lastCleanAt.getTime()) / (1000 * 60 * 60 * 24);
   const levels = Math.floor(daysClean / STRIKE_DECAY_DAYS);
@@ -82,6 +88,16 @@ async function decayIfDue<
 
   const newStrikeCount = Math.max(0, state.strikeCount - levels);
   const newLastCleanAt = new Date(state.lastCleanAt.getTime() + levels * STRIKE_DECAY_DAYS * 24 * 60 * 60 * 1000);
+  if (!enforced) {
+    return {
+      ...state,
+      strikeCount: newStrikeCount,
+      lastCleanAt: newLastCleanAt,
+      softClampCount: 0,
+      suspicionScore: 0,
+      highRateWindows: 0
+    };
+  }
   const updated = await prisma.antiCheatState.update({
     where: { id: state.id },
     data: {
@@ -103,9 +119,14 @@ async function getOrCreateState(userId: number) {
   });
 }
 
-export async function getAntiCheatStatus(userId: number): Promise<AntiCheatStatus> {
+// `enforced` defaults to true so a bare status read (e.g. a "must be
+// restricted to reach here" check) keeps its previous behavior; the few
+// callers evaluating a request under a known, possibly non-enforced mode
+// (recordSoftClamp/applyStrike/processDigest, and the status endpoint) pass
+// their own `enforced` through explicitly instead.
+export async function getAntiCheatStatus(userId: number, enforced = true): Promise<AntiCheatStatus> {
   const now = new Date();
-  const state = await decayIfDue(await getOrCreateState(userId), now);
+  const state = await decayIfDue(await getOrCreateState(userId), now, enforced);
   const isRestricted = state.restrictedUntil !== null && state.restrictedUntil.getTime() > now.getTime();
   return { strikeCount: state.strikeCount, restrictedUntil: state.restrictedUntil, isRestricted };
 }
@@ -130,7 +151,7 @@ export async function applyStrike(
   detail: unknown
 ): Promise<StrikeOutcome> {
   const now = new Date();
-  const current = await decayIfDue(await getOrCreateState(userId), now);
+  const current = await decayIfDue(await getOrCreateState(userId), now, enforced);
   const strikeCount = current.strikeCount + 1;
   const minutes = restrictionMinutesForStrike(strikeCount);
   const restrictedUntil = new Date(now.getTime() + minutes * 60 * 1000);
@@ -180,7 +201,7 @@ export async function recordSoftClamp(
   detail: unknown
 ): Promise<StrikeOutcome | null> {
   const now = new Date();
-  const current = await decayIfDue(await getOrCreateState(userId), now);
+  const current = await decayIfDue(await getOrCreateState(userId), now, enforced);
   const softClampCount = current.softClampCount + 1;
 
   await logAntiCheatEvent({ userId, kind: "envelope_clamp", severity: "info", mode, detail, enforced });
@@ -221,32 +242,45 @@ export async function processDigest(
   enforced: boolean
 ): Promise<DigestResult> {
   const now = new Date();
-  const current = await decayIfDue(await getOrCreateState(userId), now);
+  const current = await decayIfDue(await getOrCreateState(userId), now, enforced);
   const verdict = evaluateDigest(digest);
 
-  const sawSustainedRate = verdict.signals.includes("sustainedRate");
+  // A digest that contradicts its own numbers, or trips a zero-false-positive
+  // signal, is decisive immediately — everything else needs a second
+  // consecutive flagged window (tracked via suspicionScore) before striking.
+  // Computed BEFORE `flagged` and folded into it directly below: an
+  // inconsistent digest is never `verdict.flagged` (evaluateDigest has no
+  // meaningful score for malformed input), so a `flagged` that required
+  // `verdict.consistent` would make inconsistency completely unpunishable —
+  // exactly the escape hatch this variable exists to close. A previous
+  // version of this function had exactly that bug: `flagged` short-circuited
+  // on `!verdict.consistent`, so the `!flagged` branch below always returned
+  // early and `decisiveNow` was computed but never actually consulted.
+  const decisiveNow =
+    !verdict.consistent || digest.untrustedClicks > 0 || digest.integrityFlags.length > 0;
+
+  const sawSustainedRate = verdict.consistent && verdict.signals.includes("sustainedRate");
   const highRateWindows = sawSustainedRate ? current.highRateWindows + 1 : 0;
-  let score = verdict.score;
-  const signals = [...verdict.signals];
+  let score = verdict.consistent ? verdict.score : 0;
+  const signals = verdict.consistent ? [...verdict.signals] : [];
   if (verdict.consistent && highRateWindows >= NO_FATIGUE_STREAK) {
     signals.push("noFatigue");
     score += 1;
   }
   const distinctSignals = new Set(signals).size;
   const flagged =
-    verdict.consistent && (verdict.flagged || (score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG));
-
-  // A digest that contradicts its own numbers, or trips a zero-false-positive
-  // signal, is decisive immediately — everything else needs a second
-  // consecutive flagged window (tracked via suspicionScore) before striking.
-  const decisiveNow = !verdict.consistent || digest.untrustedClicks > 0 || digest.integrityFlags.length > 0;
+    decisiveNow ||
+    (verdict.consistent &&
+      (verdict.flagged || (score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG)));
 
   await logAntiCheatEvent({
     userId,
-    kind: verdict.consistent ? "statistical_digest" : `digest_inconsistent:${verdict.inconsistencyReason}`,
+    // kind is VARCHAR(32) — the reason goes in `detail`, never appended here
+    // (e.g. "digest_inconsistent:rate_exceeds_envelope" alone is 42 chars).
+    kind: verdict.consistent ? "statistical_digest" : "digest_inconsistent",
     severity: flagged ? "strike" : "info",
     mode,
-    detail: { score, signals, distinctSignals, flagged, decisiveNow },
+    detail: { score, signals, distinctSignals, flagged, decisiveNow, inconsistencyReason: verdict.inconsistencyReason },
     enforced: enforced && flagged
   });
 
@@ -257,7 +291,7 @@ export async function processDigest(
         data: { suspicionScore: 0, highRateWindows }
       });
     }
-    const status = await getAntiCheatStatus(userId);
+    const status = await getAntiCheatStatus(userId, enforced);
     return { status, flagged: false, struck: false };
   }
 
@@ -268,7 +302,7 @@ export async function processDigest(
       signals,
       inconsistencyReason: verdict.inconsistencyReason
     });
-    const status = await getAntiCheatStatus(userId);
+    const status = await getAntiCheatStatus(userId, enforced);
     return { status, flagged: true, struck: enforced };
   }
 
@@ -278,6 +312,6 @@ export async function processDigest(
       data: { suspicionScore, highRateWindows, lastCleanAt: now }
     });
   }
-  const status = await getAntiCheatStatus(userId);
+  const status = await getAntiCheatStatus(userId, enforced);
   return { status, flagged: true, struck: false };
 }

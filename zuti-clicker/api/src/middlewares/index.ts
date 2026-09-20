@@ -64,7 +64,11 @@ export const requireNotRestricted = async (
       res.status(r.status).json(r.body);
       return;
     }
-    const status = await getAntiCheatStatus(userId);
+    // Always reached with ANTICHEAT_MODE === "enforce" (see the guard
+    // above) — explicit here anyway rather than relying on the parameter's
+    // default, so this call stays correct if that guard's condition ever
+    // changes.
+    const status = await getAntiCheatStatus(userId, true);
     if (status.isRestricted) {
       const r = Responses.ANTICHEAT.RESTRICTED;
       res.status(r.status).json({

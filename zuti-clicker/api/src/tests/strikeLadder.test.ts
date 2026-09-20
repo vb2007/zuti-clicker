@@ -3,7 +3,8 @@ import request from "supertest";
 import type { ChildProcess } from "child_process";
 import { TestData } from "../constants/test-data.js";
 import { Responses } from "../constants/responses.js";
-import { HISTOGRAM_BUCKET_COUNT, SAVE_RESET_STRIKE } from "../constants/antiCheat.js";
+import { HISTOGRAM_BUCKET_COUNT, SAVE_RESET_STRIKE, STRIKE_DECAY_DAYS } from "../constants/antiCheat.js";
+import { prisma } from "../database/prisma.js";
 import { startTestServer, stopTestServer } from "./testServerHelper.js";
 
 // A dedicated ANTICHEAT_MODE=enforce server (own port — see
@@ -140,6 +141,24 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     expect(res.body.strikeCount).toBe(1);
   });
 
+  // Regression: `flagged` used to short-circuit on `verdict.consistent`
+  // itself, so an inconsistent digest could never reach the `flagged` branch
+  // at all — `decisiveNow` was computed but never actually consulted, making
+  // a client that lies about its own histogram completely unpunishable. A
+  // well-SHAPED but internally-inconsistent digest (bucket sum contradicts
+  // the claimed click count) must strike on the very first report, exactly
+  // like an untrusted click does — no second window needed.
+  it("an immediate strike on a well-shaped but internally-inconsistent digest, with no repetition needed", async () => {
+    const cookie = await registerAndLogin();
+    const res = await api
+      .post("/anticheat/report")
+      .set("Cookie", cookie)
+      .send({ ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }); // sum(buckets)=0, claims 50 clicks
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("restricted");
+    expect(res.body.strikeCount).toBe(1);
+  });
+
   it("a restricted account is blocked from PUT /save with 403, but can still GET it", async () => {
     const cookie = await registerAndLogin();
     await api
@@ -211,6 +230,51 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
 
     const saveRes = await api.get("/save").set("Cookie", cookie);
     expect(saveRes.body.save).toBeNull(); // strike 5 deleted it
+  });
+});
+
+describe("Anti-cheat strike decay — ANTICHEAT_MODE=monitor", () => {
+  let server: ChildProcess;
+  const MONITOR_PORT = 2714;
+  const monitorApi = request(`http://localhost:${MONITOR_PORT}`);
+
+  beforeAll(async () => {
+    server = await startTestServer(MONITOR_PORT, "monitor");
+  }, 25_000);
+
+  afterAll(async () => {
+    await stopTestServer(server);
+  });
+
+  // Regression: decayIfDue used to persist the decayed strikeCount/
+  // lastCleanAt/etc. to AntiCheatState unconditionally, even under
+  // ANTICHEAT_MODE=monitor — a mode whose entire contract is "observe what
+  // would happen, never mutate state". The decayED numbers must still be
+  // computed and reflected in the response (monitor must still show what
+  // WOULD happen), but the stored row itself must be untouched.
+  it("computes decay for the response but never writes it to AntiCheatState", async () => {
+    const user = TestData.generateUser();
+    await monitorApi.post("/auth/register").send(user);
+    const loginRes = await monitorApi
+      .post("/auth/login")
+      .send({ email: user.email, password: user.password });
+    const cookie = (loginRes.headers["set-cookie"] as unknown as string[])[0].split(";")[0];
+    const meRes = await monitorApi.get("/auth/me").set("Cookie", cookie);
+    const userId: number = meRes.body.user.id;
+
+    const staleLastCleanAt = new Date(Date.now() - (STRIKE_DECAY_DAYS + 1) * 24 * 60 * 60 * 1000);
+    await prisma.antiCheatState.upsert({
+      where: { userId },
+      update: { strikeCount: 3, lastCleanAt: staleLastCleanAt },
+      create: { userId, strikeCount: 3, lastCleanAt: staleLastCleanAt }
+    });
+
+    const statusRes = await monitorApi.get("/anticheat/status").set("Cookie", cookie);
+    expect(statusRes.body.strikeCount).toBe(2); // one clean decay level reflected in the response...
+
+    const row = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(row?.strikeCount).toBe(3); // ...but never persisted
+    expect(row?.lastCleanAt.getTime()).toBe(staleLastCleanAt.getTime());
   });
 });
 

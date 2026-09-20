@@ -324,6 +324,8 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     let effectiveTotalTokensEarned = totalTokensEarned;
     let effectiveTotalClicks = totalClicks;
     let effectiveElapsedSeconds = elapsedSeconds;
+    let effectivePhdCount = phdCount;
+    let effectivePrestigeCount = prestigeCount;
 
     if (ANTICHEAT_MODE !== "off") {
       const previous = await getSave(userId);
@@ -402,6 +404,19 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
           if (verdict.clamped.elapsedSeconds !== undefined) {
             effectiveElapsedSeconds = verdict.clamped.elapsedSeconds;
           }
+          // Only applied when the field was actually present in this
+          // request — an omitted phdCount/prestigeCount means "preserve
+          // whatever is already stored" (see upsertSave's own contract),
+          // and the envelope's resolved-for-evaluation value already
+          // folded in the stored one for bound-checking purposes; clamping
+          // that resolved value must not newly assert a field the client
+          // never sent.
+          if (verdict.clamped.prestigeCount !== undefined && prestigeCount !== undefined) {
+            effectivePrestigeCount = verdict.clamped.prestigeCount;
+          }
+          if (verdict.clamped.phdCount !== undefined && phdCount !== undefined) {
+            effectivePhdCount = verdict.clamped.phdCount;
+          }
         }
       }
     }
@@ -411,8 +426,8 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       totalTokensEarned: effectiveTotalTokensEarned,
       totalClicks: effectiveTotalClicks,
       elapsedSeconds: effectiveElapsedSeconds,
-      phdCount,
-      prestigeCount,
+      phdCount: effectivePhdCount,
+      prestigeCount: effectivePrestigeCount,
       runTokensEarned,
       runClicks,
       runSeconds,

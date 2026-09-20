@@ -175,7 +175,7 @@ export const getStatus = async (req: express.Request, res: express.Response) => 
       return;
     }
 
-    const status = await getAntiCheatStatus(userId);
+    const status = await getAntiCheatStatus(userId, ANTICHEAT_MODE === "enforce");
     res.status(200).json({
       isRestricted: status.isRestricted,
       restrictedUntil: status.restrictedUntil,

@@ -74,6 +74,8 @@ export interface EnvelopeClamped {
   totalClicks?: number;
   elapsedSeconds?: number;
   tokens?: number;
+  prestigeCount?: number;
+  phdCount?: number;
 }
 
 export type EnvelopeVerdict =
@@ -96,14 +98,23 @@ function unitMap(units: UnitSnapshot[]): Map<string, number> {
 // theoretically-negative bound (e.g. "there was no way to afford this at
 // all") still rejects on the smallest positive overage instead of comparing
 // against a negative number.
+//
+// REJECT_ABS_SLACK guarantees the clamp band always has real width even when
+// bound is exactly (or very near) 0 — bound*REJECT_MULTIPLIER is ALSO 0 in
+// that case, which would otherwise collapse the clamp band to nothing and
+// hard-reject a legitimate "spent every last token" save over a sub-cent
+// float residue from many tick() accumulations, instead of silently
+// clamping it like every other boundary case.
 const FLOOR = 1e-6;
+const REJECT_ABS_SLACK = 1e-3;
 function checkBound(
   actual: number,
   rawBound: number
 ): { outcome: "ok" } | { outcome: "clamp"; to: number } | { outcome: "reject" } {
   const bound = Math.max(0, rawBound);
   if (actual <= bound + FLOOR) return { outcome: "ok" };
-  if (actual <= bound * REJECT_MULTIPLIER + FLOOR) return { outcome: "clamp", to: bound };
+  const rejectThreshold = Math.max(bound * REJECT_MULTIPLIER, bound + REJECT_ABS_SLACK);
+  if (actual <= rejectThreshold + FLOOR) return { outcome: "clamp", to: bound };
   return { outcome: "reject" };
 }
 
@@ -252,7 +263,22 @@ export function evaluateSaveEnvelope(
     if (def) minSpend += def.cost * bestCostMultiplier;
   }
 
-  const maxTokensAfter = prevTokens + effectiveDeltaEarned - minSpend;
+  // The claimed purchase itself must have been affordable, independent of
+  // whatever `tokens` balance is reported: the check below (comparing
+  // incoming.tokens against maxTokensAfter) only bounds the LEFTOVER
+  // balance, and trivially passes if a forged save simply reports tokens: 0
+  // regardless of how large minSpend actually is — "I spent everything" is
+  // not by itself proof the units/upgrades were ever affordable. There is no
+  // sensible way to "partially clamp" an owned-units claim (which unit would
+  // give some back?), so this is a straight reject beyond a tiny float-noise
+  // epsilon, not a two-tier checkBound.
+  const availableBudget = prevTokens + effectiveDeltaEarned;
+  detail["spendBudget"] = { minSpend, availableBudget };
+  if (minSpend > availableBudget + FLOOR) {
+    return { outcome: "reject", reason: "spend_exceeds_available_budget", detail };
+  }
+
+  const maxTokensAfter = availableBudget - minSpend;
   const tokensCheck = checkBound(incoming.tokens, maxTokensAfter);
   detail["spend"] = {
     minSpend,
@@ -276,22 +302,42 @@ export function evaluateSaveEnvelope(
   //     unconstrained prestigeCount would otherwise let that bound's own
   //     sqrt(prestigeCount * earned) term be inflated arbitrarily. ---------
   const prestigeBound = effectiveTotalTokensEarned / PHD_TOKEN_SCALE + PRESTIGE_COUNT_SLACK;
-  detail["prestigeCount"] = { prestigeCount: incoming.prestigeCount, bound: prestigeBound };
-  if (incoming.prestigeCount > prestigeBound * REJECT_MULTIPLIER) {
+  const prestigeCheck = checkBound(incoming.prestigeCount, prestigeBound);
+  detail["prestigeCount"] = {
+    prestigeCount: incoming.prestigeCount,
+    bound: prestigeBound,
+    outcome: prestigeCheck.outcome
+  };
+  if (prestigeCheck.outcome === "reject") {
     return { outcome: "reject", reason: "prestige_count_exceeds_max_possible", detail };
+  }
+  // Int column — floor a clamped value down to a whole prestige count.
+  let effectivePrestigeCount = incoming.prestigeCount;
+  if (prestigeCheck.outcome === "clamp") {
+    effectivePrestigeCount = Math.floor(prestigeCheck.to);
+    clamped.prestigeCount = effectivePrestigeCount;
+    reasons.push("prestige_count_exceeds_max_possible");
   }
 
   // --- PhD count: splitting a fixed token budget across many minimal-sized
   //     prestige runs maximizes total PhDs gained (sqrt is concave), so the
   //     worst case for a given (prestigeCount, totalTokensEarned) pair is
-  //     bounded by Cauchy-Schwarz: Σsqrt(r_i/S) <= sqrt(n * ΣR_i / S). -----
+  //     bounded by Cauchy-Schwarz: Σsqrt(r_i/S) <= sqrt(n * ΣR_i / S). Uses
+  //     the already-clamped prestigeCount, the same "feed the more
+  //     restrictive, already-adjusted value forward" pattern the click/
+  //     earned bounds above use. ------------------------------------------
   const phdBound =
     Math.sqrt(
-      (Math.max(0, incoming.prestigeCount) * Math.max(0, effectiveTotalTokensEarned)) / PHD_TOKEN_SCALE
+      (Math.max(0, effectivePrestigeCount) * Math.max(0, effectiveTotalTokensEarned)) / PHD_TOKEN_SCALE
     ) + PHD_BOUND_SLACK;
-  detail["phd"] = { phdCount: incoming.phdCount, bound: phdBound };
-  if (incoming.phdCount > phdBound * REJECT_MULTIPLIER) {
+  const phdCheck = checkBound(incoming.phdCount, phdBound);
+  detail["phd"] = { phdCount: incoming.phdCount, bound: phdBound, outcome: phdCheck.outcome };
+  if (phdCheck.outcome === "reject") {
     return { outcome: "reject", reason: "phd_exceeds_max_possible", detail };
+  }
+  if (phdCheck.outcome === "clamp") {
+    clamped.phdCount = Math.floor(phdCheck.to);
+    reasons.push("phd_exceeds_max_possible");
   }
 
   if (reasons.length > 0) {
