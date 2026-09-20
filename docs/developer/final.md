@@ -384,8 +384,40 @@ Utána a statisztikai jeleket súlyozza:
 | `unimodalSpike` | egyetlen mező a minták >90%-át adja | 1 |
 | `uniformShape` | ferdeség < 0.15, tartomány ≤4 | 1 |
 | `sustainedRate` | átlag >22 cps az egész ablakban | 1 |
+| `singleMethodExceedsHumanLimit` | egyetlen bemeneti mód (`primary`/`secondary`/`enter`/`space` négy közül) adja a kattintások ≥95%-át, ÉS annak saját rátája >20 cps | 2 |
 | `weak:*` (pointer-fizika) | lásd 2. réteg | 1/jel |
 | `untrustedInput` / integritás-jel | bármelyik jelenléte | döntő, azonnali |
+
+A `singleMethodExceedsHumanLimit` jel más okból szigorúbb, mint a
+`sustainedRate`: az utóbbi az ÖSSZESÍTETT rátát nézi, aminek több egyidejű
+bemeneti csatornát (pl. két ember, egér + billentyű) is el kell viselnie —
+ezért 22 cps. Egyetlen bemeneti mód (pl. csak jobb klikk, ahogy egy hétköznapi
+auto-clicker tenné) emberi felső korlátja viszont jóval alacsonyabb: a kutatás
+szerint a hiteles, tartós egykezes kattintási rekord ~14–16 cps (Guinness:
+12,67 cps hivatalos 2026-os rekord), a legszélsőségesebb dokumentált technika
+("butterfly clicking", két ujjal ugyanazon a gombon) is csak ~32 cps
+igazoltan / ~35–40 cps elméletileg (ideg-vezetési sebesség korlátozza) — és
+ezek rövid versenyburst-ök, nem egy teljes perces tényleges játékmenet. A 20
+cps-es küszöb bőséges tartalékot hagy még a szélsőséges technikáknak is,
+mégis jóval az összesített 45 cps-es burok-plafon alatt marad.
+
+Az Enter és a Space **külön** módként számít (`enter`/`space`), nem egy közös
+"billentyűzet" kategóriaként — egy ember, aki mindkét billentyűt váltva
+üti (pl. egy-egy ujjal), a két gomb kombinálásával simán majdnem
+megduplázhatja azt a rátát, amit egyetlen billentyűvel elérne, pontosan
+úgy, ahogy a bal/jobb egérgomb váltogatása is engedett. Ha ezt a két
+billentyűt egy közös kategóriaként kezelné a rendszer, ez a teljesen
+normális, két billentyűs váltogatás 100%-os koncentrációnak tűnne egyetlen
+módban, és tévesen jelzésre kerülne. A
+`methodCounts` mező (`utils/clickTelemetry.ts` / `services/antiCheat.ts`)
+**opcionális** a digest-ben — egy régebbi, gyorsítótárazott kliens, amely még
+nem küldi, sosem kap emiatt 400-at, csak ez az egy jel marad kiértékeletlen.
+(Ez a tervezési döntés egy éles incidensből ered: a `windowMs` mezőt korábban
+tévesen egész számként validálta a szerver, holott az egy törtrészt is
+tartalmazó `performance.now()`-időtartam — emiatt minden valós heartbeat
+400-at kapott, még mielőtt a detekciós logika egyáltalán lefutott volna. Egy
+új, opcionális mezőt úgy bevezetni, hogy a hiánya elutasítást okozzon, ugyanezt
+a hibaosztályt reprodukálná egy fokozatos kiadás közben.)
 
 Egy verdikt csak **legalább 3 pontnál és legalább 2 különböző jelcsoportnál**
 számít jelzettnek — a nyers kattintás-ráta önmagában (súly 1) sosem érheti el
@@ -441,6 +473,12 @@ egy nyers API-kliensből végzett helyi teszteléshez). `NODE_ENV=production`
 alatt mindig `enforce`-ra kényszerül, hangos figyelmeztetéssel, függetlenül
 attól, mi van kérve — egy hibásan konfigurált deploy, ami csendben
 anti-cheat nélkül fut, sokkal rosszabb, mint egy hangos felülbírálás.
+
+A ténylegesen feloldott mód minden indításkor kiíródik a szerver saját
+logjába (`ANTICHEAT_MODE resolved to "..."`) — enélkül nincs mód
+megkülönböztetni "a helyi `.env`-be írt érték nem ért célba" és "a mód
+tényleg más, mint vártam" esetét, ami valós debug-időt vett el, mielőtt ez a
+sor bekerült.
 
 ### Boosterek
 

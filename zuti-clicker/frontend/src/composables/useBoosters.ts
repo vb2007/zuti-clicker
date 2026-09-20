@@ -138,6 +138,12 @@ export function useBoosters() {
           // just re-sync from the server's own remaining time.
           const body = e.body as { nextAvailableInMs?: number } | undefined;
           scheduleNextSpawn(body?.nextAvailableInMs);
+        } else if (e instanceof ApiError && e.status === 403) {
+          // lib/api.ts's shared interceptor already applied this to
+          // antiCheatStore and the warning modal is now showing — a second,
+          // generic "couldn't claim" toast on top of it would only confuse
+          // what's actually a very specific, already-explained situation.
+          scheduleNextSpawn();
         } else {
           // Anything else (expired session, network failure, server error)
           // is a real problem the player should be told about, not silently

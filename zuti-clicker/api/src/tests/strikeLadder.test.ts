@@ -98,6 +98,95 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     expect(res.body.error).toBe(Responses.ANTICHEAT.INVALID_DIGEST.body.error);
   });
 
+  // Regression (production incident): windowMs is a genuine performance.now()
+  // duration, sub-millisecond precision, e.g. 60001.200000000186 — this used
+  // to be validated with an integer-only check, so EVERY real heartbeat from
+  // EVERY logged-in user was rejected with 400 before ever reaching
+  // evaluateDigest, and the statistical layer never actually ran in
+  // production. Every hand-written fixture in this repo (including the ones
+  // above) happens to use an integer literal for windowMs, which is exactly
+  // why this went undetected until a real browser sent a real value.
+  it("regression: accepts a digest with a realistic non-integer windowMs (a real performance.now() delta)", async () => {
+    const cookie = await registerAndLogin();
+    const res = await api
+      .post("/anticheat/report")
+      .set("Cookie", cookie)
+      .send({ ...CLEAN_DIGEST, windowMs: 60001.200000000186 });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("clean");
+  });
+
+  // Regression (the actual reported incident, end-to-end): the previous test
+  // only proves an idle digest's shape is now accepted — it says nothing
+  // about whether a REAL sustained autoclicker session, reported with the
+  // same realistic non-integer windowMs a real browser sends, actually gets
+  // caught. This is the literal scenario from the incident: a ~44.5 CPS
+  // autoclicker held flat for two consecutive heartbeat windows.
+  it("regression: a realistic sustained-autoclicker session (fractional windowMs + suspicious shape) is actually restricted end-to-end", async () => {
+    const cookie = await registerAndLogin();
+    const liveDigest = { ...AUTOCLICKER_DIGEST, windowMs: 60001.200000000186 };
+    await api.post("/anticheat/report").set("Cookie", cookie).send(liveDigest);
+    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(liveDigest);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("restricted");
+    expect(res.body.strikeCount).toBe(1);
+
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(true);
+  });
+
+  // The scenario that motivated the singleMethodExceedsHumanLimit signal: a
+  // casual auto-clicker bound to exactly one input method (commonly
+  // right-click) — sustaining >20 CPS from ONE method alone is beyond even
+  // the most extreme documented human clicking technique (see
+  // SINGLE_METHOD_MAX_CPS's own comment), unlike the aggregate 45 CPS
+  // envelope ceiling, which has to accommodate several simultaneous input
+  // channels (e.g. two people mashing mouse + keyboard together).
+  //
+  // Deliberately shaped to isolate JUST this signal: intervals spread evenly
+  // across every histogram bucket (not narrow, not a long run, not
+  // unimodal) so none of lowVariance/narrowSupport/unimodalSpike/
+  // uniformShape/metronome/sustainedRate fire — only
+  // singleMethodExceedsHumanLimit (weight 2) does. That alone is still not
+  // decisive (needs MIN_SCORE_TO_FLAG=3 from MIN_DISTINCT_SIGNALS_TO_FLAG=2
+  // categories — by design, same as every other statistical signal here),
+  // so one weak pointer-physics signal (weight 1, real hardware can
+  // occasionally produce these) is what actually crosses the flag
+  // threshold — mirroring the real incident's own second strike, which
+  // combined sustainedRate with two weak signals the same way.
+  const RIGHT_CLICK_AUTOCLICKER_DIGEST = {
+    windowMs: 60_000,
+    clicks: 1260, // exactly 21 cps from one method — over the 20 CPS human ceiling, under the 22 CPS aggregate sustainedRate threshold
+    purchases: 0,
+    buckets: (() => {
+      // Spread evenly across all 24 buckets — wide span, low top-fraction,
+      // high variance and skew (log-spaced bucket midpoints), nothing
+      // resembling a fixed-interval autoclicker's usual narrow shape.
+      const b = new Array(HISTOGRAM_BUCKET_COUNT).fill(52) as number[];
+      b[HISTOGRAM_BUCKET_COUNT - 1] += 1259 - 52 * HISTOGRAM_BUCKET_COUNT;
+      return b;
+    })(),
+    maxRunLength: 1, // no long run — rules out metronome
+    untrustedClicks: 0,
+    hiddenClicks: 0,
+    droppedClicks: 0,
+    integrityFlags: [] as string[],
+    weakSignals: ["frozenPressure"], // the one corroborator needed to cross the flag threshold
+    methodCounts: { primary: 0, secondary: 1260, enter: 0, space: 0 }
+  };
+
+  it("regression: a realistic pure-right-click autoclicker session (isolated shape, over the single-method ceiling) is restricted end-to-end", async () => {
+    const cookie = await registerAndLogin();
+    await api.post("/anticheat/report").set("Cookie", cookie).send(RIGHT_CLICK_AUTOCLICKER_DIGEST);
+    const res = await api
+      .post("/anticheat/report")
+      .set("Cookie", cookie)
+      .send(RIGHT_CLICK_AUTOCLICKER_DIGEST);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("restricted");
+    expect(res.body.strikeCount).toBe(1);
+  });
+
   it("a single flagged (non-decisive) digest is not enough to strike on its own", async () => {
     const cookie = await registerAndLogin();
     const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);

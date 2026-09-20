@@ -133,6 +133,24 @@ describe("antiCheatStore", () => {
       expect(digest.purchases).toBe(1);
     });
 
+    it("tracks per-input-method counts (including Enter/Space separately) and resets them after each heartbeat", async () => {
+      loginAs();
+      const store = useAntiCheatStore();
+      store.recordClick(true, "primary");
+      store.recordClick(true, "primary");
+      store.recordClick(true, "secondary");
+      store.recordClick(true, "enter");
+      store.recordClick(true, "space");
+      await store.sendHeartbeat();
+
+      const digest = vi.mocked(api.anticheat.report).mock.calls[0]![0];
+      expect(digest.methodCounts).toEqual({ primary: 2, secondary: 1, enter: 1, space: 1 });
+
+      await store.sendHeartbeat();
+      const secondDigest = vi.mocked(api.anticheat.report).mock.calls[1]![0];
+      expect(secondDigest.methodCounts).toEqual({ primary: 0, secondary: 0, enter: 0, space: 0 });
+    });
+
     it("applies a restricted result from the server", async () => {
       loginAs();
       vi.mocked(api.anticheat.report).mockResolvedValue({

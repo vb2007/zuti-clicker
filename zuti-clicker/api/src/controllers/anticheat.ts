@@ -16,10 +16,42 @@ interface ReportBody {
   droppedClicks?: unknown;
   integrityFlags?: unknown;
   weakSignals?: unknown;
+  methodCounts?: unknown;
 }
 
 function isNonNegativeInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+type MethodCounts = { primary: number; secondary: number; enter: number; space: number };
+
+// Optional — omitted entirely is valid (an older cached client, or a
+// pre-this-feature deploy still mid-rollout): the digest is simply
+// evaluated without the singleMethodExceedsHumanLimit signal, never
+// rejected for lacking it. See services/antiCheat.ts's own comment on this
+// field for why (the windowMs incident this project already had once), and
+// for why enter/space are tracked separately rather than combined.
+function isValidMethodCounts(value: unknown): value is MethodCounts | undefined {
+  if (value === undefined) return true;
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    isNonNegativeInt(v["primary"]) &&
+    isNonNegativeInt(v["secondary"]) &&
+    isNonNegativeInt(v["enter"]) &&
+    isNonNegativeInt(v["space"])
+  );
+}
+
+// windowMs is a genuine millisecond DURATION (performance.now() delta), not
+// a count — it is legitimately fractional (e.g. 60001.2), unlike every
+// other field here. Regression: this used to be checked with
+// isNonNegativeInt, which rejected every real-world report with a 400
+// before it ever reached evaluateDigest — every hand-written test fixture
+// on both sides happened to use an integer literal (windowMs: 60_000),
+// masking it until a real browser's performance.now() value hit production.
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 // Shape-only validation — the substantive checks (bucket sum vs click count,
@@ -28,7 +60,7 @@ function isNonNegativeInt(value: unknown): value is number {
 // digest is internally consistent.
 function parseDigest(body: ReportBody): AntiCheatDigest | null {
   if (
-    !isNonNegativeInt(body.windowMs) ||
+    !isNonNegativeFiniteNumber(body.windowMs) ||
     body.windowMs === 0 ||
     !isNonNegativeInt(body.clicks) ||
     !isNonNegativeInt(body.purchases) ||
@@ -42,7 +74,8 @@ function parseDigest(body: ReportBody): AntiCheatDigest | null {
     !Array.isArray(body.integrityFlags) ||
     !body.integrityFlags.every((f) => typeof f === "string") ||
     !Array.isArray(body.weakSignals) ||
-    !body.weakSignals.every((f) => typeof f === "string")
+    !body.weakSignals.every((f) => typeof f === "string") ||
+    !isValidMethodCounts(body.methodCounts)
   ) {
     return null;
   }
@@ -56,7 +89,8 @@ function parseDigest(body: ReportBody): AntiCheatDigest | null {
     hiddenClicks: body.hiddenClicks,
     droppedClicks: body.droppedClicks,
     integrityFlags: body.integrityFlags as string[],
-    weakSignals: body.weakSignals as string[]
+    weakSignals: body.weakSignals as string[],
+    methodCounts: body.methodCounts
   };
 }
 

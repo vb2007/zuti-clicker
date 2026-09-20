@@ -181,3 +181,56 @@ describe("evaluateDigest — autoclicker patterns are flagged", () => {
     expect(verdict.signals).not.toContain("metronome");
   });
 });
+
+// A single input method (one mouse button, or one key) sustaining a high
+// rate has a much tighter human ceiling than the aggregate rate does — see
+// SINGLE_METHOD_MAX_CPS's own comment for the research this is based on. A
+// casual auto-clicker binds to exactly one method (commonly right-click),
+// unlike a legitimate multi-handed/multi-device session.
+describe("evaluateDigest — single-input-method signal", () => {
+  function narrowDigest(overrides: Partial<AntiCheatDigest> = {}): AntiCheatDigest {
+    // 1400 clicks over 60s ≈ 23.3 cps — comfortably over SINGLE_METHOD_MAX_CPS
+    // (20) if attributed to one method alone.
+    const buckets = emptyBuckets();
+    const idx = bucketIndexForIntervalMs(43);
+    buckets[idx] = 1399;
+    return baseDigest({ clicks: 1400, windowMs: 60_000, buckets, maxRunLength: 1399, ...overrides });
+  }
+
+  it("flags singleMethodExceedsHumanLimit when effectively all clicks come from one method", () => {
+    const verdict = evaluateDigest(
+      narrowDigest({ methodCounts: { primary: 0, secondary: 1400, enter: 0, space: 0 } })
+    );
+    expect(verdict.consistent).toBe(true);
+    expect(verdict.signals).toContain("singleMethodExceedsHumanLimit");
+  });
+
+  it("does not flag it when the same aggregate rate is split across multiple methods", () => {
+    const verdict = evaluateDigest(
+      narrowDigest({ methodCounts: { primary: 700, secondary: 700, enter: 0, space: 0 } })
+    );
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+  });
+
+  it("does not flag it when methodCounts is omitted (an older client not reporting it yet)", () => {
+    const verdict = evaluateDigest(narrowDigest());
+    expect(verdict.consistent).toBe(true); // never rejected for lacking it
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+  });
+
+  it("does not flag a single method held under the human ceiling", () => {
+    const buckets = emptyBuckets();
+    const idx = bucketIndexForIntervalMs(100); // 10 cps flat
+    buckets[idx] = 599;
+    const verdict = evaluateDigest(
+      baseDigest({
+        clicks: 600,
+        windowMs: 60_000,
+        buckets,
+        maxRunLength: 599,
+        methodCounts: { primary: 0, secondary: 600, enter: 0, space: 0 }
+      })
+    );
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+  });
+});

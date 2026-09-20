@@ -353,7 +353,12 @@ export const buildSwaggerSpec = (): object => {
             description: "A compact, anonymous digest of client-side click timing — no coordinates, timestamps, or device/browser identifiers.",
             required: ["windowMs", "clicks", "purchases", "buckets", "maxRunLength", "untrustedClicks", "hiddenClicks", "droppedClicks", "integrityFlags", "weakSignals"],
             properties: {
-              windowMs: { type: "integer", minimum: 1, example: 60000 },
+              windowMs: {
+                type: "number",
+                minimum: 1,
+                description: "A performance.now() duration — legitimately fractional, e.g. 60001.2.",
+                example: 60001.2
+              },
               clicks: { type: "integer", minimum: 0, example: 341 },
               purchases: { type: "integer", minimum: 0, example: 4 },
               buckets: {
@@ -379,6 +384,17 @@ export const buildSwaggerSpec = (): object => {
                 type: "array",
                 items: { type: "string" },
                 description: "Pointer-physics consistency flags — corroborating only, never decisive alone."
+              },
+              methodCounts: {
+                type: "object",
+                description:
+                  "Optional per-input-method click counts for the window. Omitted entirely is valid (an older client) — never rejected for lacking it. Enter/Space are tracked separately (not combined) since alternating both keys can legitimately double a human's sustained rate.",
+                properties: {
+                  primary: { type: "integer", minimum: 0, description: "Left click." },
+                  secondary: { type: "integer", minimum: 0, description: "Right click." },
+                  enter: { type: "integer", minimum: 0, description: "Enter key activation." },
+                  space: { type: "integer", minimum: 0, description: "Space key activation." }
+                }
               }
             }
           },
