@@ -70,8 +70,8 @@ export const buildSwaggerSpec = (): object => {
             type: "object",
             required: ["unitId", "owned"],
             properties: {
-              unitId: { type: "string", example: "alpha" },
-              owned: { type: "integer", minimum: 0, example: 5 }
+              unitId: { type: "string", description: "Must be a known unit id.", example: "alpha" },
+              owned: { type: "integer", minimum: 0, maximum: 10000, example: 5 }
             }
           },
           ActiveBooster: {
@@ -101,21 +101,25 @@ export const buildSwaggerSpec = (): object => {
             properties: {
               tokens: {
                 type: "number",
-                description: "Current token balance",
+                minimum: 0,
+                description: "Current token balance. Must not exceed totalTokensEarned.",
                 example: 1234.56
               },
               totalTokensEarned: {
                 type: "number",
+                minimum: 0,
                 description: "All-time tokens earned",
                 example: 9999.99
               },
               totalClicks: {
                 type: "integer",
+                minimum: 0,
                 description: "Total manual clicks",
                 example: 420
               },
               elapsedSeconds: {
                 type: "number",
+                minimum: 0,
                 description: "Total time played in seconds",
                 example: 3600.5
               },

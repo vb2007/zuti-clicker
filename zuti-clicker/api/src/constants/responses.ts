@@ -23,7 +23,24 @@ export class Responses {
     },
     INVALID_UNITS: {
       status: 400,
-      body: { error: "Each unit must have a valid unitId (string) and owned count (number >= 0)." }
+      body: {
+        error:
+          "Each unit must have a known unitId and an integer owned count between 0 and 10000, with no duplicate unitId."
+      }
+    },
+    // Present but out-of-range core fields (negative, non-finite, or a
+    // fractional totalClicks) — distinct from MISSING_FIELDS, which covers a
+    // field that is absent or the wrong type entirely.
+    INVALID_CORE_FIELDS: {
+      status: 400,
+      body: {
+        error:
+          "tokens, totalTokensEarned, and elapsedSeconds must be finite numbers >= 0, and totalClicks must be a non-negative integer no greater than 2147483647."
+      }
+    },
+    TOKENS_EXCEED_EARNED: {
+      status: 400,
+      body: { error: "tokens cannot exceed totalTokensEarned." }
     },
     INVALID_PRESTIGE: {
       status: 400,

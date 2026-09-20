@@ -37,6 +37,14 @@ export function isKnownUnitId(value: unknown): value is string {
   return typeof value === "string" && KNOWN_UNIT_IDS.includes(value);
 }
 
+// Hard ceiling on a single unit's `owned` count, checked on every PUT /save
+// regardless of ANTICHEAT_MODE. Nobody can legitimately reach anywhere near
+// this — theta (the most expensive unit) grows 1.15x per purchase, so its
+// cost at 10,000 owned is already far beyond any float-safe token balance.
+// It exists purely to reject an absurd forged value before it reaches
+// Prisma, the same role MAX_INT32 plays for the integer prestige fields.
+export const MAX_UNIT_OWNED = 10_000;
+
 export function getUnitDefinition(unitId: string): UnitDefinition | undefined {
   return UNIT_DEFINITIONS.find((d) => d.id === unitId);
 }
