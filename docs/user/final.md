@@ -116,10 +116,15 @@ meg valahol a Kattintó területén — sosem közvetlenül a kör fölött. Ez 
 - **Kedvezmény**: az egységárak jelentősen csökkennek.
 
 A booster típusa csak a begyűjtés pillanatában derül ki — egy rövid
-értesítés (toast) jelzi, melyiket kaptad. Amíg egy booster aktív, egy
-számláló-buborék jelenik meg a Kattintó tetején, ami mutatja, mennyi idő van
-hátra. Ha lekésed a boostert, semmi nem veszik el — csak várnod kell a
-következőre.
+értesítés (toast) jelzi, melyiket kaptad, a pontos hatással együtt (pl.
+„×7 production" vagy „-25% prices"), nem csak a fantázianévvel. Amíg egy
+booster aktív, egy buborék jelenik meg a Kattintó tetején, amely a nevet, a
+konkrét hatást és a hátralévő időt is mutatja. Emellett az érintett
+statisztika — a Státuszoszlop „Per Second" vagy „Per Click" sora — is
+kiemelt színt kap egy „×N" jelvénnyel, a kedvezmény-booster pedig az
+Egységek panel fejlécén egy „-N% unit prices" jelvényt és az érintett
+egységek árának színét is megváltoztatja. Ha lekésed a boostert, semmi nem
+veszik el — csak várnod kell a következőre.
 
 Bejelentkezve a boosterek a szerveren dőlnek el (a pontos időzítést és
 típust a szerver választja, hogy senki ne tudjon csalással gyakrabban vagy
@@ -167,23 +172,31 @@ Egy egység addig rejtett, amíg az összes szerzett tokened nem éri el az alap
 Az „Upgrades" fülön (lásd fent) egy másik fajta vásárlás érhető el: a
 **fejlesztések** — ezek nem termelnek, hanem közvetlenül a **kattintásod
 erejét** növelik, és egyszer vehetők meg (nincs darabszám, mint az
-egységeknél). Öt csoportba tartoznak:
+egységeknél). **Fontos**: egyik fejlesztés sem érinti a másodpercenkénti
+termelésedet („Per Second") — csak a kattintást. Négy csoportba tartoznak,
+mindegyik egy rövid magyarázattal a fejlesztések listája fölött:
 
-- **Kattintási Erő**: fix mennyiséget ad hozzá minden kattintásodhoz.
-- **Szorzók**: megduplázzák a kattintásod értékét (egymással szorzódnak).
-- **Szinergia**: a másodpercenkénti termelésed egy kis százalékát is
+- **Kattintás Értéke**: fix mennyiséget ad hozzá minden kattintásodhoz,
+  majd megszorozza azt.
+- **Bevétel-szinergia**: a másodpercenkénti termelésed egy kis százalékát is
   hozzáadja minden kattintáshoz — minél nagyobb a gazdaságod, annál többet
   ér egy kattintás.
 - **Kritikus Találatok**: esélyt adnak arra, hogy egy kattintás sokszorosát
   érje a szokásosnak (lásd a Kattintó szekciót a feltűnő, arany számért).
-  Ha több szintet is megveszel ebből a csoportból, csak a legerősebb (legdrágább) számít, nem adódnak össze.
-- **Booster Előnyök**: a boosterek időtartamát hosszabbítják meg, illetve
+  Ha több szintet is megveszel ebből a csoportból, csak a legerősebb
+  (legdrágább) számít, nem adódnak össze — a gyengébb, felülírt szinteket a
+  megszerzett fejlesztések listája „Felülírva" jelöléssel, elhalványítva
+  mutatja, hogy lásd, mi hat ténylegesen.
+- **Boosterek**: a boosterek időtartamát hosszabbítják meg, illetve
   gyakoribbá teszik a megjelenésüket.
 
 Egy fejlesztés ugyanúgy fokozatosan tárul fel, mint az egységek — minél
 többet szereztél összesen, annál több fejlesztés jelenik meg a boltban. A
-megvásárolt fejlesztések egy elkülönített, halványabb sávba kerülnek a lista
-alján. **Fontos**: a fejlesztések, akárcsak az egységek, elvesznek
+megvásárolt fejlesztések egy elkülönített sávba kerülnek a lista alján,
+ugyanazokba a csoportokba rendezve, mindegyik csoport élén a jelenlegi
+összesített hatással (pl. „+0.5% of income", „15% ×7") — így nemcsak az
+látszik, mit vettél meg, hanem az is, mennyit ér ténylegesen összesen.
+**Fontos**: a fejlesztések, akárcsak az egységek, elvesznek
 fokozatszerzéskor (lásd lent) — minden új menet a kattintás-erejét is
 nulláról építi fel újra.
 
@@ -195,8 +208,18 @@ Amint összesen (élete során, nem csak az aktuális menetben) legalább 100 00
 
 - **PHDS OWNED**: Az eddig megszerzett PhD-k száma.
 - **+X% Production / -X% Unit cost**: A PhD-id által adott állandó bónuszok — minden PhD +2% termelést és -0,5% egységárat ad, a kedvezmény legfeljebb -50%-ig.
-- **Progress to next PhD**: Egy folyamatjelző, ami mutatja, mennyire vagy közel a következő PhD-hoz.
+- **Progress to next PhD**: Egy folyamatjelző, ami mutatja, mennyire vagy közel a következő PhD-hoz, alatta pedig egy sor mutatja, pontosan mennyi token hiányzik még hozzá.
 - **„Defend Thesis" (Disszertáció megvédése) gomb**: Aktívvá válik, amint legalább 1 PhD-t érsz el az aktuális menetben.
+
+Amint legalább 1 PhD-t elértél az aktuális menetben, a panel megváltozik:
+egy kiemelt sor megmutatja, **pontosan hány PhD-t kapnál most** (pl. „+2 PhD
+ready to defend"), a folyamatjelző pedig átvált „Progress to +3 PhD"-ra —
+vagyis onnantól már a *következő* PhD-hoz méri a haladást, nem az aktuálisan
+már megszerezhetőhöz (ezért nulláz vissza 0%-ra, amint elérsz egy új
+PhD-t — ez nem veszteség, hanem egy új sáv eleje). Egy rövid sor azt is
+mutatja, mennyivel nőne a termelésed és csökkenne az egységáraid, ha most
+azonnal fokozatot szereznél — így ez a pontos szám a „Defend Thesis" gomb
+megnyomása **előtt**, a megerősítő ablak megnyitása nélkül is látható.
 
 A gombra kattintva egy megerősítő ablak jelenik meg, amely megmutatja, pontosan hány PhD-t kapnál, és hogyan változna a termelésed/egységáraid. **Fontos**: a fokozatszerzés véglegesen **visszaállítja a jelenlegi tokenjeidet, az összes megvásárolt egységet és fejlesztést, valamint a menet statisztikáit (Run Earned/Clicks/Time)**, cserébe a PhD-id és az ebből adódó bónuszok **véglegesen megmaradnak**, és minden jövőbeli menetedben érvényesülnek. Egy éppen aktív booster viszont túléli a fokozatszerzést — az egy időzített esemény, nem a menethez kötött haladás.
 
