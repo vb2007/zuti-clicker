@@ -19,7 +19,7 @@ interface SaveBody {
 
 function isValidUnits(units: unknown): units is UnitInput[] {
   if (!Array.isArray(units)) return false;
-  return units.every((u) => {
+  const shapeValid = units.every((u) => {
     if (u === null || typeof u !== "object") return false;
     const entry = u as Record<string, unknown>;
     return (
@@ -28,6 +28,14 @@ function isValidUnits(units: unknown): units is UnitInput[] {
       (entry["owned"] as number) >= 0
     );
   });
+  if (!shapeValid) return false;
+  // A duplicate unitId would otherwise reach upsertSave's createMany and
+  // throw on UnitSave's (gameSaveId, unitId) unique constraint — a 500 (and,
+  // with database/retry.ts's write-conflict retry, three wasted attempts at
+  // it) instead of the 400 a present-but-invalid value must get. Same check
+  // isValidUpgrades already does for upgrade ids below.
+  const unitIds = (units as UnitInput[]).map((u) => u.unitId);
+  return new Set(unitIds).size === unitIds.length;
 }
 
 // Optional (older clients predate the upgrades system entirely), but a

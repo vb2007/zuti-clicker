@@ -56,6 +56,19 @@ describe("Save endpoints - authenticated", () => {
     expect(res.body.error).toBe(Responses.SAVE.INVALID_UNITS.body.error);
   });
 
+  // Regression: a shape-valid units array with a duplicate unitId used to
+  // reach upsertSave's createMany and 500 on UnitSave's unique constraint
+  // instead of being caught as a 400 here, like isValidUpgrades already
+  // catches a duplicate upgrade id.
+  it("PUT /save returns 400 when units contain a duplicate unitId", async () => {
+    const res = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(TestData.SAVE_DUPLICATE_UNIT_IDS);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_UNITS.body.error);
+  });
+
   it("PUT /save creates a save and returns 200 with savedAt", async () => {
     const res = await api.put("/save").set("Cookie", cookie).send(TestData.VALID_SAVE);
     expect(res.status).toBe(200);
