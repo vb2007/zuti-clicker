@@ -2,6 +2,7 @@ import { describe, it, beforeAll, expect } from "@jest/globals";
 import request from "supertest";
 import { TestData } from "../constants/test-data.js";
 import { Responses } from "../constants/responses.js";
+import { prisma } from "../database/prisma.js";
 
 const api = request(TestData.BASE_URL);
 
@@ -273,5 +274,58 @@ describe("Leaderboard endpoint - opt-out", () => {
     // Rank is computed among visible players only — the opted-out player's
     // own row never counts as competition for themselves.
     expect(ownView.body.viewer.rank).toBe(1);
+  });
+});
+
+describe("Leaderboard endpoint - restricted players", () => {
+  it("a restricted player is excluded from others' entries but sees their own standing", async () => {
+    const visible = TestData.generateUser();
+    const restricted = TestData.generateUser();
+    await api.post("/auth/register").send(visible);
+    await api.post("/auth/register").send(restricted);
+
+    const visibleCookie = await login(visible.email, visible.password);
+    const restrictedCookie = await login(restricted.email, restricted.password);
+    const meRes = await api.get("/auth/me").set("Cookie", restrictedCookie);
+    const restrictedUserId: number = meRes.body.user.id;
+
+    const restrictedValue = HUGE_TOKENS + 799; // isolated slot
+    const visibleValue = HUGE_TOKENS + 798;
+    await api
+      .put("/save")
+      .set("Cookie", restrictedCookie)
+      .send({ ...TestData.LEADERBOARD_BASE_SAVE, totalTokensEarned: restrictedValue });
+    await api
+      .put("/save")
+      .set("Cookie", visibleCookie)
+      .send({ ...TestData.LEADERBOARD_BASE_SAVE, totalTokensEarned: visibleValue });
+
+    // No endpoint sets an arbitrary restriction directly (by design) — this
+    // is the one place in the suite that reaches past the API to set up a
+    // precondition the anti-cheat system itself would otherwise take real
+    // strikes to reach.
+    await prisma.antiCheatState.upsert({
+      where: { userId: restrictedUserId },
+      update: { restrictedUntil: new Date(Date.now() + 60_000), strikeCount: 1 },
+      create: { userId: restrictedUserId, restrictedUntil: new Date(Date.now() + 60_000), strikeCount: 1 }
+    });
+
+    const othersView = await api.get("/leaderboard?metric=tokens").set("Cookie", visibleCookie);
+    expect(
+      othersView.body.entries.map((e: { username: string }) => e.username)
+    ).not.toContain(restricted.username);
+
+    const ownView = await api.get("/leaderboard?metric=tokens").set("Cookie", restrictedCookie);
+    expect(ownView.body.viewer.value).toBe(restrictedValue);
+
+    // Once the restriction lifts, there is no lasting exclusion.
+    await prisma.antiCheatState.update({
+      where: { userId: restrictedUserId },
+      data: { restrictedUntil: new Date(Date.now() - 1000) }
+    });
+    const afterExpiry = await api.get("/leaderboard?metric=tokens").set("Cookie", visibleCookie);
+    expect(
+      afterExpiry.body.entries.map((e: { username: string }) => e.username)
+    ).toContain(restricted.username);
   });
 });

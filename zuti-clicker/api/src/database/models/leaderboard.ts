@@ -15,19 +15,46 @@ export interface LeaderboardStanding {
 }
 
 // A GameSave counts as visible on other players' leaderboards unless its
-// owner has explicitly opted out. `settings` is an optional 1:1 relation, so
-// "no settings row yet" (a player who never touched Settings) must count as
-// visible, not excluded.
-const VISIBLE_FILTER: Prisma.GameSaveWhereInput = {
-  user: { OR: [{ settings: null }, { settings: { hideFromLeaderboards: false } }] }
-};
+// owner has explicitly opted out, OR is currently serving an anti-cheat
+// restriction (see the "Anti-cheat modell" section in
+// docs/developer/final.md) — this is the entire leaderboard-side consequence
+// of a restriction: hidden only while it's active, with no lasting exclusion
+// once it expires. `settings`/`antiCheatState` are both optional 1:1
+// relations, so "no row yet" (never touched Settings; never triggered
+// anti-cheat) must count as visible, not excluded.
+//
+// The anti-cheat branch spells out every "visible" case explicitly (no row /
+// null restrictedUntil / restrictedUntil in the past) rather than negating a
+// single condition with NOT — `NOT: { antiCheatState: { restrictedUntil: {
+// gt: now } } }` looks equivalent but isn't: MariaDB's three-valued SQL
+// logic makes `restrictedUntil > now` evaluate to NULL (not FALSE) for every
+// row where restrictedUntil is NULL, and `NOT NULL` is still NULL, not TRUE
+// — so that version silently excluded almost every account that had ever
+// merely been evaluated by the anti-cheat system, restricted or not.
+// Verified empirically against the real database before landing this fix.
+function visibleFilter(now: Date): Prisma.GameSaveWhereInput {
+  return {
+    AND: [
+      { user: { OR: [{ settings: null }, { settings: { hideFromLeaderboards: false } }] } },
+      {
+        user: {
+          OR: [
+            { antiCheatState: null },
+            { antiCheatState: { restrictedUntil: null } },
+            { antiCheatState: { restrictedUntil: { lte: now } } }
+          ]
+        }
+      }
+    ]
+  };
+}
 
 export async function getTopEntries(
   field: LeaderboardField,
   limit: number
 ): Promise<LeaderboardEntry[]> {
   const rows = await prisma.gameSave.findMany({
-    where: VISIBLE_FILTER,
+    where: visibleFilter(new Date()),
     // Tie-break on userId so ties (e.g. two players both at 0) sort the same
     // way on every request instead of depending on incidental row order.
     orderBy: [{ [field]: "desc" }, { userId: "asc" }] as Prisma.GameSaveOrderByWithRelationInput[],
@@ -69,7 +96,7 @@ export async function getViewerStanding(
   // what would otherwise be two separate count queries.
   const ahead = await prisma.gameSave.count({
     where: {
-      ...VISIBLE_FILTER,
+      ...visibleFilter(new Date()),
       OR: [
         { [field]: { gt: value } },
         { [field]: { equals: value }, userId: { lt: userId } }
