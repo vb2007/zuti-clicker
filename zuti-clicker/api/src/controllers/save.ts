@@ -56,11 +56,10 @@ function isValidUnits(units: unknown): units is UnitInput[] {
 }
 
 // Optional (older clients predate the upgrades system entirely), but a
-// *present* value must be an array of known upgrade ids — unlike unitId
-// (any string is accepted, since units are purely client-defined and never
-// validated server-side), upgrades ARE allowlisted here because the booster
-// system reads specific ids (conferenceBadge, departmentNewsletter) back off
-// this same data server-side (see database/models/boosters.ts).
+// *present* value must be an array of known upgrade ids — allowlisted here
+// (like unitId in isValidUnits above) because the booster system reads
+// specific ids (conferenceBadge, departmentNewsletter) back off this same
+// data server-side (see database/models/boosters.ts).
 function isValidUpgrades(upgrades: unknown): upgrades is string[] | undefined {
   if (upgrades === undefined) return true;
   if (!Array.isArray(upgrades)) return false;
