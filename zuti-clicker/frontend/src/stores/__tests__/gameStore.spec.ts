@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { useGameStore } from "@/stores/gameStore";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { UNIT_DEFINITIONS } from "@/utils/gameConstants";
 
 describe("gameStore", () => {
@@ -491,6 +492,68 @@ describe("gameStore", () => {
       game.grantBooster("frenzy", 60_000);
       const payload = game.toSavePayload();
       expect("activeBoosters" in payload).toBe(false);
+    });
+  });
+
+  describe("anti-cheat restriction gate", () => {
+    function restrict(): void {
+      const antiCheat = useAntiCheatStore();
+      antiCheat.isRestricted = true;
+    }
+
+    it("clickToken is a no-op while restricted", () => {
+      const game = useGameStore();
+      restrict();
+      const { earned, crit } = game.clickToken();
+      expect(earned).toBe(0);
+      expect(crit).toBe(false);
+      expect(game.tokens).toBe(0);
+      expect(game.totalClicks).toBe(0);
+    });
+
+    it("buyUnit is a no-op while restricted, even if otherwise affordable", () => {
+      const game = useGameStore();
+      game.tokens = 1_000_000;
+      restrict();
+      expect(game.buyUnit("alpha", 1)).toBe(false);
+      expect(game.unitStates.find((u) => u.id === "alpha")?.owned).toBe(0);
+    });
+
+    it("buyUpgrade is a no-op while restricted, even if otherwise affordable", () => {
+      const game = useGameStore();
+      game.tokens = 1_000_000;
+      restrict();
+      expect(game.buyUpgrade("chalk")).toBe(false);
+      expect(game.isUpgradeOwned("chalk")).toBe(false);
+    });
+
+    it("tick (idle income) is a no-op while restricted", () => {
+      const game = useGameStore();
+      game.unitStates[0]!.owned = 10;
+      restrict();
+      game.tick(1);
+      expect(game.tokens).toBe(0);
+      expect(game.elapsedSeconds).toBe(0);
+    });
+
+    it("prestige is a no-op while restricted, even with enough runTokensEarned", () => {
+      const game = useGameStore();
+      game.runTokensEarned = 4_000_000;
+      restrict();
+      expect(game.prestige()).toBe(0);
+      expect(game.phdCount).toBe(0);
+    });
+
+    it("everything works normally again once no longer restricted", () => {
+      const game = useGameStore();
+      const antiCheat = useAntiCheatStore();
+      antiCheat.isRestricted = true;
+      game.clickToken();
+      expect(game.tokens).toBe(0);
+      antiCheat.isRestricted = false;
+      const { earned } = game.clickToken();
+      expect(earned).toBeGreaterThan(0);
+      expect(game.tokens).toBeGreaterThan(0);
     });
   });
 });

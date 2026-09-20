@@ -20,8 +20,10 @@ import PrestigeConfirmModal from "@/components/prestige/PrestigeConfirmModal.vue
 import PrestigeCeremony from "@/components/prestige/PrestigeCeremony.vue";
 import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import { useGameLoop } from "@/composables/useGameLoop";
+import { useAntiCheat } from "@/composables/useAntiCheat";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import { QUICK_RESET_ENABLED, shouldQuickReset } from "@/utils/featureFlags";
+import CheatWarningModal from "@/components/modals/CheatWarningModal.vue";
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -32,6 +34,7 @@ const settings = useSettingsStore();
 const { isCompact } = useBreakpoint();
 
 useGameLoop();
+useAntiCheat();
 
 // If the sheet was left open and the viewport widens back past the compact
 // breakpoint (e.g. rotating a tablet, or resizing a desktop window that had
@@ -135,6 +138,7 @@ async function onConfirmDelete() {
   />
   <PrestigeConfirmModal v-if="ui.prestigeConfirmOpen" />
   <PrestigeCeremony v-if="ui.prestigeCeremonyOpen" />
+  <CheatWarningModal />
   <ToastHost />
 </template>
 

@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import {
   UNIT_DEFINITIONS,
   UPGRADE_DEFINITIONS,
@@ -55,6 +56,13 @@ export interface LoadedGameSave extends GameSaveInput {
 }
 
 export const useGameStore = defineStore("game", () => {
+  // The single anti-cheat gate every progress-affecting action below checks —
+  // see stores/antiCheatStore.ts. Centralized here rather than repeated in
+  // every calling component so it can never be bypassed by calling this
+  // store directly (devtools console, a tampered component, etc.): clicking,
+  // buying, prestiging, and idle income are all no-ops while restricted.
+  const antiCheat = useAntiCheatStore();
+
   // Lifetime — survives prestige, never reset except by hardReset.
   const tokens = ref(0);
   const totalTokensEarned = ref(0);
@@ -153,6 +161,7 @@ export const useGameStore = defineStore("game", () => {
   const tokensToNextPhd = computed(() => getTokensToNextPhd(runTokensEarned.value));
 
   function clickToken(): { earned: number; crit: boolean } {
+    if (antiCheat.isRestricted) return { earned: 0, crit: false };
     const crit = rollCrit(critChance.value);
     const earned = crit ? tokensPerClick.value * critMultiplier.value : tokensPerClick.value;
     tokens.value += earned;
@@ -201,6 +210,7 @@ export const useGameStore = defineStore("game", () => {
   }
 
   function buyUnit(unitId: string, multiplier: Multiplier): boolean {
+    if (antiCheat.isRestricted) return false;
     const def = UNIT_DEFINITIONS.find((d) => d.id === unitId);
     if (!def) return false;
     const state = unitStates.value.find((u) => u.id === unitId);
@@ -239,6 +249,7 @@ export const useGameStore = defineStore("game", () => {
 
   /** One-time purchase. Returns false (and mutates nothing) if unknown, already owned, or unaffordable. */
   function buyUpgrade(upgradeId: string): boolean {
+    if (antiCheat.isRestricted) return false;
     const def = UPGRADE_DEFINITIONS.find((d) => d.id === upgradeId);
     if (!def || isUpgradeOwned(upgradeId)) return false;
     if (tokens.value < def.cost) return false;
@@ -269,6 +280,7 @@ export const useGameStore = defineStore("game", () => {
   }
 
   function tick(delta: number) {
+    if (antiCheat.isRestricted) return;
     const earned = tokensPerSecond.value * delta;
     tokens.value += earned;
     totalTokensEarned.value += earned;
@@ -293,6 +305,7 @@ export const useGameStore = defineStore("game", () => {
 
   /** Banks PhDs and starts a new run. Returns the PhDs gained, or 0 if refused. */
   function prestige(): number {
+    if (antiCheat.isRestricted) return 0;
     const gained = phdGain.value; // MUST be read before any reset below
     if (gained < 1) return 0;
     phdCount.value += gained;

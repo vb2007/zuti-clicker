@@ -57,7 +57,7 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
     <template #actions>
       <div class="modal-actions">
         <button class="btn-cancel" @click="cancelPrestige">{{ t("confirm.cancelBtn") }}</button>
-        <button class="btn-confirm" @click="confirmPrestige">
+        <button class="btn-confirm" @click="confirmPrestige($event)">
           {{ t("confirm.prestigeConfirmBtn") }}
         </button>
       </div>

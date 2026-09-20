@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { UPGRADE_DEFINITIONS } from "@/utils/gameConstants";
 import { formatNumber } from "@/utils/formatters";
 import { getUpgradeEffectLabel } from "@/utils/upgrades";
@@ -12,6 +13,7 @@ const props = defineProps<{ upgradeId: string }>();
 
 const { t } = useI18n();
 const game = useGameStore();
+const antiCheat = useAntiCheatStore();
 
 const def = computed(() => UPGRADE_DEFINITIONS.find((d) => d.id === props.upgradeId)!);
 const affordable = computed(() => game.canAffordUpgrade(props.upgradeId));
@@ -39,9 +41,16 @@ const {
   onBlur
 } = useAnchoredTooltip(200);
 
-function buy() {
+// isTrusted-gated the same way UnitCard.vue's buy() is — see that
+// component's comment for why this matters even though the purchase itself
+// is already economically bounded.
+function buy(e: MouseEvent) {
+  if (!e.isTrusted) {
+    antiCheat.recordClick(false);
+    return;
+  }
   if (!affordable.value) return;
-  game.buyUpgrade(props.upgradeId);
+  if (game.buyUpgrade(props.upgradeId)) antiCheat.recordPurchase();
 }
 </script>
 
@@ -51,9 +60,9 @@ function buy() {
     type="button"
     class="upgrade-tile"
     :class="{ affordable }"
-    :disabled="!affordable"
+    :disabled="!affordable || antiCheat.isRestricted"
     :aria-describedby="tooltipVisible ? tooltipId : undefined"
-    @click="buy"
+    @click="buy($event)"
     @mouseenter="onEnter"
     @mouseleave="onLeave"
     @focus="onFocus"

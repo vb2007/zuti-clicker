@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { UNIT_DEFINITIONS } from "@/utils/gameConstants";
 import { getMaxBuyable } from "@/utils/costCalculator";
 import { formatNumber, formatRate } from "@/utils/formatters";
@@ -13,6 +14,7 @@ const props = defineProps<{ unitId: string; multiplier: Multiplier }>();
 
 const { t } = useI18n();
 const game = useGameStore();
+const antiCheat = useAntiCheatStore();
 
 const def = computed(() => UNIT_DEFINITIONS.find((d) => d.id === props.unitId)!);
 const state = computed(() => game.unitStates.find((u) => u.id === props.unitId)!);
@@ -39,9 +41,20 @@ const visible = computed(() => game.isUnitRevealed(props.unitId));
 const nameKey = computed(() => `units.names.${props.unitId}` as Parameters<typeof t>[0]);
 const descKey = computed(() => `units.descriptions.${props.unitId}` as Parameters<typeof t>[0]);
 
-function buy() {
+// isTrusted-gated the same way ClickerCircle.vue's clicks are: a script
+// dispatching a synthetic click through this handler earns nothing and is
+// counted as an untrusted-click detection signal, even though the purchase
+// itself is already economically bounded (buying costs the same whether a
+// human or a script clicked). affordable()/effectiveAmount already keep an
+// out-of-budget or already-restricted purchase from mutating anything —
+// this only adds automation DETECTION on top of that.
+function buy(e: MouseEvent) {
+  if (!e.isTrusted) {
+    antiCheat.recordClick(false);
+    return;
+  }
   if (!affordable.value || effectiveAmount.value === 0) return;
-  game.buyUnit(props.unitId, props.multiplier);
+  if (game.buyUnit(props.unitId, props.multiplier)) antiCheat.recordPurchase();
 }
 
 const btnLabel = computed(() => {
@@ -113,7 +126,11 @@ const {
       </div>
 
       <!-- right: buy button -->
-      <button class="buy-btn" :disabled="!affordable || effectiveAmount === 0" @click.stop="buy">
+      <button
+        class="buy-btn"
+        :disabled="!affordable || effectiveAmount === 0 || antiCheat.isRestricted"
+        @click.stop="buy($event)"
+      >
         <span class="btn-mult">{{ btnLabel }}</span>
         <span class="btn-cost" :class="{ discounted }">{{ formatNumber(cost) }}</span>
       </button>

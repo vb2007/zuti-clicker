@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
+import { useGameStore } from "@/stores/gameStore";
 
 const { t } = useI18n();
+const antiCheat = useAntiCheatStore();
+const game = useGameStore();
 
 const emit = defineEmits<{ click: [payload: { x: number; y: number }] }>();
 
@@ -58,6 +62,30 @@ function registerClick(x: number, y: number) {
   spawnRing();
 }
 
+/**
+ * The one gate every click (pointer or keyboard) funnels through before
+ * registering — see stores/antiCheatStore.ts. A hidden/unfocused document
+ * never delivers real input to begin with, so that check runs first and
+ * doesn't even count toward the untrusted-click telemetry. `trusted` MUST be
+ * the original event's own `isTrusted`, never re-derived: a script
+ * dispatching a synthetic click through this handler is exactly what that
+ * flag exists to catch, and it earns nothing, silently.
+ */
+function attemptClick(trusted: boolean, x: number, y: number): void {
+  if (document.hidden || !document.hasFocus()) {
+    antiCheat.recordHiddenClick();
+    return;
+  }
+  const outcome = antiCheat.recordClick(trusted);
+  if (!outcome.credited) {
+    // A guest's 5th strike has no server save to reset — see recordClick's
+    // own comment on why that's this caller's job, not the store's.
+    if (outcome.guestSaveReset) game.hardReset();
+    return;
+  }
+  registerClick(x, y);
+}
+
 // A single click must count once, however it was triggered — pointerdown
 // (mouse/touch/pen) or a keyboard Enter/Space activating the native <button>.
 // pointerdown handles the pointer case immediately (snappier under spam than
@@ -78,7 +106,7 @@ function handlePointerDown(e: PointerEvent) {
   // middle/back/forward are ignored so autoscroll and browser navigation
   // gestures still work when they happen to land on the circle.
   if (e.button !== 0 && e.button !== 2) return;
-  registerClick(e.clientX, e.clientY);
+  attemptClick(e.isTrusted, e.clientX, e.clientY);
 }
 
 function handleClick(e: MouseEvent) {
@@ -89,7 +117,7 @@ function handleClick(e: MouseEvent) {
   const rect = wrapperRef.value?.getBoundingClientRect();
   const x = rect ? rect.left + rect.width / 2 : e.clientX;
   const y = rect ? rect.top + rect.height / 2 : e.clientY;
-  registerClick(x, y);
+  attemptClick(e.isTrusted, x, y);
 }
 </script>
 

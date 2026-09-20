@@ -230,5 +230,12 @@ export default {
     hiddenNote: "El vagy rejtve mások ranglistáiról.",
     empty: "Még nincs játékos ezen a ranglistán.",
     loadError: "Nem sikerült betölteni a ranglistát."
+  },
+  anticheat: {
+    title: "Haladás szüneteltetve",
+    body: "Ezen a fiókon automatizált vagy szokatlanul gyors bevitelt észleltünk. A kattintás, a vásárlás és a fokozat az alábbi visszaszámlálás lejártáig szünetel.",
+    timeRemaining: "Hátralévő idő",
+    strikeNote: "Ez már {count}. alkalommal történt meg ezen a fiókon. A korlátozás minden alkalommal hosszabb.",
+    dismissBtn: "Értem"
   }
 };
