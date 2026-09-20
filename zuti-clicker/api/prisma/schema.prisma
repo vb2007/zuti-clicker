@@ -11,14 +11,16 @@ datasource db {
 }
 
 model User {
-  id             Int             @id @default(autoincrement())
-  username       String          @unique
-  email          String          @unique
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  authentication Authentication?
-  gameSave       GameSave?
-  settings       UserSettings?
+  id              Int              @id @default(autoincrement())
+  username        String           @unique
+  email           String           @unique
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  authentication  Authentication?
+  gameSave        GameSave?
+  settings        UserSettings?
+  antiCheatState  AntiCheatState?
+  antiCheatEvents AntiCheatEvent[]
 }
 
 model Authentication {
@@ -96,6 +98,58 @@ model ActiveBooster {
   expiresAt  DateTime
 
   @@unique([gameSaveId, boosterId])
+}
+
+// Per-account strike/restriction state for the anti-cheat system (see the
+// plan in docs/developer/final.md's "Anti-cheat modell" section). Created
+// lazily on a user's first soft clamp or strike — most accounts never get a
+// row here at all. `restrictedUntil` is the single gate every write-capable
+// endpoint checks; NULL (not "in the past") means "never restricted, or the
+// restriction has been consumed" so a clean account's common-case check is a
+// cheap NULL test rather than a timestamp comparison.
+model AntiCheatState {
+  id               Int       @id @default(autoincrement())
+  userId           Int       @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strikeCount      Int       @default(0)
+  restrictedUntil  DateTime?
+  lastStrikeAt     DateTime?
+  lastStrikeReason String?   @db.VarChar(64)
+  // Anchors the "30 consecutive clean days" strike-decay window — reset to
+  // now() on every new strike, left alone otherwise.
+  lastCleanAt      DateTime  @default(now())
+  suspicionScore   Int       @default(0)
+  softClampCount   Int       @default(0)
+  highRateWindows  Int       @default(0)
+  updatedAt        DateTime  @updatedAt
+}
+
+// Append-only audit log of every anti-cheat verdict, including ones
+// suppressed by ANTICHEAT_MODE=monitor — this is what makes the detection
+// thresholds tunable against real traffic instead of guessed at. Pruned by a
+// cleanup script following the same dry-run/--apply/deletion-count-fuse
+// pattern as scripts/cleanup-test-users.ts.
+model AntiCheatEvent {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  // e.g. "envelope_reject", "envelope_clamp", "statistical_verdict",
+  // "hard_validation_reject" — see constants/antiCheat.ts for the full set.
+  kind      String   @db.VarChar(32)
+  // "info" (soft clamp, monitor-mode-only verdict) | "strike" (an actual
+  // penalty was applied).
+  severity  String   @db.VarChar(16)
+  // The ANTICHEAT_MODE this event was evaluated under — lets a monitor-mode
+  // tuning pass be told apart from a real enforced strike after the fact.
+  mode      String   @db.VarChar(16)
+  // Free-form JSON: which signals fired, envelope numbers, etc. Never game
+  // save data itself — this table exists to tune/audit detection, not to
+  // duplicate GameSave.
+  detail    Json?
+  enforced  Boolean  @default(false)
+
+  @@index([userId, createdAt])
 }
 
 model UserSettings {
