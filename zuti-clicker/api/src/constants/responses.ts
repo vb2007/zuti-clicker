@@ -42,6 +42,18 @@ export class Responses {
       status: 400,
       body: { error: "tokens cannot exceed totalTokensEarned." }
     },
+    // The save plausibility envelope's reject tier (services/saveValidator.ts)
+    // — a monotonicity break, or a value more than twice what's achievable
+    // since the last save. 409, not 400: the request is well-formed, it's
+    // the claimed progress that couldn't be verified. Nothing is written;
+    // the client's next GET /save returns the last verified state unchanged.
+    IMPLAUSIBLE: {
+      status: 409,
+      body: {
+        error:
+          "This save could not be verified as achievable since your last sync and was rejected. Reload to continue from your last verified save."
+      }
+    },
     INVALID_PRESTIGE: {
       status: 400,
       body: {

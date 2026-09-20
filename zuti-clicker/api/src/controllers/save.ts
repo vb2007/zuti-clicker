@@ -3,6 +3,13 @@ import { getSave, upsertSave, deleteSave, type UnitInput } from "../database/mod
 import { Responses } from "../constants/responses";
 import { isKnownUpgradeId } from "../constants/upgrades";
 import { isKnownUnitId, MAX_UNIT_OWNED } from "../constants/gameBalance";
+import { ANTICHEAT_MODE } from "../constants/antiCheat";
+import {
+  evaluateSaveEnvelope,
+  type PrevSaveSnapshot,
+  type IncomingSave
+} from "../services/saveValidator";
+import { logAntiCheatEvent } from "../database/models/antiCheat";
 
 interface SaveBody {
   tokens?: unknown;
@@ -189,26 +196,38 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *         description: >
  *           Missing required fields; a present-but-invalid core field
  *           (negative/non-finite, or a fractional totalClicks); tokens
- *           exceeding totalTokensEarned; invalid units, prestige fields, or
- *           upgrades; or a save rejected by the plausibility envelope (see
- *           docs/developer/final.md's "Anti-cheat modell" section).
+ *           exceeding totalTokensEarned; or invalid units, prestige fields,
+ *           or upgrades.
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       '401':
  *         $ref: '#/components/responses/Unauthorized'
+ *       '409':
+ *         description: >
+ *           Rejected by the save plausibility envelope: a monotonicity
+ *           break, or a value more than twice what's achievable since the
+ *           last save (see docs/developer/final.md's "Anti-cheat modell"
+ *           section). Nothing is written — GET /save still returns the last
+ *           verified state. Never returned when ANTICHEAT_MODE is "off" or
+ *           "monitor".
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       '500':
  *         $ref: '#/components/responses/InternalError'
  */
 export const storeSave = async (req: express.Request, res: express.Response) => {
   try {
-    const userId = req.identity?.id;
-    if (userId === undefined) {
+    const identity = req.identity;
+    if (identity === undefined) {
       const r = Responses.AUTH.UNAUTHORIZED;
       res.status(r.status).json(r.body);
       return;
     }
+    const userId = identity.id;
 
     const {
       tokens,
@@ -290,11 +309,104 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       return;
     }
 
+    // Everything below is the save plausibility envelope (see
+    // services/saveValidator.ts) — the request body has passed every
+    // stateless shape/bounds check above, but hasn't yet been checked
+    // against what this account could actually have achieved since its last
+    // save. `effective*` starts as the validated request value and is only
+    // ever adjusted DOWN by a clamp-tier verdict; ANTICHEAT_MODE=off skips
+    // this block entirely (a raw local API client), "monitor" evaluates and
+    // logs but never adjusts or rejects, and "enforce" (the only mode
+    // production can run in) does both.
+    let effectiveTokens = tokens;
+    let effectiveTotalTokensEarned = totalTokensEarned;
+    let effectiveTotalClicks = totalClicks;
+    let effectiveElapsedSeconds = elapsedSeconds;
+
+    if (ANTICHEAT_MODE !== "off") {
+      const previous = await getSave(userId);
+      // The same "omitted means preserve the stored value" resolution
+      // upsertSave itself applies below — the envelope needs the REAL
+      // after-state a write would produce, not the raw (possibly absent)
+      // request fields.
+      const resolvedPhdCount = phdCount ?? previous?.phdCount ?? 0;
+      const resolvedPrestigeCount = prestigeCount ?? previous?.prestigeCount ?? 0;
+      const resolvedUpgrades = upgrades ?? previous?.upgrades.map((u) => u.upgradeId) ?? [];
+
+      const prevSnapshot: PrevSaveSnapshot | null = previous
+        ? {
+            tokens: previous.tokens,
+            totalTokensEarned: previous.totalTokensEarned,
+            totalClicks: previous.totalClicks,
+            elapsedSeconds: previous.elapsedSeconds,
+            phdCount: previous.phdCount,
+            prestigeCount: previous.prestigeCount,
+            savedAt: previous.savedAt,
+            units: previous.units.map((u) => ({ unitId: u.unitId, owned: u.owned })),
+            upgrades: previous.upgrades.map((u) => u.upgradeId)
+          }
+        : null;
+
+      const incomingSnapshot: IncomingSave = {
+        tokens,
+        totalTokensEarned,
+        totalClicks,
+        elapsedSeconds,
+        phdCount: resolvedPhdCount,
+        prestigeCount: resolvedPrestigeCount,
+        units,
+        upgrades: resolvedUpgrades
+      };
+
+      // identity.createdAt anchors a first-ever save's dt, closing "register
+      // then immediately PUT a maxed save".
+      const verdict = evaluateSaveEnvelope(
+        prevSnapshot,
+        identity.createdAt,
+        new Date(),
+        incomingSnapshot
+      );
+
+      if (verdict.outcome !== "accept") {
+        await logAntiCheatEvent({
+          userId,
+          kind: verdict.outcome === "reject" ? "envelope_reject" : "envelope_clamp",
+          severity: "info",
+          mode: ANTICHEAT_MODE,
+          detail:
+            verdict.outcome === "reject"
+              ? { reason: verdict.reason, ...verdict.detail }
+              : { reasons: verdict.reasons, ...verdict.detail },
+          enforced: ANTICHEAT_MODE === "enforce"
+        }).catch((e: unknown) => console.error("Failed to log anti-cheat event:", e));
+      }
+
+      if (ANTICHEAT_MODE === "enforce") {
+        if (verdict.outcome === "reject") {
+          const r = Responses.SAVE.IMPLAUSIBLE;
+          res.status(r.status).json(r.body);
+          return;
+        }
+        if (verdict.outcome === "clamp") {
+          if (verdict.clamped.tokens !== undefined) effectiveTokens = verdict.clamped.tokens;
+          if (verdict.clamped.totalTokensEarned !== undefined) {
+            effectiveTotalTokensEarned = verdict.clamped.totalTokensEarned;
+          }
+          if (verdict.clamped.totalClicks !== undefined) {
+            effectiveTotalClicks = verdict.clamped.totalClicks;
+          }
+          if (verdict.clamped.elapsedSeconds !== undefined) {
+            effectiveElapsedSeconds = verdict.clamped.elapsedSeconds;
+          }
+        }
+      }
+    }
+
     const save = await upsertSave(userId, {
-      tokens,
-      totalTokensEarned,
-      totalClicks,
-      elapsedSeconds,
+      tokens: effectiveTokens,
+      totalTokensEarned: effectiveTotalTokensEarned,
+      totalClicks: effectiveTotalClicks,
+      elapsedSeconds: effectiveElapsedSeconds,
       phdCount,
       prestigeCount,
       runTokensEarned,
