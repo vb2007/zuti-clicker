@@ -16,7 +16,7 @@ export class ApiError extends Error {
 
 // Dev: Vite proxy rewrites /api → http://localhost:2710 (vite.config.ts).
 // Production: VITE_API_BASE_URL is baked in at build time by the Dockerfile.
-const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
+const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
