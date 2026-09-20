@@ -257,8 +257,17 @@ kattintás-erő bónuszok — lásd `frontend/src/stores/gameStore.ts`
 
 A fejlesztés azonnal megjelenik a boltban (a láthatóság ugyanaz a
 felfedezési logika, mint az egységeknél: `totalTokensEarned >= cost *
-UPGRADE_REVEAL_FRACTION`), a megfelelő családi csoportban
-(`UpgradesPanel.vue`).
+UPGRADE_REVEAL_FRACTION`), a megfelelő csoportban. A megjelenítési
+csoportosítás (`FAMILY_GROUPS` a `UpgradesPanel.vue`-ban) UI-only fogalom,
+külön a formula-`family`-től — négy csoport van (`clickValue` = flat +
+multiplier, `synergy`, `crit`, `booster` = boosterDuration +
+boosterSpawn), mindegyik saját, egysoros magyarázó alcímmel
+(`upgrades.groupDesc*`). Egy meglévő családba tartozó új fejlesztéshez nem
+kell új csoport-kulcs, csak az 1–3. lépés. A tile-on és a megszerzett
+fejlesztések sávjában megjelenő kompakt hatás-felirat (pl. `+0.5%`, `×2`,
+`15% ×7`) egyetlen közös helyről, a `utils/upgrades.ts`
+`getUpgradeEffectLabel()` függvényéből származik — ha egy `family`
+megjelenítési formátumát módosítod, csak ott kell.
 
 ---
 
@@ -279,10 +288,17 @@ anti-cheat modell" lentebb a teljes életciklusért.
    fájl `BOOSTER_IDS`/`BOOSTER_WEIGHTS`/`BOOSTER_DURATION_SECS`
    objektumaiban — a tényleges kiválasztás és időzítés szerver oldalon
    történik (`database/models/boosters.ts`), ez a másolat a forrása.
-3. Adj hozzá fordítási kulcsot mindkét i18n fájlhoz,
-   `boosters.names.<id>` alatt (a leírás/hatás szövege jelenleg nincs
-   külön kulcsban, az `ActiveBoostersBar.vue` és a claimedToast csak a nevet
-   jeleníti meg).
+3. Adj hozzá fordítási kulcsot mindkét i18n fájlhoz, `boosters.names.<id>`
+   alatt. A hatás-szöveget (pl. „×7 production", „-25% prices") **nem**
+   `<id>` szerint kulcsolva, hanem a `kind` szerint — `boosters.effect.
+   {production|click|costReduction}` — kapja mindhárom booster egy közös
+   `getBoosterEffectText()` segédfüggvényből
+   (`frontend/src/utils/boosterEffectText.ts`), amit az
+   `ActiveBoostersBar.vue` aktív-buff sávja és a `useBoosters.ts` claim
+   toastja is ugyanonnan hív, hogy a kettő sose térjen el egymástól. Egy új
+   `kind` bevezetése esetén ebbe a switch-be és mindkét i18n fájl
+   `boosters.effect` blokkjába kell új ágat felvenni; egy meglévő `kind`
+   újrafelhasználásakor (mint a fenti példa) nincs itt teendő.
 
 ---
 

@@ -6,7 +6,8 @@ import {
   getProductionMultiplier,
   getCostMultiplier,
   getTokensToNextPhd,
-  getPrestigeProgress
+  getPrestigeProgress,
+  getPrestigeOutcome
 } from "@/utils/prestige";
 
 describe("getPhdGain", () => {
@@ -139,5 +140,30 @@ describe("getPrestigeProgress", () => {
       expect(p).toBeGreaterThanOrEqual(0);
       expect(p).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+// Shared by PrestigePanel.vue's "After: ..." line and
+// PrestigeConfirmModal.vue's before/after table — both format these raw
+// numbers differently, but must derive them from the exact same place.
+describe("getPrestigeOutcome", () => {
+  it("adds phdGain onto phdCount and runs both multipliers at the new total", () => {
+    const outcome = getPrestigeOutcome(0, 2);
+    expect(outcome.newPhdCount).toBe(2);
+    expect(outcome.productionMultiplier).toBe(getProductionMultiplier(2));
+    expect(outcome.costMultiplier).toBe(getCostMultiplier(2));
+  });
+
+  it("matches getProductionMultiplier/getCostMultiplier called directly at phdCount + phdGain", () => {
+    const outcome = getPrestigeOutcome(5, 3);
+    expect(outcome.newPhdCount).toBe(8);
+    expect(outcome.productionMultiplier).toBeCloseTo(getProductionMultiplier(8), 10);
+    expect(outcome.costMultiplier).toBeCloseTo(getCostMultiplier(8), 10);
+  });
+
+  it("phdGain of 0 leaves the outcome equal to the current phdCount", () => {
+    const outcome = getPrestigeOutcome(4, 0);
+    expect(outcome.newPhdCount).toBe(4);
+    expect(outcome.productionMultiplier).toBe(getProductionMultiplier(4));
   });
 });

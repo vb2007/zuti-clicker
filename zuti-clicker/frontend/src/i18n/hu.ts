@@ -33,6 +33,7 @@ export default {
     tooltipGain: "Bevétel növekedés",
     tooltipEach: "Egységenként",
     moreInfo: "További információ",
+    pricesDiscounted: "-{pct}% egységár",
     names: {
       alpha: "Alfa",
       beta: "Béta",
@@ -61,11 +62,20 @@ export default {
     emptyHint: "Gyűjts tovább tokeneket — hamarosan megjelenik itt az első fejlesztésed.",
     tooltipCost: "Ár",
     tooltipEffect: "Hatás",
-    familyFlat: "Kattintási Erő",
-    familyMultiplier: "Szorzók",
-    familySynergy: "Szinergia",
+    clickOnlyNote: "A fejlesztések csak a kattintásodat érintik — a másodpercenkénti termelést egyik sem.",
+    familyClickValue: "Kattintás Értéke",
+    familySynergy: "Bevétel-szinergia",
     familyCrit: "Kritikus Találatok",
-    familyBooster: "Booster Előnyök",
+    familyBooster: "Boosterek",
+    groupDescClickValue: "Fix tokent ad minden kattintáshoz, majd megszorozza.",
+    groupDescSynergy: "A másodpercenkénti termelésed egy részét minden kattintáshoz hozzáadja.",
+    groupDescCrit: "Esély arra, hogy egy kattintás többszörösét érje.",
+    groupDescBooster: "Hosszabb bónuszok, gyakrabban.",
+    superseded: "Felülírva",
+    aggregateSynergy: "+{pct}% a bevételből",
+    aggregateCrit: "{pct}% ×{mult}",
+    aggregateBoosterDuration: "+{pct}% időtartam",
+    aggregateBoosterSpawn: "+{pct}% gyakoriság",
     names: {
       chalk: "Kréta",
       redPen: "Piros Toll",
@@ -110,11 +120,17 @@ export default {
   boosters: {
     pickupAriaLabel: "Rejtélyes booster begyűjtése",
     claimedToast: "{name} aktiválva!",
+    claimedToastWithEffect: "{name} aktiválva — {effect}",
     claimFailed: "Nem sikerült begyűjteni a boostert — próbáld újra később.",
     names: {
       frenzy: "Értékelési Roham",
       clickStorm: "Röpdolgozat",
       clearance: "Eszközkiárusítás"
+    },
+    effect: {
+      production: "×{mult} termelés",
+      click: "×{mult} kattintásonként",
+      costReduction: "-{pct}% ár"
     }
   },
   settings: {
@@ -188,7 +204,10 @@ export default {
   prestige: {
     title: "Fokozat",
     lockedProgress: "Haladás a következő PhD-ig",
-    unlockedHint: "Készen állsz a disszertáció megvédésére.",
+    tokensToNext: "{amount} hiányzik",
+    unlockedHint: "+{gain} PhD készen áll megvédésre",
+    progressToNextGain: "Haladás +{next}. PhD felé",
+    afterPrestige: "Utána: +{prod}% termelés · -{cost}% ár",
     phdOwned: "Megszerzett PhD",
     production: "Termelés",
     costDiscount: "Egységár",

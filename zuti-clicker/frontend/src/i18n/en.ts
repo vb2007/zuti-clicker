@@ -33,6 +33,7 @@ export default {
     tooltipGain: "Income gain",
     tooltipEach: "Each unit",
     moreInfo: "More info",
+    pricesDiscounted: "-{pct}% unit prices",
     names: {
       alpha: "Alpha",
       beta: "Beta",
@@ -61,11 +62,20 @@ export default {
     emptyHint: "Keep earning tokens — your first upgrade will appear here soon.",
     tooltipCost: "Cost",
     tooltipEffect: "Effect",
-    familyFlat: "Click Power",
-    familyMultiplier: "Multipliers",
-    familySynergy: "Synergy",
+    clickOnlyNote: "Upgrades only affect your click — none of them touch tokens/sec.",
+    familyClickValue: "Click Value",
+    familySynergy: "Income Synergy",
     familyCrit: "Critical Hits",
-    familyBooster: "Booster Perks",
+    familyBooster: "Boosters",
+    groupDescClickValue: "Flat tokens added to every click, then multiplied.",
+    groupDescSynergy: "Adds a share of your tokens/sec to every click.",
+    groupDescCrit: "Chance for a click to pay several times over.",
+    groupDescBooster: "Longer buffs, more often.",
+    superseded: "Superseded",
+    aggregateSynergy: "+{pct}% of income",
+    aggregateCrit: "{pct}% ×{mult}",
+    aggregateBoosterDuration: "+{pct}% duration",
+    aggregateBoosterSpawn: "+{pct}% frequency",
     names: {
       chalk: "Chalk",
       redPen: "Red Pen",
@@ -110,11 +120,17 @@ export default {
   boosters: {
     pickupAriaLabel: "Claim a mystery booster",
     claimedToast: "{name} activated!",
+    claimedToastWithEffect: "{name} activated — {effect}",
     claimFailed: "Couldn't claim the booster — try again later.",
     names: {
       frenzy: "Grading Frenzy",
       clickStorm: "Pop Quiz",
       clearance: "Equipment Clearance"
+    },
+    effect: {
+      production: "×{mult} production",
+      click: "×{mult} per click",
+      costReduction: "-{pct}% prices"
     }
   },
   settings: {
@@ -188,7 +204,10 @@ export default {
   prestige: {
     title: "Prestige",
     lockedProgress: "Progress to next PhD",
-    unlockedHint: "Ready to defend your thesis.",
+    tokensToNext: "{amount} to go",
+    unlockedHint: "+{gain} PhD ready to defend",
+    progressToNextGain: "Progress to +{next} PhD",
+    afterPrestige: "After: +{prod}% production · -{cost}% cost",
     phdOwned: "PhDs owned",
     production: "Production",
     costDiscount: "Unit cost",

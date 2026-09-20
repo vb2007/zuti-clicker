@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useToastStore } from "@/stores/toastStore";
 import { api, ApiError } from "@/lib/api";
 import { pickWeightedBoosterId } from "@/utils/upgrades";
+import { getBoosterEffectText } from "@/utils/boosterEffectText";
 import {
   BOOSTER_DEFINITIONS,
   BOOSTER_SPAWN_MIN_SECS,
@@ -37,7 +38,16 @@ export function useBoosters() {
 
   function announce(boosterId: string): void {
     const name = t(`boosters.names.${boosterId}` as Parameters<typeof t>[0]);
-    toast.push("booster", t("boosters.claimedToast", { name }));
+    const def = BOOSTER_DEFINITIONS.find((d) => d.id === boosterId);
+    const effect = getBoosterEffectText(t, def);
+    // Falls back to the plain "activated!" toast if the id isn't one of
+    // BOOSTER_DEFINITIONS (getBoosterEffectText returns "") — a client/
+    // server BOOSTER_DEFINITIONS desync shouldn't render a toast with a
+    // dangling "— " and nothing after it.
+    const message = effect
+      ? t("boosters.claimedToastWithEffect", { name, effect })
+      : t("boosters.claimedToast", { name });
+    toast.push("booster", message);
   }
 
   const pickupVisible = ref(false);

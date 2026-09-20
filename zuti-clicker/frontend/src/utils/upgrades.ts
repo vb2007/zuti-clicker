@@ -1,4 +1,5 @@
 import { UPGRADE_DEFINITIONS, BOOSTER_DEFINITIONS, BASE_TOKENS_PER_CLICK } from "@/utils/gameConstants";
+import { formatNumber, formatPercent } from "@/utils/formatters";
 import type { ActiveBoosterState, BoosterKind, UpgradeDefinition } from "@/types";
 
 /**
@@ -42,8 +43,13 @@ export function getClickSynergy(ownedUpgrades: string[]): number {
     .reduce((sum, d) => sum + d.effect, 0);
 }
 
-/** Highest-cost owned crit tier, since tiers replace rather than stack. */
-function bestCritTier(ownedUpgrades: string[]): UpgradeDefinition | undefined {
+/**
+ * Highest-cost owned crit tier, since tiers replace rather than stack.
+ * Exported (not just used internally) so the owned-upgrades UI can mark
+ * every *other* owned crit tier as superseded — bought, but not the one
+ * currently in effect.
+ */
+export function bestCritTier(ownedUpgrades: string[]): UpgradeDefinition | undefined {
   const tiers = ownedDefs(ownedUpgrades).filter((d) => d.family === "crit");
   if (tiers.length === 0) return undefined;
   return tiers.reduce((best, d) => (d.cost > best.cost ? d : best));
@@ -146,4 +152,30 @@ export function pickWeightedBoosterId(rng: () => number = Math.random): string {
   // Floating-point fallback — should be unreachable since the loop above
   // covers the full [0, totalWeight) range.
   return BOOSTER_DEFINITIONS[BOOSTER_DEFINITIONS.length - 1]!.id;
+}
+
+/**
+ * Compact effect label for one upgrade, shared between the buy grid
+ * (UpgradeTile.vue) and the owned-upgrades summary (UpgradesPanel.vue) so
+ * the two surfaces can never show a different number for the same upgrade.
+ * formatPercent (not Math.round): synergy/booster perks step by fractions
+ * of a percent, so whole-percent rounding would misrepresent a half-step
+ * tier the same way it would for the PhD discount.
+ */
+export function getUpgradeEffectLabel(def: UpgradeDefinition): string {
+  switch (def.family) {
+    case "flat":
+      return `+${formatNumber(def.effect)}`;
+    case "multiplier":
+      return `×${def.effect}`;
+    case "synergy":
+      return `+${formatPercent(def.effect * 100)}%`;
+    case "crit":
+      return `${formatPercent((def.critChance ?? 0) * 100)}% ×${def.critMultiplier}`;
+    case "boosterDuration":
+    case "boosterSpawn":
+      return `+${formatPercent(def.effect * 100)}%`;
+    default:
+      return "";
+  }
 }

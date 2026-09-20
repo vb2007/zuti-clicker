@@ -13,9 +13,17 @@ const stats = computed(() => [
   {
     label: t("status.perSecond"),
     value: `${formatRate(game.tokensPerSecond)}/s`,
-    primary: false
+    primary: false,
+    boosted: game.boosterProductionActive,
+    badge: `×${game.boosterProductionMultiplier}`
   },
-  { label: t("status.perClick"), value: `+${formatRate(game.tokensPerClick)}`, primary: false },
+  {
+    label: t("status.perClick"),
+    value: `+${formatRate(game.tokensPerClick)}`,
+    primary: false,
+    boosted: game.boosterClickActive,
+    badge: `×${game.boosterClickMultiplier}`
+  },
   { label: t("status.totalEarned"), value: formatNumber(game.totalTokensEarned), primary: false },
   { label: t("status.totalClicks"), value: formatNumber(game.totalClicks), primary: false },
   { label: t("status.timePlayed"), value: formatTime(game.elapsedSeconds), primary: false },
@@ -47,6 +55,8 @@ const runStats = computed(() => [
         :label="s.label"
         :value="s.value"
         :primary="s.primary"
+        :boosted="s.boosted"
+        :badge="s.badge"
       />
     </div>
 

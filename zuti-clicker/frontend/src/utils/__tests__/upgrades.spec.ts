@@ -10,11 +10,17 @@ import {
   getActiveBoosterMultiplier,
   getClickValue,
   rollCrit,
-  pickWeightedBoosterId
+  pickWeightedBoosterId,
+  getUpgradeEffectLabel,
+  bestCritTier
 } from "@/utils/upgrades";
-import { BOOSTER_DEFINITIONS } from "@/utils/gameConstants";
+import { BOOSTER_DEFINITIONS, UPGRADE_DEFINITIONS } from "@/utils/gameConstants";
 import { formatPercent } from "@/utils/formatters";
 import type { ActiveBoosterState } from "@/types";
+
+function upgradeDef(id: string) {
+  return UPGRADE_DEFINITIONS.find((d) => d.id === id)!;
+}
 
 describe("getFlatClickBonus", () => {
   it("is 0 with nothing owned", () => {
@@ -226,5 +232,40 @@ describe("pickWeightedBoosterId", () => {
       const roll = i / 1000;
       expect(knownIds.has(pickWeightedBoosterId(() => roll))).toBe(true);
     }
+  });
+});
+
+describe("getUpgradeEffectLabel", () => {
+  it("flat: +N", () => {
+    expect(getUpgradeEffectLabel(upgradeDef("chalk"))).toBe("+1");
+  });
+
+  it("multiplier: ×N", () => {
+    expect(getUpgradeEffectLabel(upgradeDef("firmHandshake"))).toBe("×2");
+  });
+
+  it("crit: chance% ×multiplier", () => {
+    expect(getUpgradeEffectLabel(upgradeDef("luckyGuess"))).toBe("5% ×3");
+  });
+
+  // Half-percent regression, shared by UpgradeTile.vue's buy grid AND the
+  // owned strip via this one function — formatPercent, never Math.round.
+  it("synergy: a half-percent tier displays as 0.5%, not 1% (Math.round regression)", () => {
+    expect(getUpgradeEffectLabel(upgradeDef("lectureNotes"))).toBe("+0.5%");
+  });
+
+  it("boosterDuration/boosterSpawn: +N%", () => {
+    expect(getUpgradeEffectLabel(upgradeDef("conferenceBadge"))).toBe("+30%");
+    expect(getUpgradeEffectLabel(upgradeDef("departmentNewsletter"))).toBe("+33.3%");
+  });
+});
+
+describe("bestCritTier", () => {
+  it("undefined with no crit tier owned", () => {
+    expect(bestCritTier([])).toBeUndefined();
+  });
+
+  it("the highest-cost owned tier wins when multiple are owned", () => {
+    expect(bestCritTier(["luckyGuess", "peerReview"])?.id).toBe("peerReview");
   });
 });

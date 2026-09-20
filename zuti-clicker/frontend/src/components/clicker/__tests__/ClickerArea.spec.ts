@@ -26,6 +26,25 @@ describe("ClickerArea — clicks-per-second pill", () => {
     expect(wrapper.find(".cps-val").text()).not.toBe("0.0");
   });
 
+  // Regression: .cps-pill used to be a plain v-if flow child of
+  // .clicker-content (a centered column flexbox), so mounting/unmounting it
+  // changed the column's total height and visibly shifted the click circle
+  // up and down. .cps-slot is always rendered at a fixed height so the pill
+  // appearing/disappearing inside it never changes .clicker-content's height.
+  it("regression: .cps-slot is always present at a fixed height, whether or not the pill is showing", async () => {
+    const wrapper = mount(ClickerArea);
+
+    const slotBeforeClick = wrapper.find(".cps-slot");
+    expect(slotBeforeClick.exists()).toBe(true);
+    expect(wrapper.find(".cps-pill").exists()).toBe(false);
+
+    await wrapper.find(".circle-wrap").trigger("pointerdown", { button: 0, clientX: 1, clientY: 1 });
+    expect(wrapper.find(".cps-slot").exists()).toBe(true);
+    expect(wrapper.find(".cps-pill").exists()).toBe(true);
+    // Same element throughout — never removed and re-added.
+    expect(wrapper.find(".cps-slot").element).toBe(slotBeforeClick.element);
+  });
+
   // Regression: recomputing cps only inside the click handler meant it never
   // re-ran once clicks stopped, so the pill froze at its last value forever
   // instead of decaying back to 0 and hiding — see ClickerArea.vue's

@@ -99,6 +99,51 @@ describe("useBoosters", () => {
       expect(boosters.pickupVisible.value).toBe(false);
     });
 
+    // "frenzy" is BOOSTER_DEFINITIONS' production booster (×7) — the toast
+    // must say what it does, not just its fantasy name, so a new player can
+    // tell "Grading Frenzy" apart from "Pop Quiz" without guessing.
+    it("the claim toast states the booster's concrete effect, not just its name", async () => {
+      loginAs();
+      const toast = useToastStore();
+      vi.mocked(api.boosters.claim).mockResolvedValue({
+        message: "Booster claimed.",
+        boosterId: "frenzy",
+        remainingMs: 60_000,
+        nextAvailableInMs: 120_000
+      });
+
+      const { boosters } = mountBoosters();
+      forcePickupVisible();
+      await boosters.claimPickup();
+
+      const boosterToast = toast.toasts.find((t) => t.kind === "booster");
+      expect(boosterToast?.message).toContain("Grading Frenzy");
+      expect(boosterToast?.message).toContain("×7 production");
+    });
+
+    // Defensive regression: BOOSTER_DEFINITIONS is hand-duplicated against
+    // the API's own booster ids with nothing validating the two stay in
+    // sync — an id the client doesn't recognize must still produce a clean
+    // toast, not "Name activated — " with a dangling dash and no effect.
+    it("falls back to the plain toast when the server grants an unrecognized booster id", async () => {
+      loginAs();
+      const toast = useToastStore();
+      vi.mocked(api.boosters.claim).mockResolvedValue({
+        message: "Booster claimed.",
+        boosterId: "someFutureBoosterNotYetKnownToTheClient",
+        remainingMs: 60_000,
+        nextAvailableInMs: 120_000
+      });
+
+      const { boosters } = mountBoosters();
+      forcePickupVisible();
+      await boosters.claimPickup();
+
+      const boosterToast = toast.toasts.find((t) => t.kind === "booster");
+      expect(boosterToast?.message).not.toContain("—");
+      expect(boosterToast?.message).not.toMatch(/\s$/);
+    });
+
     it("on 409 (cooldown drift): re-syncs the schedule silently — no error toast, no error thrown", async () => {
       loginAs();
       const toast = useToastStore();

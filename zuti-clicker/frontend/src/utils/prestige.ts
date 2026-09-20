@@ -58,3 +58,22 @@ export function getPrestigeProgress(runTokensEarned: number): number {
   const p = (Math.max(0, runTokensEarned) - lo) / (hi - lo);
   return Math.min(1, Math.max(0, p));
 }
+
+/**
+ * The production/cost multipliers a player would have immediately after
+ * confirming prestige right now (phdCount + phdGain). Shared by
+ * PrestigePanel.vue's "After: ..." line and PrestigeConfirmModal.vue's
+ * before/after table so the two can never disagree about what prestiging
+ * actually gives — each still formats the raw numbers its own way.
+ */
+export function getPrestigeOutcome(
+  phdCount: number,
+  phdGain: number
+): { newPhdCount: number; productionMultiplier: number; costMultiplier: number } {
+  const newPhdCount = phdCount + phdGain;
+  return {
+    newPhdCount,
+    productionMultiplier: getProductionMultiplier(newPhdCount),
+    costMultiplier: getCostMultiplier(newPhdCount)
+  };
+}

@@ -3,7 +3,8 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { UPGRADE_DEFINITIONS } from "@/utils/gameConstants";
-import { formatNumber, formatPercent } from "@/utils/formatters";
+import { formatNumber } from "@/utils/formatters";
+import { getUpgradeEffectLabel } from "@/utils/upgrades";
 import { useAnchoredTooltip } from "@/composables/useAnchoredTooltip";
 import TooltipCard from "@/components/shared/TooltipCard.vue";
 
@@ -19,28 +20,9 @@ const nameKey = computed(() => `upgrades.names.${props.upgradeId}` as Parameters
 const descKey = computed(() => `upgrades.descriptions.${props.upgradeId}` as Parameters<typeof t>[0]);
 
 // A compact label for the tile face — the tooltip (below) spells out the
-// full effect in words. formatPercent (not Math.round): synergy/booster
-// perks step by fractions of a percent, so whole-percent rounding would
-// misrepresent a half-step tier the same way it would for the PhD discount.
-const effectLabel = computed(() => {
-  const d = def.value;
-  if (!d) return "";
-  switch (d.family) {
-    case "flat":
-      return `+${formatNumber(d.effect)}`;
-    case "multiplier":
-      return `×${d.effect}`;
-    case "synergy":
-      return `+${formatPercent(d.effect * 100)}%`;
-    case "crit":
-      return `${formatPercent((d.critChance ?? 0) * 100)}% ×${d.critMultiplier}`;
-    case "boosterDuration":
-    case "boosterSpawn":
-      return `+${formatPercent(d.effect * 100)}%`;
-    default:
-      return "";
-  }
-});
+// full effect in words. Shared with the owned-upgrades summary
+// (UpgradesPanel.vue) via utils/upgrades.ts so the two can't drift apart.
+const effectLabel = computed(() => (def.value ? getUpgradeEffectLabel(def.value) : ""));
 
 // Whole-tile hover/focus opens the tooltip (unlike UnitCard's dedicated
 // info-button icon) — there's no room for a second interactive element in a

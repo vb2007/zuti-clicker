@@ -68,7 +68,12 @@ function toggleLanguage() {
          StatusColumn (which normally shows it) is off-canvas there. -->
     <div class="mini-stats" aria-hidden="true">
       <span class="mini-tokens">🪙 {{ formatNumber(game.tokens) }}</span>
-      <span class="mini-tps">⚡ {{ formatRate(game.tokensPerSecond) }}/s</span>
+      <!-- 📈 rather than ⚡ — that glyph is reserved for boosters (see
+           ActiveBoostersBar/BoosterPickup) and colliding with it here made a
+           boosted rate look identical to an idle one at a glance. -->
+      <span class="mini-tps" :class="{ boosted: game.boosterProductionMultiplier > 1 }">
+        📈 {{ formatRate(game.tokensPerSecond) }}/s
+      </span>
     </div>
   </header>
 </template>
@@ -186,6 +191,10 @@ function toggleLanguage() {
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: var(--text-secondary);
+  }
+
+  .mini-tps.boosted {
+    color: var(--booster);
   }
 }
 </style>

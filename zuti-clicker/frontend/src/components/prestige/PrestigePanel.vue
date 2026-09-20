@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { formatNumber, formatPercent } from "@/utils/formatters";
+import { getPrestigeOutcome } from "@/utils/prestige";
 import { PHD_TOKEN_SCALE, UNIT_REVEAL_FRACTION } from "@/utils/gameConstants";
 
 const { t } = useI18n();
@@ -24,6 +25,30 @@ const progressPercent = computed(() => Math.round(game.prestigeProgress * 100));
 // rounding to a whole percent would make 1 PhD's true 0.5% look like 1%.
 const productionPercent = computed(() => formatPercent((game.productionMultiplier - 1) * 100));
 const costDiscountPercent = computed(() => formatPercent((1 - game.costMultiplier) * 100));
+
+// game.canPrestige is exactly "phdGain >= 1" — see gameStore.ts. Below this
+// point the panel previously showed nothing about the pending gain at all:
+// the progress bar and button both read as "ready" with no number in sight
+// until the confirm modal opened.
+const ready = computed(() => game.canPrestige);
+
+// Shared with PrestigeConfirmModal.vue's before/after table via
+// getPrestigeOutcome — what the player would have *after* confirming right
+// now, formatted here as the bonus percentage rather than the modal's
+// absolute multiplier.
+const outcome = computed(() => getPrestigeOutcome(game.phdCount, game.phdGain));
+const afterProductionPercent = computed(() =>
+  formatPercent((outcome.value.productionMultiplier - 1) * 100)
+);
+const afterCostPercent = computed(() => formatPercent((1 - outcome.value.costMultiplier) * 100));
+
+// One progress bar, one label, driven by `ready` — see the template comment
+// on why the label (and therefore what a 0% reset means) differs by state.
+const progressLabel = computed(() =>
+  ready.value
+    ? t("prestige.progressToNextGain", { next: game.phdGain + 1 })
+    : t("prestige.lockedProgress")
+);
 </script>
 
 <template>
@@ -43,15 +68,36 @@ const costDiscountPercent = computed(() => formatPercent((1 - game.costMultiplie
         <span class="mult-chip">-{{ costDiscountPercent }}% {{ t("prestige.costDiscount") }}</span>
       </div>
 
+      <!-- Ready: the headline number the panel used to hide entirely (only
+           the confirm modal showed it). -->
+      <span v-if="ready" class="ready-headline">
+        {{ t("prestige.unlockedHint", { gain: game.phdGain }) }}
+      </span>
+
+      <!-- One progress bar for both states — only the label (progressLabel)
+           and the trailing caption/after-line differ. Ready relabels to
+           "progress to +N" (rather than repeating "next PhD") because the
+           bar resets to 0% the instant a PhD is banked — showing that
+           against the OLD label would misleadingly look like nothing was
+           gained. -->
       <div class="progress-block">
         <div class="progress-label">
-          <span>{{ t("prestige.lockedProgress") }}</span>
+          <span>{{ progressLabel }}</span>
           <span class="progress-percent">{{ progressPercent }}%</span>
         </div>
         <div class="progress-track">
           <div class="progress-fill" :style="{ transform: `scaleX(${progressPercent / 100})` }" />
         </div>
+        <span v-if="!ready" class="progress-caption">
+          {{ t("prestige.tokensToNext", { amount: formatNumber(game.tokensToNextPhd) }) }}
+        </span>
       </div>
+
+      <span v-if="ready" class="after-line">
+        {{
+          t("prestige.afterPrestige", { prod: afterProductionPercent, cost: afterCostPercent })
+        }}
+      </span>
 
       <button
         class="prestige-btn"
@@ -147,6 +193,24 @@ const costDiscountPercent = computed(() => formatPercent((1 - game.costMultiplie
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
   font-weight: 600;
+}
+
+.progress-caption {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ready-headline {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+
+.after-line {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .progress-track {

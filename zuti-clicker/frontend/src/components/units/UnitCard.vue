@@ -27,6 +27,10 @@ const effectiveAmount = computed(() => {
 });
 
 const cost = computed(() => game.getBuyCost(props.unitId, props.multiplier));
+// The clearance booster's discount is otherwise invisible anywhere near the
+// price it's actually discounting — tint the cost the shared booster accent
+// while it's active, matching the affected StatusColumn stats' treatment.
+const discounted = computed(() => game.boosterCostReductionActive);
 const affordable = computed(() => game.canAfford(props.unitId, props.multiplier));
 const gainPerS = computed(() => game.getProductionGain(props.unitId, props.multiplier));
 
@@ -111,7 +115,7 @@ const {
       <!-- right: buy button -->
       <button class="buy-btn" :disabled="!affordable || effectiveAmount === 0" @click.stop="buy">
         <span class="btn-mult">{{ btnLabel }}</span>
-        <span class="btn-cost">{{ formatNumber(cost) }}</span>
+        <span class="btn-cost" :class="{ discounted }">{{ formatNumber(cost) }}</span>
       </button>
     </div>
   </Transition>
@@ -295,6 +299,13 @@ const {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1.3;
+}
+
+/* clearance booster active — see the `discounted` computed. Specificity
+   below .buy-btn:disabled .btn-cost, so an unaffordable price still grays
+   out normally rather than looking simultaneously discounted and disabled. */
+.btn-cost.discounted {
+  color: var(--booster);
 }
 
 @media (max-width: 759px) {
