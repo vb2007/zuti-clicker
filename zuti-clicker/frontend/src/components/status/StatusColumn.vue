@@ -9,13 +9,27 @@ import PrestigePanel from "@/components/prestige/PrestigePanel.vue";
 const { t } = useI18n();
 const game = useGameStore();
 
+// A booster multiplier is 1 when nothing of that kind is active — >1 is the
+// only signal that matters here, matching how effectiveCostMultiplier/etc.
+// already read (gameStore.ts).
+const productionBoosted = computed(() => game.boosterProductionMultiplier > 1);
+const clickBoosted = computed(() => game.boosterClickMultiplier > 1);
+
 const stats = computed(() => [
   {
     label: t("status.perSecond"),
     value: `${formatRate(game.tokensPerSecond)}/s`,
-    primary: false
+    primary: false,
+    boosted: productionBoosted.value,
+    badge: `×${game.boosterProductionMultiplier}`
   },
-  { label: t("status.perClick"), value: `+${formatRate(game.tokensPerClick)}`, primary: false },
+  {
+    label: t("status.perClick"),
+    value: `+${formatRate(game.tokensPerClick)}`,
+    primary: false,
+    boosted: clickBoosted.value,
+    badge: `×${game.boosterClickMultiplier}`
+  },
   { label: t("status.totalEarned"), value: formatNumber(game.totalTokensEarned), primary: false },
   { label: t("status.totalClicks"), value: formatNumber(game.totalClicks), primary: false },
   { label: t("status.timePlayed"), value: formatTime(game.elapsedSeconds), primary: false },
@@ -47,6 +61,8 @@ const runStats = computed(() => [
         :label="s.label"
         :value="s.value"
         :primary="s.primary"
+        :boosted="s.boosted"
+        :badge="s.badge"
       />
     </div>
 

@@ -33,6 +33,7 @@ export default {
     tooltipGain: "Bevétel növekedés",
     tooltipEach: "Egységenként",
     moreInfo: "További információ",
+    pricesDiscounted: "-{pct}% egységár",
     names: {
       alpha: "Alfa",
       beta: "Béta",
@@ -109,12 +110,17 @@ export default {
   },
   boosters: {
     pickupAriaLabel: "Rejtélyes booster begyűjtése",
-    claimedToast: "{name} aktiválva!",
+    claimedToastWithEffect: "{name} aktiválva — {effect}",
     claimFailed: "Nem sikerült begyűjteni a boostert — próbáld újra később.",
     names: {
       frenzy: "Értékelési Roham",
       clickStorm: "Röpdolgozat",
       clearance: "Eszközkiárusítás"
+    },
+    effect: {
+      production: "×{mult} termelés",
+      click: "×{mult} kattintásonként",
+      costReduction: "-{pct}% ár"
     }
   },
   settings: {

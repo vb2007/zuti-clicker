@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { BOOSTER_DEFINITIONS } from "@/utils/gameConstants";
+import { getBoosterEffectText } from "@/utils/boosterEffectText";
 
 const { t } = useI18n();
 const game = useGameStore();
@@ -27,7 +28,7 @@ const pills = computed(() =>
     .map((b) => {
       const def = BOOSTER_DEFINITIONS.find((d) => d.id === b.id);
       const remainingSecs = Math.max(0, Math.ceil((b.expiresAt - now.value) / 1000));
-      return { id: b.id, kind: def?.kind, remainingSecs };
+      return { id: b.id, kind: def?.kind, effect: getBoosterEffectText(t, b.id), remainingSecs };
     })
     .filter((p) => p.remainingSecs > 0)
 );
@@ -44,6 +45,8 @@ function formatCountdown(secs: number): string {
     <div v-for="p in pills" :key="p.id" class="booster-chip" :class="p.kind">
       <span class="chip-icon" aria-hidden="true">⚡</span>
       <span class="chip-label">{{ t(`boosters.names.${p.id}`) }}</span>
+      <span class="chip-sep" aria-hidden="true">·</span>
+      <span class="chip-effect">{{ p.effect }}</span>
       <span class="chip-time">{{ formatCountdown(p.remainingSecs) }}</span>
     </div>
   </div>
@@ -85,6 +88,18 @@ function formatCountdown(secs: number): string {
   font-size: 11px;
   font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.chip-sep {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.chip-effect {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--booster);
   white-space: nowrap;
 }
 

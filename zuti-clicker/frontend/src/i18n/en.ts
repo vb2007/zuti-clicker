@@ -33,6 +33,7 @@ export default {
     tooltipGain: "Income gain",
     tooltipEach: "Each unit",
     moreInfo: "More info",
+    pricesDiscounted: "-{pct}% unit prices",
     names: {
       alpha: "Alpha",
       beta: "Beta",
@@ -109,12 +110,17 @@ export default {
   },
   boosters: {
     pickupAriaLabel: "Claim a mystery booster",
-    claimedToast: "{name} activated!",
+    claimedToastWithEffect: "{name} activated — {effect}",
     claimFailed: "Couldn't claim the booster — try again later.",
     names: {
       frenzy: "Grading Frenzy",
       clickStorm: "Pop Quiz",
       clearance: "Equipment Clearance"
+    },
+    effect: {
+      production: "×{mult} production",
+      click: "×{mult} per click",
+      costReduction: "-{pct}% prices"
     }
   },
   settings: {

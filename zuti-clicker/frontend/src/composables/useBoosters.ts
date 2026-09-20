@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useToastStore } from "@/stores/toastStore";
 import { api, ApiError } from "@/lib/api";
 import { pickWeightedBoosterId } from "@/utils/upgrades";
+import { getBoosterEffectText } from "@/utils/boosterEffectText";
 import {
   BOOSTER_DEFINITIONS,
   BOOSTER_SPAWN_MIN_SECS,
@@ -37,7 +38,8 @@ export function useBoosters() {
 
   function announce(boosterId: string): void {
     const name = t(`boosters.names.${boosterId}` as Parameters<typeof t>[0]);
-    toast.push("booster", t("boosters.claimedToast", { name }));
+    const effect = getBoosterEffectText(t, boosterId);
+    toast.push("booster", t("boosters.claimedToastWithEffect", { name, effect }));
   }
 
   const pickupVisible = ref(false);

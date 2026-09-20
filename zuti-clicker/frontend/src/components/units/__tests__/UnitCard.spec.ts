@@ -131,4 +131,19 @@ describe("UnitCard", () => {
       expect(body().find(".tooltip").exists()).toBe(false);
     });
   });
+
+  describe("clearance booster discount", () => {
+    it("does not tint the price when no cost-reduction booster is active", () => {
+      const wrapper = mount(UnitCard, { props: { unitId: "alpha", multiplier: 1 } });
+      expect(wrapper.find(".btn-cost").classes()).not.toContain("discounted");
+    });
+
+    it("tints the price while the clearance booster is active", () => {
+      const game = useGameStore();
+      game.grantBooster("clearance", 120_000);
+
+      const wrapper = mount(UnitCard, { props: { unitId: "alpha", multiplier: 1 } });
+      expect(wrapper.find(".btn-cost").classes()).toContain("discounted");
+    });
+  });
 });
