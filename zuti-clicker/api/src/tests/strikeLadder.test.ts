@@ -116,6 +116,25 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     expect(res.body.status).toBe("clean");
   });
 
+  // Regression (the actual reported incident, end-to-end): the previous test
+  // only proves an idle digest's shape is now accepted — it says nothing
+  // about whether a REAL sustained autoclicker session, reported with the
+  // same realistic non-integer windowMs a real browser sends, actually gets
+  // caught. This is the literal scenario from the incident: a ~44.5 CPS
+  // autoclicker held flat for two consecutive heartbeat windows.
+  it("regression: a realistic sustained-autoclicker session (fractional windowMs + suspicious shape) is actually restricted end-to-end", async () => {
+    const cookie = await registerAndLogin();
+    const liveDigest = { ...AUTOCLICKER_DIGEST, windowMs: 60001.200000000186 };
+    await api.post("/anticheat/report").set("Cookie", cookie).send(liveDigest);
+    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(liveDigest);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("restricted");
+    expect(res.body.strikeCount).toBe(1);
+
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(true);
+  });
+
   it("a single flagged (non-decisive) digest is not enough to strike on its own", async () => {
     const cookie = await registerAndLogin();
     const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
