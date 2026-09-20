@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, type ComputedRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { UPGRADE_DEFINITIONS } from "@/utils/gameConstants";
@@ -21,71 +21,13 @@ import type { UpgradeFamily } from "@/types";
 const { t } = useI18n();
 const game = useGameStore();
 
-// Display grouping is a UI-only concern (belongs here, not in
-// gameConstants): flat and multiplier are two distinct formula families but
-// both act on the same click value, so they read as one group to the
-// player; boosterDuration/boosterSpawn are likewise two formulas that read
-// as one "booster perks" section. Each group also carries a one-line
-// plain-language subtitle — the reported confusion was "I don't know what
-// category boosts clicks, what boosts passive income", so every group says
-// up front what it actually touches.
-const FAMILY_GROUPS: {
-  key: string;
-  families: UpgradeFamily[];
-  labelKey: Parameters<typeof t>[0];
-  descKey: Parameters<typeof t>[0];
-}[] = [
-  {
-    key: "clickValue",
-    families: ["flat", "multiplier"],
-    labelKey: "upgrades.familyClickValue",
-    descKey: "upgrades.groupDescClickValue"
-  },
-  {
-    key: "synergy",
-    families: ["synergy"],
-    labelKey: "upgrades.familySynergy",
-    descKey: "upgrades.groupDescSynergy"
-  },
-  { key: "crit", families: ["crit"], labelKey: "upgrades.familyCrit", descKey: "upgrades.groupDescCrit" },
-  {
-    key: "booster",
-    families: ["boosterDuration", "boosterSpawn"],
-    labelKey: "upgrades.familyBooster",
-    descKey: "upgrades.groupDescBooster"
-  }
-];
-
-// Only revealed, not-yet-owned upgrades appear in the buy grid — an owned
-// one moves to the compact strip below instead of lingering in the grid at
-// a permanently-disabled "owned" state (see the plan's UI section). Order
-// preserves UPGRADE_DEFINITIONS' own ascending-cost order within a family.
-const visibleGroups = computed(() =>
-  FAMILY_GROUPS.map((group) => ({
-    ...group,
-    upgrades: UPGRADE_DEFINITIONS.filter(
-      (d) =>
-        group.families.includes(d.family) &&
-        !game.isUpgradeOwned(d.id) &&
-        game.isUpgradeRevealed(d.id)
-    )
-  })).filter((group) => group.upgrades.length > 0)
-);
-
-const ownedUpgradeDefs = computed(() => UPGRADE_DEFINITIONS.filter((d) => game.isUpgradeOwned(d.id)));
-const totalCount = UPGRADE_DEFINITIONS.length;
-
-// Only the highest-cost owned crit tier is actually in effect (see
-// bestCritTier's own comment) — every other owned crit tier did nothing the
-// moment a stronger one was bought. That's exactly "what have I bought and
-// what's actually active", so it's marked rather than left silent.
-const bestCritId = computed(() => bestCritTier(game.ownedUpgrades)?.id);
-
 // Live aggregate per group — the actual number this group of purchases is
 // currently contributing, not just a wall of names. Each formula already
 // filters by family internally, so passing the whole ownedUpgrades list is
 // correct and cheap; only the assembly (which parts to join, in what units)
-// differs per group.
+// differs per group. Declared before FAMILY_GROUPS below so each group can
+// carry its own aggregate directly (a ComputedRef, not a string key into a
+// separate lookup table a 5th group could forget to extend).
 const clickValueAggregate = computed(() => {
   const flat = getFlatClickBonus(game.ownedUpgrades);
   const mult = getClickMultiplier(game.ownedUpgrades);
@@ -115,18 +57,84 @@ const boosterAggregate = computed(() => {
   }
   return parts.join(" · ");
 });
-const AGGREGATE_BY_KEY: Record<string, () => string> = {
-  clickValue: () => clickValueAggregate.value,
-  synergy: () => synergyAggregate.value,
-  crit: () => critAggregate.value,
-  booster: () => boosterAggregate.value
-};
+
+// Display grouping is a UI-only concern (belongs here, not in
+// gameConstants): flat and multiplier are two distinct formula families but
+// both act on the same click value, so they read as one group to the
+// player; boosterDuration/boosterSpawn are likewise two formulas that read
+// as one "booster perks" section. Each group also carries a one-line
+// plain-language subtitle — the reported confusion was "I don't know what
+// category boosts clicks, what boosts passive income", so every group says
+// up front what it actually touches.
+const FAMILY_GROUPS: {
+  key: string;
+  families: UpgradeFamily[];
+  labelKey: Parameters<typeof t>[0];
+  descKey: Parameters<typeof t>[0];
+  aggregate: ComputedRef<string>;
+}[] = [
+  {
+    key: "clickValue",
+    families: ["flat", "multiplier"],
+    labelKey: "upgrades.familyClickValue",
+    descKey: "upgrades.groupDescClickValue",
+    aggregate: clickValueAggregate
+  },
+  {
+    key: "synergy",
+    families: ["synergy"],
+    labelKey: "upgrades.familySynergy",
+    descKey: "upgrades.groupDescSynergy",
+    aggregate: synergyAggregate
+  },
+  {
+    key: "crit",
+    families: ["crit"],
+    labelKey: "upgrades.familyCrit",
+    descKey: "upgrades.groupDescCrit",
+    aggregate: critAggregate
+  },
+  {
+    key: "booster",
+    families: ["boosterDuration", "boosterSpawn"],
+    labelKey: "upgrades.familyBooster",
+    descKey: "upgrades.groupDescBooster",
+    aggregate: boosterAggregate
+  }
+];
+
+// Only revealed, not-yet-owned upgrades appear in the buy grid — an owned
+// one moves to the compact strip below instead of lingering in the grid at
+// a permanently-disabled "owned" state (see the plan's UI section). Order
+// preserves UPGRADE_DEFINITIONS' own ascending-cost order within a family.
+const visibleGroups = computed(() =>
+  FAMILY_GROUPS.map((group) => ({
+    ...group,
+    upgrades: UPGRADE_DEFINITIONS.filter(
+      (d) =>
+        group.families.includes(d.family) &&
+        !game.isUpgradeOwned(d.id) &&
+        game.isUpgradeRevealed(d.id)
+    )
+  })).filter((group) => group.upgrades.length > 0)
+);
+
+const ownedUpgradeDefs = computed(() => UPGRADE_DEFINITIONS.filter((d) => game.isUpgradeOwned(d.id)));
+const totalCount = UPGRADE_DEFINITIONS.length;
+
+// Only the highest-cost owned crit tier is actually in effect (see
+// bestCritTier's own comment) — every other owned crit tier did nothing the
+// moment a stronger one was bought. That's exactly "what have I bought and
+// what's actually active", so it's marked rather than left silent.
+const bestCritId = computed(() => bestCritTier(game.ownedUpgrades)?.id);
 
 const ownedGroups = computed(() =>
   FAMILY_GROUPS.map((group) => ({
     ...group,
-    defs: UPGRADE_DEFINITIONS.filter((d) => group.families.includes(d.family) && game.isUpgradeOwned(d.id)),
-    aggregate: AGGREGATE_BY_KEY[group.key]!()
+    defs: UPGRADE_DEFINITIONS.filter(
+      (d) => group.families.includes(d.family) && game.isUpgradeOwned(d.id)
+    ),
+    aggregate: group.aggregate.value
   })).filter((group) => group.defs.length > 0)
 );
 </script>

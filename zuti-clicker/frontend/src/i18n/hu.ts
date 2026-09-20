@@ -119,6 +119,7 @@ export default {
   },
   boosters: {
     pickupAriaLabel: "Rejtélyes booster begyűjtése",
+    claimedToast: "{name} aktiválva!",
     claimedToastWithEffect: "{name} aktiválva — {effect}",
     claimFailed: "Nem sikerült begyűjteni a boostert — próbáld újra később.",
     names: {

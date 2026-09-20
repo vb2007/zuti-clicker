@@ -1,5 +1,5 @@
-import { BOOSTER_DEFINITIONS } from "@/utils/gameConstants";
 import { formatPercent } from "@/utils/formatters";
+import type { BoosterDefinition } from "@/types";
 
 // A generic (key, params) => string shape rather than importing vue-i18n's
 // own type here — this keeps utils/ framework-free like its neighbors
@@ -10,9 +10,12 @@ type Translate = (key: string, params?: Record<string, unknown>) => string;
 
 // Turns a booster's kind + magnitude into the plain-language phrase players
 // asked for ("Pop Quiz" boosts *what*, exactly?) — shared so the active-buff
-// chip and the claim toast never drift out of sync with each other.
-export function getBoosterEffectText(t: Translate, boosterId: string): string {
-  const def = BOOSTER_DEFINITIONS.find((d) => d.id === boosterId);
+// chip and the claim toast never drift out of sync with each other. Takes
+// the already-resolved definition (rather than an id it would re-look-up
+// itself) since both call sites already have one on hand; `undefined`
+// covers a booster id that isn't in BOOSTER_DEFINITIONS (a client/server
+// desync), returning "" for the caller to fall back on.
+export function getBoosterEffectText(t: Translate, def: BoosterDefinition | undefined): string {
   if (!def) return "";
   switch (def.kind) {
     case "production":

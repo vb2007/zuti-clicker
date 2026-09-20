@@ -118,6 +118,14 @@ export const useGameStore = defineStore("game", () => {
   const boosterProductionMultiplier = boosterMultiplier("production");
   const boosterClickMultiplier = boosterMultiplier("click");
   const boosterCostMultiplier = boosterMultiplier("costReduction");
+  // "Is a booster of this kind currently active" booleans — centralized here
+  // rather than each UI component re-deriving its own >1/<1 threshold check
+  // against the raw multiplier above (StatusColumn's boosted stat badges,
+  // UnitCard's discounted price tint, UnitsPanel's discount chip all read
+  // these instead).
+  const boosterProductionActive = computed(() => boosterProductionMultiplier.value > 1);
+  const boosterClickActive = computed(() => boosterClickMultiplier.value > 1);
+  const boosterCostReductionActive = computed(() => boosterCostMultiplier.value < 1);
   // What unit purchases actually pay: the permanent PhD discount stacked
   // with any transient booster discount (see costMultiplier's comment above
   // for why the two are kept separate).
@@ -395,6 +403,9 @@ export const useGameStore = defineStore("game", () => {
     boosterProductionMultiplier,
     boosterClickMultiplier,
     boosterCostMultiplier,
+    boosterProductionActive,
+    boosterClickActive,
+    boosterCostReductionActive,
     phdGain,
     canPrestige,
     prestigeProgress,

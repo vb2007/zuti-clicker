@@ -30,7 +30,7 @@ const cost = computed(() => game.getBuyCost(props.unitId, props.multiplier));
 // The clearance booster's discount is otherwise invisible anywhere near the
 // price it's actually discounting — tint the cost the shared booster accent
 // while it's active, matching the affected StatusColumn stats' treatment.
-const discounted = computed(() => game.boosterCostMultiplier < 1);
+const discounted = computed(() => game.boosterCostReductionActive);
 const affordable = computed(() => game.canAfford(props.unitId, props.multiplier));
 const gainPerS = computed(() => game.getProductionGain(props.unitId, props.multiplier));
 

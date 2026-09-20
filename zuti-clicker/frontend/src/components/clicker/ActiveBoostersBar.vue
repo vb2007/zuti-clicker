@@ -28,7 +28,7 @@ const pills = computed(() =>
     .map((b) => {
       const def = BOOSTER_DEFINITIONS.find((d) => d.id === b.id);
       const remainingSecs = Math.max(0, Math.ceil((b.expiresAt - now.value) / 1000));
-      return { id: b.id, kind: def?.kind, effect: getBoosterEffectText(t, b.id), remainingSecs };
+      return { id: b.id, kind: def?.kind, effect: getBoosterEffectText(t, def), remainingSecs };
     })
     .filter((p) => p.remainingSecs > 0)
 );
@@ -45,8 +45,13 @@ function formatCountdown(secs: number): string {
     <div v-for="p in pills" :key="p.id" class="booster-chip" :class="p.kind">
       <span class="chip-icon" aria-hidden="true">⚡</span>
       <span class="chip-label">{{ t(`boosters.names.${p.id}`) }}</span>
-      <span class="chip-sep" aria-hidden="true">·</span>
-      <span class="chip-effect">{{ p.effect }}</span>
+      <!-- p.effect is "" if this booster id isn't in BOOSTER_DEFINITIONS
+           (a client/server desync) — skip the separator too, rather than a
+           dangling "Name · " with nothing after it. -->
+      <template v-if="p.effect">
+        <span class="chip-sep" aria-hidden="true">·</span>
+        <span class="chip-effect">{{ p.effect }}</span>
+      </template>
       <span class="chip-time">{{ formatCountdown(p.remainingSecs) }}</span>
     </div>
   </div>

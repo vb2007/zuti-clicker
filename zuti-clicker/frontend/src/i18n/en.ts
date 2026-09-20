@@ -119,6 +119,7 @@ export default {
   },
   boosters: {
     pickupAriaLabel: "Claim a mystery booster",
+    claimedToast: "{name} activated!",
     claimedToastWithEffect: "{name} activated — {effect}",
     claimFailed: "Couldn't claim the booster — try again later.",
     names: {

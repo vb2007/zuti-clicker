@@ -48,6 +48,21 @@ describe("ActiveBoostersBar", () => {
     expect(wrapper.find(".booster-chip").text()).toContain("-25% prices");
   });
 
+  // Defensive regression: BOOSTER_DEFINITIONS is a hand-duplicated constant
+  // (kept in sync with the API's own booster ids, never validated against
+  // it at runtime) — an id the client doesn't recognize must still render
+  // cleanly, not as "Name ·  1:00" with a dangling separator and no effect.
+  it("renders without a dangling separator when the booster id is unrecognized", () => {
+    const game = useGameStore();
+    game.grantBooster("someFutureBoosterNotYetKnownToTheClient", 60_000);
+
+    const wrapper = mount(ActiveBoostersBar);
+    const chip = wrapper.find(".booster-chip");
+    expect(chip.exists()).toBe(true);
+    expect(chip.find(".chip-sep").exists()).toBe(false);
+    expect(chip.find(".chip-effect").exists()).toBe(false);
+  });
+
   it("stops showing a chip once its booster expires", async () => {
     vi.useFakeTimers();
     const game = useGameStore();

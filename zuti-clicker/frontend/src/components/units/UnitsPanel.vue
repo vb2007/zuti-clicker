@@ -22,7 +22,7 @@ const multiplier = ref<Multiplier>(1);
 // never shown while Upgrades is active, to avoid implying a discount that
 // doesn't apply there.
 const unitPricesDiscounted = computed(
-  () => ui.shopTab === "units" && game.boosterCostMultiplier < 1
+  () => ui.shopTab === "units" && game.boosterCostReductionActive
 );
 const discountPercent = computed(() => formatPercent((1 - game.boosterCostMultiplier) * 100));
 </script>
@@ -57,7 +57,13 @@ const discountPercent = computed(() => formatPercent((1 - game.boosterCostMultip
         :multiplier="multiplier"
       />
     </div>
-    <div v-else id="shop-panel-upgrades" class="units-list" role="tabpanel" aria-labelledby="shop-tab-upgrades">
+    <div
+      v-else
+      id="shop-panel-upgrades"
+      class="units-list"
+      role="tabpanel"
+      aria-labelledby="shop-tab-upgrades"
+    >
       <UpgradesPanel />
     </div>
   </aside>

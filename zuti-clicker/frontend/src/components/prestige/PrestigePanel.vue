@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { formatNumber, formatPercent } from "@/utils/formatters";
-import { getProductionMultiplier, getCostMultiplier } from "@/utils/prestige";
+import { getPrestigeOutcome } from "@/utils/prestige";
 import { PHD_TOKEN_SCALE, UNIT_REVEAL_FRACTION } from "@/utils/gameConstants";
 
 const { t } = useI18n();
@@ -32,14 +32,22 @@ const costDiscountPercent = computed(() => formatPercent((1 - game.costMultiplie
 // until the confirm modal opened.
 const ready = computed(() => game.canPrestige);
 
-// Same before/after math PrestigeConfirmModal.vue already uses, applied one
-// bracket ahead — what the player would have *after* confirming right now.
-const newPhdCount = computed(() => game.phdCount + game.phdGain);
+// Shared with PrestigeConfirmModal.vue's before/after table via
+// getPrestigeOutcome — what the player would have *after* confirming right
+// now, formatted here as the bonus percentage rather than the modal's
+// absolute multiplier.
+const outcome = computed(() => getPrestigeOutcome(game.phdCount, game.phdGain));
 const afterProductionPercent = computed(() =>
-  formatPercent((getProductionMultiplier(newPhdCount.value) - 1) * 100)
+  formatPercent((outcome.value.productionMultiplier - 1) * 100)
 );
-const afterCostPercent = computed(() =>
-  formatPercent((1 - getCostMultiplier(newPhdCount.value)) * 100)
+const afterCostPercent = computed(() => formatPercent((1 - outcome.value.costMultiplier) * 100));
+
+// One progress bar, one label, driven by `ready` — see the template comment
+// on why the label (and therefore what a 0% reset means) differs by state.
+const progressLabel = computed(() =>
+  ready.value
+    ? t("prestige.progressToNextGain", { next: game.phdGain + 1 })
+    : t("prestige.lockedProgress")
 );
 </script>
 
@@ -60,41 +68,36 @@ const afterCostPercent = computed(() =>
         <span class="mult-chip">-{{ costDiscountPercent }}% {{ t("prestige.costDiscount") }}</span>
       </div>
 
-      <!-- Not ready: same progress bar as before, now with a caption saying
-           how many tokens are left instead of leaving the player to guess. -->
-      <div v-if="!ready" class="progress-block">
+      <!-- Ready: the headline number the panel used to hide entirely (only
+           the confirm modal showed it). -->
+      <span v-if="ready" class="ready-headline">
+        {{ t("prestige.unlockedHint", { gain: game.phdGain }) }}
+      </span>
+
+      <!-- One progress bar for both states — only the label (progressLabel)
+           and the trailing caption/after-line differ. Ready relabels to
+           "progress to +N" (rather than repeating "next PhD") because the
+           bar resets to 0% the instant a PhD is banked — showing that
+           against the OLD label would misleadingly look like nothing was
+           gained. -->
+      <div class="progress-block">
         <div class="progress-label">
-          <span>{{ t("prestige.lockedProgress") }}</span>
+          <span>{{ progressLabel }}</span>
           <span class="progress-percent">{{ progressPercent }}%</span>
         </div>
         <div class="progress-track">
           <div class="progress-fill" :style="{ transform: `scaleX(${progressPercent / 100})` }" />
         </div>
-        <span class="progress-caption">
+        <span v-if="!ready" class="progress-caption">
           {{ t("prestige.tokensToNext", { amount: formatNumber(game.tokensToNextPhd) }) }}
         </span>
       </div>
 
-      <!-- Ready: the headline number the panel used to hide entirely (only
-           the confirm modal showed it). The bar relabels to "progress to
-           +N" (rather than repeating "next PhD") because it resets to 0%
-           the instant a PhD is banked — showing that against the OLD label
-           would misleadingly look like nothing was gained. -->
-      <div v-else class="ready-block">
-        <span class="ready-headline">{{ t("prestige.unlockedHint", { gain: game.phdGain }) }}</span>
-        <div class="progress-block">
-          <div class="progress-label">
-            <span>{{ t("prestige.progressToNextGain", { next: game.phdGain + 1 }) }}</span>
-            <span class="progress-percent">{{ progressPercent }}%</span>
-          </div>
-          <div class="progress-track">
-            <div class="progress-fill" :style="{ transform: `scaleX(${progressPercent / 100})` }" />
-          </div>
-        </div>
-        <span class="after-line">
-          {{ t("prestige.afterPrestige", { prod: afterProductionPercent, cost: afterCostPercent }) }}
-        </span>
-      </div>
+      <span v-if="ready" class="after-line">
+        {{
+          t("prestige.afterPrestige", { prod: afterProductionPercent, cost: afterCostPercent })
+        }}
+      </span>
 
       <button
         class="prestige-btn"
@@ -196,12 +199,6 @@ const afterCostPercent = computed(() =>
   font-size: 10.5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-}
-
-.ready-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .ready-headline {

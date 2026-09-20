@@ -381,6 +381,21 @@ describe("gameStore", () => {
       expect(game.activeBoosters[0]!.expiresAt).toBeGreaterThan(Date.now() + 50_000);
     });
 
+    it("boosterProductionActive/boosterClickActive/boosterCostReductionActive reflect which kind is active", () => {
+      const game = useGameStore();
+      expect(game.boosterProductionActive).toBe(false);
+      expect(game.boosterClickActive).toBe(false);
+      expect(game.boosterCostReductionActive).toBe(false);
+
+      game.grantBooster("frenzy", 60_000);
+      expect(game.boosterProductionActive).toBe(true);
+      expect(game.boosterClickActive).toBe(false);
+      expect(game.boosterCostReductionActive).toBe(false);
+
+      game.grantBooster("clearance", 60_000);
+      expect(game.boosterCostReductionActive).toBe(true);
+    });
+
     it("clearance discounts unit costs on top of the PhD discount", () => {
       const game = useGameStore();
       game.phdCount = 100; // 50% PhD discount alone
