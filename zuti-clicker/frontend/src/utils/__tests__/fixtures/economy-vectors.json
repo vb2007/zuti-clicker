@@ -1,0 +1,384 @@
+{
+  "_note": "Golden vectors shared byte-for-byte between api/src/tests/fixtures/economy-vectors.json and frontend/src/utils/__tests__/fixtures/economy-vectors.json. Each entry pins one economy formula's output for a fixed input so the two independently-maintained mirrors (api/src/services/economy.ts and frontend/src/utils/{costCalculator,prestige,upgrades}.ts) can never silently drift apart. Regenerate both copies together if a formula intentionally changes.",
+  "vectors": [
+    {
+      "fn": "getUnitCost",
+      "args": [
+        "alpha",
+        0,
+        1
+      ],
+      "expected": 10
+    },
+    {
+      "fn": "getUnitCost",
+      "args": [
+        "alpha",
+        5,
+        1
+      ],
+      "expected": 20.113571874999995
+    },
+    {
+      "fn": "getUnitCost",
+      "args": [
+        "alpha",
+        50,
+        1
+      ],
+      "expected": 10836.574415839534
+    },
+    {
+      "fn": "getUnitCost",
+      "args": [
+        "alpha",
+        10,
+        0.5
+      ],
+      "expected": 20.227788678539532
+    },
+    {
+      "fn": "getUnitCost",
+      "args": [
+        "theta",
+        0,
+        1
+      ],
+      "expected": 330000000
+    },
+    {
+      "fn": "getUnitCost",
+      "args": [
+        "theta",
+        20,
+        1
+      ],
+      "expected": 5400957339.67221
+    },
+    {
+      "fn": "getUnitCost",
+      "args": [
+        "gamma",
+        100,
+        0.75
+      ],
+      "expected": 968808596.8277304
+    },
+    {
+      "fn": "getBulkCost",
+      "args": [
+        "alpha",
+        0,
+        1,
+        1
+      ],
+      "expected": 10
+    },
+    {
+      "fn": "getBulkCost",
+      "args": [
+        "alpha",
+        0,
+        10,
+        1
+      ],
+      "expected": 203.0371823805272
+    },
+    {
+      "fn": "getBulkCost",
+      "args": [
+        "alpha",
+        25,
+        50,
+        1
+      ],
+      "expected": 2375996.6015309887
+    },
+    {
+      "fn": "getBulkCost",
+      "args": [
+        "alpha",
+        0,
+        100,
+        0.5
+      ],
+      "expected": 39143748.356676
+    },
+    {
+      "fn": "getBulkCost",
+      "args": [
+        "theta",
+        0,
+        5,
+        1
+      ],
+      "expected": 2224985812.4999995
+    },
+    {
+      "fn": "getBulkCost",
+      "args": [
+        "theta",
+        10,
+        25,
+        0.6
+      ],
+      "expected": 170451554706.42303
+    },
+    {
+      "fn": "getBulkCost",
+      "args": [
+        "gamma",
+        0,
+        0,
+        1
+      ],
+      "expected": 0
+    },
+    {
+      "fn": "getPhdGain",
+      "args": [
+        0
+      ],
+      "expected": 0
+    },
+    {
+      "fn": "getPhdGain",
+      "args": [
+        999999
+      ],
+      "expected": 0
+    },
+    {
+      "fn": "getPhdGain",
+      "args": [
+        1000000
+      ],
+      "expected": 1
+    },
+    {
+      "fn": "getPhdGain",
+      "args": [
+        4000000
+      ],
+      "expected": 2
+    },
+    {
+      "fn": "getPhdGain",
+      "args": [
+        1000000000
+      ],
+      "expected": 31
+    },
+    {
+      "fn": "getPhdGain",
+      "args": [
+        123456789
+      ],
+      "expected": 11
+    },
+    {
+      "fn": "getPhdGain",
+      "args": [
+        null
+      ],
+      "expected": 0
+    },
+    {
+      "fn": "getPhdGain",
+      "args": [
+        null
+      ],
+      "expected": 0
+    },
+    {
+      "fn": "getProductionMultiplier",
+      "args": [
+        0
+      ],
+      "expected": 1
+    },
+    {
+      "fn": "getProductionMultiplier",
+      "args": [
+        1
+      ],
+      "expected": 1.02
+    },
+    {
+      "fn": "getProductionMultiplier",
+      "args": [
+        50
+      ],
+      "expected": 2
+    },
+    {
+      "fn": "getProductionMultiplier",
+      "args": [
+        1000
+      ],
+      "expected": 21
+    },
+    {
+      "fn": "getCostMultiplier",
+      "args": [
+        0
+      ],
+      "expected": 1
+    },
+    {
+      "fn": "getCostMultiplier",
+      "args": [
+        1
+      ],
+      "expected": 0.995
+    },
+    {
+      "fn": "getCostMultiplier",
+      "args": [
+        50
+      ],
+      "expected": 0.75
+    },
+    {
+      "fn": "getCostMultiplier",
+      "args": [
+        100
+      ],
+      "expected": 0.5
+    },
+    {
+      "fn": "getCostMultiplier",
+      "args": [
+        1000
+      ],
+      "expected": 0.5
+    },
+    {
+      "fn": "getFlatClickBonus",
+      "args": [
+        []
+      ],
+      "expected": 0
+    },
+    {
+      "fn": "getFlatClickBonus",
+      "args": [
+        [
+          "chalk"
+        ]
+      ],
+      "expected": 1
+    },
+    {
+      "fn": "getFlatClickBonus",
+      "args": [
+        [
+          "chalk",
+          "redPen",
+          "laserPointer",
+          "overheadProjector"
+        ]
+      ],
+      "expected": 125
+    },
+    {
+      "fn": "getClickMultiplier",
+      "args": [
+        []
+      ],
+      "expected": 1
+    },
+    {
+      "fn": "getClickMultiplier",
+      "args": [
+        [
+          "firmHandshake"
+        ]
+      ],
+      "expected": 2
+    },
+    {
+      "fn": "getClickMultiplier",
+      "args": [
+        [
+          "firmHandshake",
+          "morningCoffee",
+          "officeHours",
+          "tenure",
+          "honoraryDegree"
+        ]
+      ],
+      "expected": 32
+    },
+    {
+      "fn": "getClickSynergy",
+      "args": [
+        []
+      ],
+      "expected": 0
+    },
+    {
+      "fn": "getClickSynergy",
+      "args": [
+        [
+          "lectureNotes"
+        ]
+      ],
+      "expected": 0.005
+    },
+    {
+      "fn": "getClickSynergy",
+      "args": [
+        [
+          "lectureNotes",
+          "seminarRoom",
+          "researchGrant",
+          "facultyBoard"
+        ]
+      ],
+      "expected": 0.03
+    },
+    {
+      "fn": "getClickValue",
+      "args": [
+        {
+          "flatClickBonus": 0,
+          "clickMultiplier": 1,
+          "phdProductionMultiplier": 1,
+          "tokensPerSecond": 0,
+          "clickSynergy": 0,
+          "boosterClickMultiplier": 1
+        }
+      ],
+      "expected": 1
+    },
+    {
+      "fn": "getClickValue",
+      "args": [
+        {
+          "flatClickBonus": 25,
+          "clickMultiplier": 4,
+          "phdProductionMultiplier": 1.5,
+          "tokensPerSecond": 1000,
+          "clickSynergy": 0.03,
+          "boosterClickMultiplier": 1
+        }
+      ],
+      "expected": 186
+    },
+    {
+      "fn": "getClickValue",
+      "args": [
+        {
+          "flatClickBonus": 125,
+          "clickMultiplier": 32,
+          "phdProductionMultiplier": 3,
+          "tokensPerSecond": 50000,
+          "clickSynergy": 0.03,
+          "boosterClickMultiplier": 10
+        }
+      ],
+      "expected": 135960
+    }
+  ]
+}
