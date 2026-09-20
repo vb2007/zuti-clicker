@@ -154,6 +154,28 @@ export const UNIFORM_SPAN_MAX = 4;
 export const SUSTAINED_RATE_CPS = 22;
 export const NO_FATIGUE_STREAK = 5;
 
+// singleMethodExceedsHumanLimit: unlike sustainedRate (an aggregate ceiling
+// that has to accommodate several simultaneous input channels — e.g. two
+// people mashing mouse + keyboard together, per the plan's CPS decision), a
+// SINGLE input method (one mouse button, or one key) sustaining a high rate
+// for a full heartbeat window has a much tighter human ceiling: research
+// puts the credible sustained maximum for ordinary single-button clicking at
+// ~14-16 CPS (Guinness World Records: 12.67 CPS official 2026 record, 14.1
+// CPS 2018 record), with even the most extreme documented specialist
+// technique (two-finger "butterfly" clicking on one button) topping out
+// around 32 CPS verified / ~35-40 CPS theoretical (nerve-conduction-velocity
+// limited) — and those are short competitive bursts, not a full minute of
+// actual gameplay. Right-click and keyboard-key rates are lower still. 20
+// CPS from one method alone, sustained across an entire window, is
+// comfortably beyond ordinary human clicking and only weight 2 (still never
+// decisive alone) to stay consistent with every other statistical signal
+// here. Requires the method to account for MIN_CLICKS_FOR_VARIANCE_SIGNAL's
+// worth of clicks and SINGLE_METHOD_CONCENTRATION of the window's total
+// (not exactly 100%, so one stray accidental click from another input
+// doesn't disqualify an otherwise single-method session).
+export const SINGLE_METHOD_MAX_CPS = 20;
+export const SINGLE_METHOD_CONCENTRATION = 0.95;
+
 // A verdict needs at least this total weighted score from at least this many
 // DISTINCT signal categories — raw click rate alone can never reach either
 // threshold by itself.

@@ -22,6 +22,8 @@ import {
   UNIFORM_SKEW_THRESHOLD,
   UNIFORM_SPAN_MAX,
   SUSTAINED_RATE_CPS,
+  SINGLE_METHOD_MAX_CPS,
+  SINGLE_METHOD_CONCENTRATION,
   MIN_SCORE_TO_FLAG,
   MIN_DISTINCT_SIGNALS_TO_FLAG
 } from "../constants/antiCheat";
@@ -92,6 +94,11 @@ export interface AntiCheatDigest {
   // but real hardware/drivers can occasionally look odd) — scored at weight
   // 1 each alongside the statistical signals below, never decisive alone.
   weakSignals: string[];
+  // Optional — an older cached client omitting this must never be rejected
+  // for it (see the windowMs incident this project already had once): the
+  // digest is simply evaluated without the singleMethodExceedsHumanLimit
+  // signal, exactly as if it always reported a perfectly even split.
+  methodCounts?: { primary: number; secondary: number; keyboard: number };
 }
 
 export interface DigestVerdict {
@@ -104,6 +111,20 @@ export interface DigestVerdict {
   score: number;
   signals: string[];
   flagged: boolean; // score/signal thresholds met, independent of consistency
+}
+
+function isValidMethodCounts(value: AntiCheatDigest["methodCounts"]): boolean {
+  if (value === undefined) return true; // omitted entirely — see the field's own comment
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Number.isInteger(value.primary) &&
+    value.primary >= 0 &&
+    Number.isInteger(value.secondary) &&
+    value.secondary >= 0 &&
+    Number.isInteger(value.keyboard) &&
+    value.keyboard >= 0
+  );
 }
 
 function isValidShape(digest: AntiCheatDigest): boolean {
@@ -121,7 +142,8 @@ function isValidShape(digest: AntiCheatDigest): boolean {
     Array.isArray(digest.integrityFlags) &&
     digest.integrityFlags.every((f) => typeof f === "string") &&
     Array.isArray(digest.weakSignals) &&
-    digest.weakSignals.every((f) => typeof f === "string")
+    digest.weakSignals.every((f) => typeof f === "string") &&
+    isValidMethodCounts(digest.methodCounts)
   );
 }
 
@@ -206,6 +228,24 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   if (cps > SUSTAINED_RATE_CPS) {
     signals.push("sustainedRate");
     score += 1;
+  }
+
+  // singleMethodExceedsHumanLimit — see the constant's own comment for the
+  // research this threshold is based on. Absent for an older client that
+  // doesn't report it yet (never a rejection — see the field's own comment).
+  if (digest.methodCounts) {
+    const { primary, secondary, keyboard } = digest.methodCounts;
+    const methodTotal = primary + secondary + keyboard;
+    if (methodTotal >= MIN_CLICKS_FOR_VARIANCE_SIGNAL) {
+      const dominant = Math.max(primary, secondary, keyboard);
+      if (dominant / methodTotal >= SINGLE_METHOD_CONCENTRATION) {
+        const methodCps = methodTotal / (digest.windowMs / 1000);
+        if (methodCps > SINGLE_METHOD_MAX_CPS) {
+          signals.push("singleMethodExceedsHumanLimit");
+          score += 2;
+        }
+      }
+    }
   }
 
   for (const flag of digest.weakSignals) {
