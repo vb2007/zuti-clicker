@@ -73,6 +73,18 @@ export function computeMaxRunLength(intervalsMs: number[], tolerance = 0.05): nu
   return longest;
 }
 
+// primary = left click, secondary = right click, keyboard = Enter/Space
+// activation (MouseEvent.detail === 0) — see ClickerCircle.vue's own
+// button/detail split, which already computes this distinction and
+// previously discarded it before it ever reached telemetry.
+export type ClickMethod = "primary" | "secondary" | "keyboard";
+
+export interface MethodCounts {
+  primary: number;
+  secondary: number;
+  keyboard: number;
+}
+
 export interface AntiCheatDigest {
   windowMs: number;
   clicks: number;
@@ -88,6 +100,11 @@ export interface AntiCheatDigest {
   // Pointer-physics consistency flags — corroborating only, never decisive
   // alone. Keep this split in sync with the api's own digest schema.
   weakSignals: string[];
+  // Optional — an older cached client omitting this must never be rejected
+  // for it (see the windowMs incident this project already had once): the
+  // server just skips the single-input-method signal when absent, rather
+  // than 400ing the whole digest over a missing-but-non-essential field.
+  methodCounts?: MethodCounts;
 }
 
 export interface DigestInputs {
@@ -99,6 +116,7 @@ export interface DigestInputs {
   droppedClicks: number;
   integrityFlags: string[];
   weakSignals: string[];
+  methodCounts: MethodCounts;
 }
 
 /**
@@ -136,6 +154,7 @@ export function buildDigest(input: DigestInputs): AntiCheatDigest {
     hiddenClicks: input.hiddenClicks,
     droppedClicks: input.droppedClicks,
     integrityFlags: input.integrityFlags,
-    weakSignals: input.weakSignals
+    weakSignals: input.weakSignals,
+    methodCounts: input.methodCounts
   };
 }

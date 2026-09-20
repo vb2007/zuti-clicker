@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { api } from "@/lib/api";
 import { useAuthStore } from "./authStore";
-import { buildDigest, countWithinWindow } from "@/utils/clickTelemetry";
+import { buildDigest, countWithinWindow, type ClickMethod, type MethodCounts } from "@/utils/clickTelemetry";
 import { checkNativeIntegrity, createHoneypotTracker } from "@/utils/integrityChecks";
 import { createPointerPhysicsTracker } from "@/utils/pointerPhysics";
 import {
@@ -108,6 +108,7 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
   let untrustedClicks = 0;
   let hiddenClicks = 0;
   let droppedClicks = 0;
+  let methodCounts: MethodCounts = { primary: 0, secondary: 0, keyboard: 0 };
   let windowStartedAt = performance.now();
 
   const honeypot = createHoneypotTracker();
@@ -131,6 +132,7 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     untrustedClicks = 0;
     hiddenClicks = 0;
     droppedClicks = 0;
+    methodCounts = { primary: 0, secondary: 0, keyboard: 0 };
     windowStartedAt = performance.now();
   }
 
@@ -177,8 +179,14 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
    * this click (untrusted or burst-dropped); `guestSaveReset: true` means
    * the caller must also call gameStore.hardReset() right now — a guest has
    * no server save for the equivalent server-side reset to apply to.
+   *
+   * `method` is omitted by UnitCard/UpgradeTile/usePrestige's own
+   * `recordClick(false)` calls (detecting a synthetic click on a purchase/
+   * prestige button) — irrelevant there since untrusted clicks return before
+   * ever touching methodCounts. Only ClickerCircle's actual token-earning
+   * click supplies it.
    */
-  function recordClick(trusted: boolean): ClickOutcome {
+  function recordClick(trusted: boolean, method?: ClickMethod): ClickOutcome {
     if (!trusted) {
       untrustedClicks++;
       const guestSaveReset = !auth.isLoggedIn && applyGuestStrike();
@@ -189,6 +197,7 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
       return { credited: false, guestSaveReset: false };
     }
     clickTimestamps.push(performance.now());
+    if (method !== undefined) methodCounts[method]++;
     return { credited: true, guestSaveReset: false };
   }
 
@@ -246,7 +255,8 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
       hiddenClicks,
       droppedClicks,
       integrityFlags,
-      weakSignals: pointerPhysics.getFlags()
+      weakSignals: pointerPhysics.getFlags(),
+      methodCounts
     });
     resetWindow();
 

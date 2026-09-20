@@ -88,14 +88,15 @@ describe("buildDigest", () => {
       hiddenClicks: 0,
       droppedClicks: 0,
       integrityFlags: [],
-      weakSignals: []
+      weakSignals: [],
+      methodCounts: { primary: 5, secondary: 0, keyboard: 0 }
     });
     expect(digest.clicks).toBe(5);
     expect(digest.buckets.reduce((a, b) => a + b, 0)).toBe(4);
     expect(digest.purchases).toBe(2);
   });
 
-  it("carries counters and flags through unchanged", () => {
+  it("carries counters, flags, and methodCounts through unchanged", () => {
     const digest = buildDigest({
       windowMs: 60_000,
       clickTimestamps: [0],
@@ -104,12 +105,14 @@ describe("buildDigest", () => {
       hiddenClicks: 1,
       droppedClicks: 2,
       integrityFlags: ["honeypotTouched"],
-      weakSignals: ["frozenPressure"]
+      weakSignals: ["frozenPressure"],
+      methodCounts: { primary: 0, secondary: 1, keyboard: 0 }
     });
     expect(digest.untrustedClicks).toBe(3);
     expect(digest.hiddenClicks).toBe(1);
     expect(digest.droppedClicks).toBe(2);
     expect(digest.integrityFlags).toEqual(["honeypotTouched"]);
     expect(digest.weakSignals).toEqual(["frozenPressure"]);
+    expect(digest.methodCounts).toEqual({ primary: 0, secondary: 1, keyboard: 0 });
   });
 });

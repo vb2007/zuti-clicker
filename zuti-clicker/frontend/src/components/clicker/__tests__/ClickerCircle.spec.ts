@@ -118,6 +118,21 @@ describe("ClickerCircle", () => {
     expect(circle.classList.contains("circle-pressed")).toBe(false);
   });
 
+  it("reports the correct input method to antiCheat.recordClick for left-click, right-click, and keyboard", async () => {
+    const antiCheat = useAntiCheatStore();
+    const spy = vi.spyOn(antiCheat, "recordClick");
+    const wrapper = mount(ClickerCircle);
+
+    await dispatchTrusted(wrapper.element, "pointerdown", { button: 0, clientX: 1, clientY: 1 });
+    expect(spy).toHaveBeenLastCalledWith(true, "primary");
+
+    await dispatchTrusted(wrapper.element, "pointerdown", { button: 2, clientX: 1, clientY: 1 });
+    expect(spy).toHaveBeenLastCalledWith(true, "secondary");
+
+    await dispatchTrusted(wrapper.element, "click"); // detail 0 — keyboard activation
+    expect(spy).toHaveBeenLastCalledWith(true, "keyboard");
+  });
+
   it("the portrait cannot be dragged out of the circle", () => {
     const wrapper = mount(ClickerCircle);
     const img = wrapper.find("img");

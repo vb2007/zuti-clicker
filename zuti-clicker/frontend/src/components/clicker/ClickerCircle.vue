@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { useGameStore } from "@/stores/gameStore";
+import type { ClickMethod } from "@/utils/clickTelemetry";
 
 const { t } = useI18n();
 const antiCheat = useAntiCheatStore();
@@ -71,7 +72,7 @@ function registerClick(x: number, y: number) {
  * dispatching a synthetic click through this handler is exactly what that
  * flag exists to catch, and it earns nothing, silently.
  */
-function attemptClick(trusted: boolean, x: number, y: number): void {
+function attemptClick(trusted: boolean, method: ClickMethod, x: number, y: number): void {
   // While restricted, a click must behave like a disabled button — no press
   // animation, no floating "+0", no advance of the CPS readout — not a
   // click that silently earns nothing while still looking like it landed.
@@ -84,7 +85,7 @@ function attemptClick(trusted: boolean, x: number, y: number): void {
     antiCheat.recordHiddenClick();
     return;
   }
-  const outcome = antiCheat.recordClick(trusted);
+  const outcome = antiCheat.recordClick(trusted, method);
   if (!outcome.credited) {
     // A guest's 5th strike has no server save to reset — see recordClick's
     // own comment on why that's this caller's job, not the store's.
@@ -114,7 +115,7 @@ function handlePointerDown(e: PointerEvent) {
   // middle/back/forward are ignored so autoscroll and browser navigation
   // gestures still work when they happen to land on the circle.
   if (e.button !== 0 && e.button !== 2) return;
-  attemptClick(e.isTrusted, e.clientX, e.clientY);
+  attemptClick(e.isTrusted, e.button === 0 ? "primary" : "secondary", e.clientX, e.clientY);
 }
 
 function handleClick(e: MouseEvent) {
@@ -125,7 +126,7 @@ function handleClick(e: MouseEvent) {
   const rect = wrapperRef.value?.getBoundingClientRect();
   const x = rect ? rect.left + rect.width / 2 : e.clientX;
   const y = rect ? rect.top + rect.height / 2 : e.clientY;
-  attemptClick(e.isTrusted, x, y);
+  attemptClick(e.isTrusted, "keyboard", x, y);
 }
 </script>
 
