@@ -83,12 +83,18 @@ function onCircleClick({ x, y }: { x: number; y: number }) {
 
       <p class="hint">{{ t("clicker.hint") }}</p>
 
-      <Transition name="cps-fade">
-        <div v-if="cps > 0" class="cps-pill">
-          <span class="cps-val">{{ cps.toFixed(1) }}</span>
-          <span class="cps-unit">{{ t("clicker.cps") }}</span>
-        </div>
-      </Transition>
+      <!-- Always rendered (fixed height, matching .cps-pill's own height) so
+           the pill's v-if mount/unmount never changes .clicker-content's
+           total height — see the regression test for why this exists: the
+           circle used to visibly shift up/down as this pill appeared. -->
+      <div class="cps-slot">
+        <Transition name="cps-fade">
+          <div v-if="cps > 0" class="cps-pill">
+            <span class="cps-val">{{ cps.toFixed(1) }}</span>
+            <span class="cps-unit">{{ t("clicker.cps") }}</span>
+          </div>
+        </Transition>
+      </div>
     </div>
 
     <BoosterPickup
@@ -148,14 +154,26 @@ function onCircleClick({ x, y }: { x: number; y: number }) {
   user-select: none;
 }
 
-.cps-pill {
+/* Fixed height, equal to .cps-pill's own height (box-sizing: border-box
+   from the global reset, so the border is included in that 28px, not added
+   on top) — this is what keeps the two locked in step as font/padding
+   evolve, rather than duplicating a magic number in two places. */
+.cps-slot {
+  height: 28px;
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: center;
+}
+
+.cps-pill {
+  height: 28px;
+  display: flex;
+  align-items: center;
   gap: 3px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
-  padding: 5px 16px;
+  padding: 0 16px;
 }
 
 .cps-val {
