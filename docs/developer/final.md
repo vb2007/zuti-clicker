@@ -48,6 +48,11 @@ DATABASE_HOST=host
 DATABASE_PORT=3306
 
 CRYPTO_SECRET_KEY=<min. 64 karakteres véletlen string>
+
+# enforce (alapérték) | monitor | off — lásd lent, "Anti-cheat modell".
+# NODE_ENV=production esetén mindig enforce-ra kényszerül, függetlenül attól,
+# mi van itt beállítva.
+ANTICHEAT_MODE=enforce
 ```
 
 A shadow adatbázis a Prisma migrációk validálásához szükséges; ugyanazon a szerveren kell lennie, de üres adatbázisként.
@@ -79,6 +84,8 @@ pnpm test
 A tesztek a `tests/` mappában találhatók. Az összes teszt a `TestData` osztályból veszi az adatokat (`tests/test-data.ts`); a belépési adatokat minden futtatás véletlenszerűen generálja, a mentési payloadok hardkódoltak.
 
 Mivel a tesztek élő szerver ellen, valós adatbázisban hoznak létre `test_<random>@example.com` felhasználókat, ezek takarítására szolgál a `pnpm cleanup:test-users` script (`scripts/cleanup-test-users.ts`). Alapértelmezetten csak szimulál (dry run) és kiírja, mit törölne; a tényleges törléshez `--apply` kapcsoló szükséges: `pnpm cleanup:test-users --apply`. A script szigorú, `generateUser()` mintázatához illeszkedő reguláris kifejezéssel dönti el, mely sorokat érinti — az SQL-szűrés csak egy durva előszűrés, sosem a végső hatóság.
+
+**Fontos**: a `src/tests/save.test.ts`, `leaderboard.test.ts` és `boosters.test.ts` fixture-jei (pl. a ranglista-tesztek "óriási" token-értékei, vagy egy régi mentés több órás játékideje) nem férnének bele a `PUT /save` mentés-hitelesség-ellenőrzésébe (lásd lent, "Anti-cheat modell") egy frissen regisztrált, azonnal mentő teszt-felhasználónál — ezért az itt futó szervernek `ANTICHEAT_MODE=monitor` alatt kell futnia (validál és naplóz, de sosem blokkol vagy módosít). Ez a mód pontosan erre való: a teljes alkalmazás szabadon tesztelhető, miközben a detekciós logika minden ága lefut és naplózódik. Az `enforce` mód HTTP-szintű viselkedését (409 elutasítás, csendes korrekció, korlátozás) a `src/tests/envelopeEnforcement.test.ts` és `strikeLadder.test.ts` fájlok saját, dedikált szerverpéldányokkal (más porton, explicit `ANTICHEAT_MODE=enforce`-szal indítva) bizonyítják — ezek nem függnek attól, milyen módban fut a közös teszt-szerver.
 
 ---
 
@@ -159,9 +166,13 @@ router/ → controllers/ → database/models/ → Prisma → MariaDB
 | `GET`, `PUT`, `DELETE` | `/save` | kötelező | Játékmentés betöltése, felülírása (részlegesen: a prestige mezők és a fejlesztések listája opcionálisak), törlése |
 | `GET`, `PUT` | `/settings` | kötelező | Felhasználói beállítások betöltése (alapértékek, ha még nincs mentve) és részleges frissítése |
 | `GET` | `/leaderboard` | kötelező | Rangsor egy adott mérőszám szerint (`tokens`, `clicks`, `phd`, `playtime`), plusz a lekérdező saját helyezése |
-| `POST` | `/boosters/claim` | kötelező | Egy véletlenszerű booster igénylése, ha a lehűlési idő már letelt — lásd lent, "Booster anti-cheat modell" |
+| `POST` | `/boosters/claim` | kötelező | Egy véletlenszerű booster igénylése, ha a lehűlési idő már letelt — lásd lent, "Anti-cheat modell" |
+| `POST` | `/anticheat/report` | kötelező | Kattintás-időzítési telemetria digest beküldése (fix ütemezéssel + azonnal lokális detekció esetén) — lásd lent, "Anti-cheat modell" |
+| `GET` | `/anticheat/status` | kötelező | A jelenlegi korlátozási állapot (`isRestricted`, `restrictedUntil`, `strikeCount`) lekérdezése |
 
 A `PUT /save` öt prestige-mezője (`phdCount`, `prestigeCount`, `runTokensEarned`, `runClicks`, `runSeconds`) **opcionális**: egy régebbi kliens, amely nem ismeri ezeket, biztonságosan tud menteni — a hiányzó mezőket a szerver a már tárolt értéken hagyja (nem nullázza), első mentésnél pedig az életút-mezőkből tölti fel őket.
+
+Egy formailag helyes, de az előző mentéshez és az eltelt időhöz képest fizikailag elérhetetlen mentést a végpont `409`-cel utasít el (semmi nem íródik), vagy — ha csak kismértékben lépi túl a lehetségest — csendben az elérhető határértékre korrigál és `200`-at ad vissza; lásd lent, "Anti-cheat modell".
 
 Egy hatodik, szintén opcionális mező, az `upgrades` (megszerzett fejlesztés-azonosítók tömbje) ugyanezt a mintát követi: hiányzása esetén a szerver a már tárolt fejlesztéseket változatlanul hagyja, jelenléte esetén viszont — az `units` mezőhöz hasonlóan — teljesen felülírja őket. Minden elemének egy ismert fejlesztés-azonosítónak kell lennie (`api/src/constants/upgrades.ts`'s `KNOWN_UPGRADE_IDS`), különben a végpont `400`-at ad vissza. A `GET /save` válasza az `upgrades` mellett egy csak-olvasható `activeBoosters` tömböt is tartalmaz (a jelenleg aktív boosterek, `remainingMs` hátralévő idővel) — ezt a `PUT /save` sosem fogadja el, kizárólag a `POST /boosters/claim` hozhatja létre vagy frissítheti.
 
@@ -170,6 +181,7 @@ Egy hatodik, szintén opcionális mező, az `upgrades` (megszerzett fejlesztés-
 ```
 App.vue
   ├── useGameLoop()          → gameStore.tick() 20x/s
+  ├── useAntiCheat()         → 60s telemetria heartbeat + pointerdown/pointermove figyelők — lásd lent, "Anti-cheat modell"
   ├── usePrestige()          → gameStore.prestige() -> ceremónia/szinkron
   ├── useBoosters()          → booster pickup ütemezése (spawn/láthatósági ablak) + igénylés
   ├── useBreakpoint()        → isCompact (matchMedia, < 760px)
@@ -179,10 +191,12 @@ App.vue
   ├── uiStore                → modál állapotok, mobilePanel ("none" | "stats" | "units"), shopTab ("units" | "upgrades")
   ├── toastStore             → átmeneti értesítések (pl. beállítások mentése, booster begyűjtése)
   ├── leaderboardStore       → mérőszámonkénti rangsor lekérése (nincs localStorage-gyorsítótár, mindig a szerver a forrás)
+  ├── antiCheatStore         → recordClick()/recordPurchase(), isRestricted/restrictedUntil/strikeCount, telemetria-puffer
   └── gameStore              → tokenek, egységek, fejlesztések (upgrades), aktív boosterek, statisztikák, prestige állapot
+                                (minden progressziót módosító akció előbb antiCheatStore.isRestricted-et ellenőrzi)
 ```
 
-A `ClickerArea.vue` (középső oszlop) hívja meg a `useBoosters()` composable-t — ez tartja karban a véletlenszerű booster-pickup teljes életciklusát (mikor jelenik meg, meddig látható, mi történik kattintáskor); a `BoosterPickup.vue` és `ActiveBoostersBar.vue` komponensek ebből olvasnak. A tényleges booster-effektus (termelés-/kattintás-szorzó, egységár-kedvezmény) a `gameStore.activeBoosters` állapoton keresztül érvényesül — lásd lent, "Booster anti-cheat modell".
+A `ClickerArea.vue` (középső oszlop) hívja meg a `useBoosters()` composable-t — ez tartja karban a véletlenszerű booster-pickup teljes életciklusát (mikor jelenik meg, meddig látható, mi történik kattintáskor); a `BoosterPickup.vue` és `ActiveBoostersBar.vue` komponensek ebből olvasnak. A tényleges booster-effektus (termelés-/kattintás-szorzó, egységár-kedvezmény) a `gameStore.activeBoosters` állapoton keresztül érvényesül — lásd lent, "Anti-cheat modell" → "Boosterek".
 
 A `saveStore` a `authStore`-tól és a `settingsStore`-tól függ: az autosave-időzítő automatikusan elindul/leáll, amikor `isLoggedIn`, `autosaveEnabled` vagy `autosaveIntervalSecs` megváltozik. A `settingsStore` sosem importálja a `saveStore`-t (a függőségi irány mindig `settings → save`, nem fordítva), hogy elkerülje a körkörös importot.
 
@@ -273,8 +287,8 @@ megjelenítési formátumát módosítod, csak ott kell.
 
 ## Új booster hozzáadása
 
-A boosterek időzített, szerver által kiadott bónuszok — lásd "Booster
-anti-cheat modell" lentebb a teljes életciklusért.
+A boosterek időzített, szerver által kiadott bónuszok — lásd "Anti-cheat
+modell" → "Boosterek" lentebb a teljes életciklusért.
 
 1. Szerkeszd a `frontend/src/utils/gameConstants.ts` fájlt, adj hozzá egy új
    elemet a `BOOSTER_DEFINITIONS` tömbhöz (`kind`: `production`/`click`/
@@ -302,13 +316,138 @@ anti-cheat modell" lentebb a teljes életciklusért.
 
 ---
 
-## Booster anti-cheat modell
+## Anti-cheat modell
 
-A kattintás-gazdaság (tokenek, egységek, fejlesztések) továbbra is teljesen
-kliens-oldali és kliens-hiteles — ennek szerver-oldalivá tétele egy jóval
-nagyobb átalakítás lenne. A boosterek viszont közvetlenül a ranglistákat
-torzíthatnák (aki gyakrabban tud "booster-farmolni", végérvényesen jobb
-statisztikákat ér el), ezért **kizárólag ez a rész szerver-hiteles**:
+Négy réteg, amelyek célja explicit **nem** a "minden kattintást szerver-
+hitelessé tenni" (ez a kattintás-gazdaság teljes átírását jelentené), hanem
+annak biztosítása, hogy amit a kliens állít, az fizikailag elérhető is
+legyen, és hogy az automatizálás (auto-clicker, Tampermonkey-szkript, direkt
+API-hamisítás) ne érje meg. Legfontosabb tervezési elv mindenhol: **egy
+valódi játékos büntetése rosszabb, mint egy csaló át nem kapása** — minden
+küszöb szándékosan laza.
+
+### 1. réteg — a mentés-hihetőségi burok (`services/saveValidator.ts`)
+
+A `PUT /save` minden beérkező mentést összevet az előzővel és az azóta eltelt
+valós idővel, a szerver-oldali gazdaság-tükör (`services/economy.ts`,
+`constants/gameBalance.ts` — a frontend `costCalculator`/`prestige`/
+`upgrades.ts` és `gameConstants.ts` kézzel tartott másolata, "keep in sync
+with" kommentekkel) segítségével:
+
+- **Monotonitás** (életút-számlálók sosem csökkenhetnek) → mindig azonnali elutasítás.
+- **Eltelt idő**: `Δelapsedseconds ≤ dt` (nincs offline progresszió, a tick csak csatolt fül mellett fut).
+- **Kattintásszám**: `Δclicks ≤ 45 · dt` (a burkoló-réteg saját, nagyvonalú felső korlátja — nem a statisztikai detektor jelzési küszöbe, lásd lent).
+- **Bevétel**: a legkedvezőbb lehetséges termelési/kattintás-érték × `dt`, 1.5-szörös ráhagyással.
+- **Elköltés**: az újonnan megszerzett egységek/fejlesztések legolcsóbb lehetséges ára (legjobb PhD-kedvezmény × legjobb booster-kedvezmény) — ez fogja meg az "ingyen egység" hamisítást.
+- **Prestige/PhD**: a prestige-szám felülről korlátos az életút-bevétel alapján (minden prestige-hez legalább `PHD_TOKEN_SCALE` token kell, ami tartósan beépül az életút-bevételbe), a PhD-szám pedig ezen *már korlátozott* prestige-szám és az életút-bevétel alapján (Cauchy–Schwarz-egyenlőtlenség) — ez a sorrend zárja be azt a rést, hogy egy korlátlan prestige-szám önmagában tetszőlegesen felfújhatná a PhD-korlátot.
+
+Minden határ a **legkedvezőbb** feltételezéssel számol (max booster/kritikus
+találat, legjobb kedvezmény), hogy egy szerencsés vagy erősen kedvezményezett
+valódi játékos sose szoruljon korlátozásba. Kimenet:
+
+| Eltérés | Hatás |
+|---|---|
+| a határon belül | elfogadás változatlanul |
+| a határ 1×–2×-szerese közt | csendes korrekció a határértékre, `200`, `AntiCheatEvent` info-bejegyzés |
+| a határ 2×-szerese fölött, vagy monotonitás-sértés | `409`, semmi nem íródik, azonnali *strike* (lásd 4. réteg) |
+
+### 2. réteg — kliens-oldali bemenet-hitelesség
+
+- **`event.isTrusted`**: `ClickerCircle.vue`, `UnitCard.vue`, `UpgradeTile.vue` és `usePrestige.ts confirmPrestige` mind az eredeti eseményből olvassák — egy szkript által `dispatchEvent`/`el.click()`-kel indított kattintás sosem ér célba, és `untrustedClicks`-ként számít a telemetriában.
+- **Rejtett/fókusz nélküli dokumentum**: `document.hidden || !document.hasFocus()` → a kattintás el sem indul, még `untrustedClicks`-be sem számít (valódi bemenet fizikailag nem juthatna el egy rejtett laphoz).
+- **Csendes burst-korlát**: 45 kattintás/másodperc fölött a kattintás eldobódik — nincs token, nincs jelzés, a játékos észre sem veszi.
+- **Script-integritás és csali (honeypot)** (`utils/integrityChecks.ts`): natív függvények (`dispatchEvent`, `click`, `bind`, `setInterval`, `Date.now`) `toString()`-jét ellenőrzi `"[native code]"` jelenlétére — ezt a modul betöltéskor, még egy oldal-injektált szkript előtt menti el. Egy inert globális (`window.__zutiGame.addTokens`) és egy képernyőn kívüli, `aria-hidden`, nem tab-elérhető csapda-elem egyike sem érhető el valódi egér/billentyűzet/AT úton — bármelyik megérintése egyértelmű bizonyíték. Ezek a jelek **döntőek** (nem kell hozzájuk másik jel).
+- **Pointer-fizika** (`utils/pointerPhysics.ts`), csak egérre: `getCoalescedEvents()` üres marad valódi mozgás mellett, `movementX`/`Y` nulla marad, miközben `clientX`/`Y` látszólag változik, vagy a nyomás (`pressure`) egyetlen nem-nulla értéken fagy — ezek a CDP-alapú automatizálás (Playwright/Puppeteer) jelei, amik `isTrusted: true` eseményt produkálnak, de elvesztik ezt a metaadatot. **Nem** döntőek önmagukban (lásd lent).
+
+Sem WebGL, sem canvas-alapú ujjlenyomat-vétel nincs a rendszerben — ezeket a
+tervezés kifejezetten kizárta adatvédelmi okokból.
+
+### 3. réteg — szerver-oldali statisztikai verdikt (`POST /anticheat/report`)
+
+A kliens 60 másodpercenként (az autosave-beállítástól függetlenül) és minden
+döntő helyi detekció után azonnal beküld egy tömör, anonim digest-et
+(`utils/clickTelemetry.ts`): egy 24 elemű, logaritmikusan skálázott
+kattintás-köz-hisztogramot, a leghosszabb "metronóm-szerű" sorozatot,
+kattintás-/vásárlásszámot, és a 2. réteg jelzéseit. **Sosem** tartalmaz
+időbélyeget, koordinátát vagy eszköz-/böngésző-azonosítót.
+
+A szerver (`services/antiCheat.ts`) először a digest önellentmondását nézi
+(a hisztogram összege nem egyezik a kattintásszámmal, vagy a ráta meghaladja
+a burok saját felső korlátját) — ez **biztos**, nem valószínűsített jel.
+Utána a statisztikai jeleket súlyozza:
+
+| Jel | Küszöb | Súly |
+|---|---|---|
+| `lowVariance` | variációs együttható < 0.12, ≥40 kattintás, ≥5 cps | 2 |
+| `metronome` | leghosszabb közel-azonos-közű sorozat ≥30 | 2 |
+| `narrowSupport` | a nem-üres hisztogram-mezők tartománya ≤2 | 2 |
+| `unimodalSpike` | egyetlen mező a minták >90%-át adja | 1 |
+| `uniformShape` | ferdeség < 0.15, tartomány ≤4 | 1 |
+| `sustainedRate` | átlag >22 cps az egész ablakban | 1 |
+| `weak:*` (pointer-fizika) | lásd 2. réteg | 1/jel |
+| `untrustedInput` / integritás-jel | bármelyik jelenléte | döntő, azonnali |
+
+Egy verdikt csak **legalább 3 pontnál és legalább 2 különböző jelcsoportnál**
+számít jelzettnek — a nyers kattintás-ráta önmagában (súly 1) sosem érheti el
+egyik küszöböt sem. Ez szándékos: két ember, aki felváltva/együtt kattint
+ugyanazon a fiókon (egér + szóköz + enter), simán elérhet ~25–30 cps-t
+természetes szórással, széles hisztogram-tartománnyal és valódi fáradási
+görbével — ez legfeljebb a `sustainedRate` jelet adja, ami önmagában sosem
+elég. Egy valódi auto-clicker ezzel szemben a variancia/tartomány/sorozat-
+hosszúság jeleken bukik el, jóval a ráta figyelembevétele előtt.
+
+Egy jelzett (de nem döntő) ablak csak **két egymást követő** jelzett ablak
+után válik tényleges *strike*-á (`AntiCheatState.suspicionScore`) — egy
+határeseti ablak zaj, egy minta nem az. Egy tiszta ablak azonnal nullázza a
+számlálót (önjavító).
+
+### 4. réteg — büntetési létra és korlátozás
+
+| Strike | Korlátozás hossza |
+|---|---|
+| 1 | 1 perc |
+| 2 | 15 perc |
+| 3 | 2 óra |
+| 4 | 24 óra |
+| 5 | **mentés nullázása** (a `GameSave` sor törlődik) + 24 óra |
+| 6+ | 24 óra, ismétlődik |
+
+Nincs végleges kitiltás. A strike-szám 30 egymást követő tiszta nap után
+szintenként csökken (`AntiCheatState.lastCleanAt`), ami egyben a felhalmozott
+csendes-korrekció/gyanú-számlálókat is nullázza — egy hosszú tiszta időszak a
+kisebb gyanújeleket is eltörli, nem csak a formális strike-okat.
+
+A `requireNotRestricted` middleware (`middlewares/index.ts`) a `PUT /save`-t
+és a `POST /boosters/claim`-et zárja le aktív korlátozás alatt — a
+`GET /save` és a `DELETE /save` szándékosan **nem** záródik le (a korlátozott
+játékos továbbra is látja a saját állapotát, és törölheti is a mentését, ha
+úgy dönt). Csak `ANTICHEAT_MODE=enforce` alatt aktív; `monitor`/`off` alatt
+nincs mit lezárni, mivel korlátozás azokban sosem íródik.
+
+A ranglistán (`GET /leaderboard`) egy aktívan korlátozott játékos ki van
+zárva mások nézetéből — pontosan addig, amíg a korlátozás tart, utána nincs
+tartós kizárás (`database/models/leaderboard.ts`'s `visibleFilter`).
+
+Minden verdikt (döntő és statisztikai egyaránt) egy `AntiCheatEvent` sorba
+naplózódik — beleértve a `monitor` módban elfojtottakat is (`enforced:
+false`) —, ez teszi lehetővé a küszöbök éles forgalom elleni hangolását
+anélkül, hogy bármit is élesben ki kellene próbálni.
+
+### `ANTICHEAT_MODE` — fejlesztői kapcsoló
+
+`enforce` (alapérték) | `monitor` (validál és naplóz, sosem blokkol vagy
+korrigál — lásd fent, "Tesztek futtatása") | `off` (a teljes burkot kihagyja,
+egy nyers API-kliensből végzett helyi teszteléshez). `NODE_ENV=production`
+alatt mindig `enforce`-ra kényszerül, hangos figyelmeztetéssel, függetlenül
+attól, mi van kérve — egy hibásan konfigurált deploy, ami csendben
+anti-cheat nélkül fut, sokkal rosszabb, mint egy hangos felülbírálás.
+
+### Boosterek
+
+A boosterek közvetlenül a ranglistákat torzíthatnák (aki gyakrabban tud
+"booster-farmolni", végérvényesen jobb statisztikákat ér el), ezért ez a
+rész — a fenti négy rétegtől függetlenül, már a projekt korábbi állapotában
+is — **kizárólag szerver-hiteles**:
 
 - A `PUT /save` **sosem fogad el aktív booster állapotot** — a `GameSave`
   modellben az `activeBoosters` reláció csak a `POST /boosters/claim`
@@ -422,6 +561,52 @@ szimulált menetet futtató szkripttel érdemes ellenőrizni, ne csak a
 `frontend/src/utils/__tests__/upgrades.spec.ts` egységteszteket lefuttatva
 (azok a képleteket, nem az egész gazdaság egyensúlyát ellenőrzik).
 
+Ha egy balance-állandó (egység ára/termelése, fejlesztés hatása, PhD-formula)
+módosul, a szerver oldali tükröt (`api/src/constants/gameBalance.ts`,
+`api/src/services/economy.ts`) **ugyanabban a változtatásban** kell
+frissíteni — ellenkező esetben a mentés-hihetőségi burok (lásd "Anti-cheat
+modell") a régi, elavult képlet szerint fog számolni, és vagy hamisan
+elutasít valódi mentéseket, vagy túl engedékennyé válik. A két oldal
+szinkronban tartását egy közös arany-vektor tábla (`api/src/tests/fixtures/
+economy-vectors.json`, byte-azonos másolat a frontend oldalán) és a hozzá
+tartozó két parity-teszt (`economy-parity.test.ts` / `.spec.ts`) ellenőrzi —
+egy balance-módosítás után mindkét parity-tesztet le kell futtatni, és ha a
+vektorok konkrét várt értékei is változtak, újra kell generálni őket.
+
+---
+
+## Anti-cheat küszöbök módosítása
+
+Minden detekciós küszöb egyetlen fájlban, az `api/src/constants/antiCheat.ts`-ben
+található, csoportosítva a réteg szerint (mentés-burok / statisztikai
+verdikt / büntetési létra). **Egyik érték sem kerül a kliens-oldali
+bundle-be** — ez a teljes pont abban, hogy a detekció szerver-oldalon fut:
+egy csaló-szkript szerzője nem tudja kiolvasni, hol a pontos határ, és egy
+küszöb-hangolás egy szerver-redeploy, sosem egy kliens-frissítés.
+
+Egy küszöb módosítása után:
+
+1. Futtasd le a `api/src/tests/saveValidator.test.ts` (1. réteg) és
+   `antiCheatDigest.test.ts` (3. réteg) tiszta egységteszteket — ezek
+   konkrét határeseteket ellenőriznek, amik a küszöbök módosításával
+   változni fognak.
+2. Ha a módosítás a `PUT /save` viselkedését érinti, futtasd a
+   `envelopeEnforcement.test.ts`-t is (saját, `ANTICHEAT_MODE=enforce`
+   szerverpéldánnyel).
+3. Ha valós forgalmon szeretnéd validálni egy hangolás előtt: állítsd
+   `ANTICHEAT_MODE=monitor`-ra egy ideig, majd nézd át az `AntiCheatEvent`
+   táblát (`kind`, `severity`, `enforced: false` sorok) — ez pontosan azt
+   mutatja, mi *történt volna* enforce alatt, anélkül hogy bárkit
+   ténylegesen korlátozott volna.
+
+A büntetési létra (`RESTRICTION_MINUTES_BY_STRIKE`, `SAVE_RESET_STRIKE`,
+`STRIKE_DECAY_DAYS`) módosításakor a frontend oldali guest-mód másolatát is
+(`frontend/src/utils/antiCheatConstants.ts` `GUEST_RESTRICTION_MINUTES_BY_STRIKE`/
+`GUEST_SAVE_RESET_STRIKE`) frissíteni kell — ezek a konkrét percértékek nem
+számítanak érzékenynek (a "várj 1 percet" tudása nem segít a detekció
+megkerülésében), ezért ez az egyetlen anti-cheat konstans-csoport, ami
+szándékosan létezik kliens-oldalon is.
+
 ---
 
 ## CI/CD
@@ -439,7 +624,7 @@ Minden `main`-re nyíló pull request-en lefut, négy jobban. Három közülük 
 | `frontend-tests` | Vitest (`src/**/__tests__/*.spec.ts`), szerver/adatbázis nélkül |
 | `api-tests` | Jest, éles szerver a `:2710` porton ugyanazon `zutiClickerTest` adatbázis ellen — a `verify-migrations`-tól függ, hogy már migrált adatbázison fusson |
 
-Az `api-tests` és a `verify-migrations` job egyaránt egy futtatáshoz kötött, runner-lokális `.env` fájlt vár `/mnt/raid1/zuti-clicker-ci/.env.ci` alatt (sosem GitHub secret) — ez tartalmazza a `zutiClickerTest` / `zutiClickerTestShadow` adatbázisok elérését és egy eldobható `CRYPTO_SECRET_KEY`-t. A teszt lefutása után az `api-tests` job a `cleanup:test-users --apply` scriptet futtatja, hogy a `test_<random>@example.com` felhasználók ne halmozódjanak.
+Az `api-tests` és a `verify-migrations` job egyaránt egy futtatáshoz kötött, runner-lokális `.env` fájlt vár `/mnt/raid1/zuti-clicker-ci/.env.ci` alatt (sosem GitHub secret) — ez tartalmazza a `zutiClickerTest` / `zutiClickerTestShadow` adatbázisok elérését és egy eldobható `CRYPTO_SECRET_KEY`-t. **Ennek a fájlnak tartalmaznia kell az `ANTICHEAT_MODE=monitor` sort is** (lásd fent, "Tesztek futtatása" és lent, "Anti-cheat modell") — enélkül az `api-tests` job elbukik, mert a meglévő `save`/`leaderboard`/`booster` tesztek fixture-jei nem férnek bele a mentés-hitelesség-ellenőrzésbe `enforce` módban. A teszt lefutása után az `api-tests` job a `cleanup:test-users --apply` scriptet futtatja, hogy a `test_<random>@example.com` felhasználók ne halmozódjanak.
 
 Mind a négy job feltölt egy `junit-<stage>` artifactot; egy ötödik (`reports`) job ezekből generálja a `.github/scripts/junit-report.mjs` scripttel a `report.html`, `report.ods` (valódi OpenDocument táblázat, Summary + Tests munkalapokkal) és `summary.md`/`summary.json` fájlokat, `test-reports` artifactként. A hatodik (`summary`) job publikálja az eredményt:
 
@@ -481,4 +666,5 @@ IMAGE_TAG=sha-<korábbi_rövid_sha> docker compose -f docker-compose.prod.yml up
 - A `CORS_ORIGIN_URLS` environment változó nincs beállítva a `.env`-ben; fejlesztési módban a Vite proxy kezeli a cross-origin kéréseket, így CORS konfiguráció nem szükséges.
 - A session tokenek az `Authentication.sessionToken` mezőben tárolódnak. Kijelentkezéskor ez üres stringre áll vissza, nem törlődik a rekord.
 - Új modálablakot a `frontend/src/components/modals/BaseModal.vue` közös héjára építve érdemes létrehozni (Esc, fókuszcsapda, fókusz-visszaállítás, `aria-labelledby`, testreszabható `dismiss-on-backdrop`/`max-width`/`z-index`) — ne másold újra a Teleport/backdrop mintát, amit ez váltott fel.
+- A `@vue/test-utils`'s `trigger()` metódusa mindig `isTrusted: false` eseményt küld (ez böngésző-specifikáció, nem tesztkörnyezeti hiba — pont ezt a jelet ellenőrzi az anti-cheat rendszer 2. rétege). Egy valódi kattintást szimuláló teszthez használd a `frontend/src/__tests__/testEvents.ts`'s `dispatchTrusted()` segédfüggvényét; egy `isTrusted: false` esemény viselkedését ellenőrző teszthez a sima `trigger()` pont megfelelő (alapból is bizalmatlan eseményt küld).
 ```
