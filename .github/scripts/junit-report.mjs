@@ -136,7 +136,25 @@ function parseJUnitFile(xmlPath, stage) {
   const parser = new XMLParser({
     ignoreAttributes: false,
     textNodeName: "#text",
-    processEntities: true,
+    // fast-xml-parser's boolean `processEntities: true` pins
+    // maxTotalExpansions to 1000, but that counter tallies *every*
+    // predefined entity occurrence in the document (e.g. &quot; inside a
+    // test name), not just DOCTYPE entity expansions - so it caps document
+    // size, not attack surface, and a large suite can cross it on ordinary
+    // quoted assertion text alone. The object form is spelled out in full
+    // because its own defaults are *looser* than the boolean form's
+    // (maxExpansionDepth 10000, maxTotalExpansions Infinity); these values
+    // restate the strict boolean profile and widen only the size-scaling
+    // counter. maxExpandedLength is what actually stops entity-inflation
+    // ("billion laughs") payloads, and stays unchanged.
+    processEntities: {
+      enabled: true,
+      maxEntitySize: 10000,
+      maxExpansionDepth: 10,
+      maxExpandedLength: 100000,
+      maxEntityCount: 1000,
+      maxTotalExpansions: 1000000
+    },
     htmlEntities: true
   });
   const doc = parser.parse(xml);
@@ -172,6 +190,38 @@ function parseJUnitFile(xmlPath, stage) {
   }
 
   return { stage, tests, failures, skipped, time, cases };
+}
+
+// A single malformed/unparseable JUnit file (e.g. truncated by a runner
+// crash, or tripping fast-xml-parser's entity-inflation guards) used to abort
+// `main`'s whole `.map(parseJUnitFile)` and take report generation down with
+// it - which meant a run where every test job actually passed could still
+// end up with no HTML/ODS/summary artifacts at all, and no clue why. Degrade
+// instead: log it and surface it as one synthetic failed case so the stage
+// still shows up (as failed) in every output, and every *other* stage's
+// results still get reported.
+function safeParseJUnitFile(xmlPath, stage) {
+  try {
+    return parseJUnitFile(xmlPath, stage);
+  } catch (err) {
+    console.error(`Could not parse ${basename(xmlPath)}: ${err.message}`);
+    return {
+      stage,
+      tests: 1,
+      failures: 1,
+      skipped: 0,
+      time: 0,
+      cases: [
+        {
+          classname: "",
+          name: "(report generation)",
+          time: 0,
+          status: "failed",
+          failureMessage: `Could not parse ${basename(xmlPath)}: ${err.message}`
+        }
+      ]
+    };
+  }
 }
 
 function escapeHtml(s) {
@@ -431,7 +481,7 @@ async function main() {
   }
 
   const stages = xmlFiles
-    .map((f) => parseJUnitFile(f, stageNameFor(f)))
+    .map((f) => safeParseJUnitFile(f, stageNameFor(f)))
     .sort((a, b) => a.stage.localeCompare(b.stage));
 
   const totals = stages.reduce(
