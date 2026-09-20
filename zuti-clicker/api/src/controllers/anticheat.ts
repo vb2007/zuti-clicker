@@ -22,13 +22,24 @@ function isNonNegativeInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
+// windowMs is a genuine millisecond DURATION (performance.now() delta), not
+// a count — it is legitimately fractional (e.g. 60001.2), unlike every
+// other field here. Regression: this used to be checked with
+// isNonNegativeInt, which rejected every real-world report with a 400
+// before it ever reached evaluateDigest — every hand-written test fixture
+// on both sides happened to use an integer literal (windowMs: 60_000),
+// masking it until a real browser's performance.now() value hit production.
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 // Shape-only validation — the substantive checks (bucket sum vs click count,
 // rate vs the envelope's own ceiling) live in services/antiCheat.ts's
 // evaluateDigest, which is what actually decides whether a well-shaped
 // digest is internally consistent.
 function parseDigest(body: ReportBody): AntiCheatDigest | null {
   if (
-    !isNonNegativeInt(body.windowMs) ||
+    !isNonNegativeFiniteNumber(body.windowMs) ||
     body.windowMs === 0 ||
     !isNonNegativeInt(body.clicks) ||
     !isNonNegativeInt(body.purchases) ||

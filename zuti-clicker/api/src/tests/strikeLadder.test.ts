@@ -98,6 +98,24 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     expect(res.body.error).toBe(Responses.ANTICHEAT.INVALID_DIGEST.body.error);
   });
 
+  // Regression (production incident): windowMs is a genuine performance.now()
+  // duration, sub-millisecond precision, e.g. 60001.200000000186 — this used
+  // to be validated with an integer-only check, so EVERY real heartbeat from
+  // EVERY logged-in user was rejected with 400 before ever reaching
+  // evaluateDigest, and the statistical layer never actually ran in
+  // production. Every hand-written fixture in this repo (including the ones
+  // above) happens to use an integer literal for windowMs, which is exactly
+  // why this went undetected until a real browser sent a real value.
+  it("regression: accepts a digest with a realistic non-integer windowMs (a real performance.now() delta)", async () => {
+    const cookie = await registerAndLogin();
+    const res = await api
+      .post("/anticheat/report")
+      .set("Cookie", cookie)
+      .send({ ...CLEAN_DIGEST, windowMs: 60001.200000000186 });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("clean");
+  });
+
   it("a single flagged (non-decisive) digest is not enough to strike on its own", async () => {
     const cookie = await registerAndLogin();
     const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
