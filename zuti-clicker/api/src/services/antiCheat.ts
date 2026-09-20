@@ -84,7 +84,14 @@ export interface AntiCheatDigest {
   untrustedClicks: number;
   hiddenClicks: number;
   droppedClicks: number;
+  // Zero-false-positive: a script dispatching synthetic events, or failing a
+  // native-function-integrity/honeypot check (Layer 2) has no legitimate
+  // explanation at all — decisive on the very first report.
   integrityFlags: string[];
+  // NOT zero-false-positive (pointer-physics consistency checks — unusual
+  // but real hardware/drivers can occasionally look odd) — scored at weight
+  // 1 each alongside the statistical signals below, never decisive alone.
+  weakSignals: string[];
 }
 
 export interface DigestVerdict {
@@ -112,7 +119,9 @@ function isValidShape(digest: AntiCheatDigest): boolean {
     Number.isInteger(digest.maxRunLength) &&
     digest.maxRunLength >= 0 &&
     Array.isArray(digest.integrityFlags) &&
-    digest.integrityFlags.every((f) => typeof f === "string")
+    digest.integrityFlags.every((f) => typeof f === "string") &&
+    Array.isArray(digest.weakSignals) &&
+    digest.weakSignals.every((f) => typeof f === "string")
   );
 }
 
@@ -196,6 +205,11 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
 
   if (cps > SUSTAINED_RATE_CPS) {
     signals.push("sustainedRate");
+    score += 1;
+  }
+
+  for (const flag of digest.weakSignals) {
+    signals.push(`weak:${flag}`);
     score += 1;
   }
 

@@ -26,6 +26,7 @@ function baseDigest(overrides: Partial<AntiCheatDigest> = {}): AntiCheatDigest {
     hiddenClicks: 0,
     droppedClicks: 0,
     integrityFlags: [],
+    weakSignals: [],
     ...overrides
   };
 }
@@ -73,6 +74,29 @@ describe("evaluateDigest — zero-false-positive signals", () => {
   it("flags immediately on any integrity flag, regardless of everything else", () => {
     const verdict = evaluateDigest(baseDigest({ integrityFlags: ["honeypotTouched"] }));
     expect(verdict.flagged).toBe(true);
+  });
+});
+
+describe("evaluateDigest — weak (pointer-physics) signals are corroborating, not decisive", () => {
+  it("a weak signal alone, with nothing else, does not flag", () => {
+    const verdict = evaluateDigest(baseDigest({ weakSignals: ["frozenPressure"] }));
+    expect(verdict.consistent).toBe(true);
+    expect(verdict.flagged).toBe(false);
+  });
+
+  it("a weak signal combined with a real statistical signal can push a borderline case over the flag threshold", () => {
+    // maxRunLength alone hits RUN_LENGTH_THRESHOLD (score 2, 1 distinct
+    // signal) — below both the score AND distinct-signal-count thresholds,
+    // so it doesn't flag by itself. One corroborating weak signal (score 1,
+    // a 2nd distinct signal) is enough to cross both thresholds.
+    const withoutWeak = evaluateDigest(baseDigest({ clicks: 1, maxRunLength: 30 }));
+    expect(withoutWeak.consistent).toBe(true);
+    expect(withoutWeak.flagged).toBe(false);
+
+    const withWeak = evaluateDigest(
+      baseDigest({ clicks: 1, maxRunLength: 30, weakSignals: ["frozenPressure"] })
+    );
+    expect(withWeak.flagged).toBe(true);
   });
 });
 

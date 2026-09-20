@@ -45,7 +45,8 @@ const AUTOCLICKER_DIGEST = {
   untrustedClicks: 0,
   hiddenClicks: 0,
   droppedClicks: 0,
-  integrityFlags: [] as string[]
+  integrityFlags: [] as string[],
+  weakSignals: [] as string[]
 };
 
 const CLEAN_DIGEST = {
@@ -57,7 +58,8 @@ const CLEAN_DIGEST = {
   untrustedClicks: 0,
   hiddenClicks: 0,
   droppedClicks: 0,
-  integrityFlags: [] as string[]
+  integrityFlags: [] as string[],
+  weakSignals: [] as string[]
 };
 
 describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce", () => {

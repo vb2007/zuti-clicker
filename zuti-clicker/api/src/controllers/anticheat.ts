@@ -15,6 +15,7 @@ interface ReportBody {
   hiddenClicks?: unknown;
   droppedClicks?: unknown;
   integrityFlags?: unknown;
+  weakSignals?: unknown;
 }
 
 function isNonNegativeInt(value: unknown): value is number {
@@ -39,7 +40,9 @@ function parseDigest(body: ReportBody): AntiCheatDigest | null {
     !isNonNegativeInt(body.hiddenClicks) ||
     !isNonNegativeInt(body.droppedClicks) ||
     !Array.isArray(body.integrityFlags) ||
-    !body.integrityFlags.every((f) => typeof f === "string")
+    !body.integrityFlags.every((f) => typeof f === "string") ||
+    !Array.isArray(body.weakSignals) ||
+    !body.weakSignals.every((f) => typeof f === "string")
   ) {
     return null;
   }
@@ -52,7 +55,8 @@ function parseDigest(body: ReportBody): AntiCheatDigest | null {
     untrustedClicks: body.untrustedClicks,
     hiddenClicks: body.hiddenClicks,
     droppedClicks: body.droppedClicks,
-    integrityFlags: body.integrityFlags as string[]
+    integrityFlags: body.integrityFlags as string[],
+    weakSignals: body.weakSignals as string[]
   };
 }
 

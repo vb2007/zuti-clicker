@@ -351,7 +351,7 @@ export const buildSwaggerSpec = (): object => {
           AntiCheatReportRequest: {
             type: "object",
             description: "A compact, anonymous digest of client-side click timing — no coordinates, timestamps, or device/browser identifiers.",
-            required: ["windowMs", "clicks", "purchases", "buckets", "maxRunLength", "untrustedClicks", "hiddenClicks", "droppedClicks", "integrityFlags"],
+            required: ["windowMs", "clicks", "purchases", "buckets", "maxRunLength", "untrustedClicks", "hiddenClicks", "droppedClicks", "integrityFlags", "weakSignals"],
             properties: {
               windowMs: { type: "integer", minimum: 1, example: 60000 },
               clicks: { type: "integer", minimum: 0, example: 341 },
@@ -370,7 +370,16 @@ export const buildSwaggerSpec = (): object => {
               untrustedClicks: { type: "integer", minimum: 0 },
               hiddenClicks: { type: "integer", minimum: 0 },
               droppedClicks: { type: "integer", minimum: 0 },
-              integrityFlags: { type: "array", items: { type: "string" } }
+              integrityFlags: {
+                type: "array",
+                items: { type: "string" },
+                description: "Zero-false-positive: script tampering or honeypot triggers. Decisive on the first report."
+              },
+              weakSignals: {
+                type: "array",
+                items: { type: "string" },
+                description: "Pointer-physics consistency flags — corroborating only, never decisive alone."
+              }
             }
           },
           AntiCheatReportResponse: {
