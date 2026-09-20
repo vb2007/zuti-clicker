@@ -234,7 +234,10 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
       return guestSaveReset;
     }
 
-    const windowMs = Math.max(1, performance.now() - windowStartedAt);
+    // Rounded to a whole millisecond — performance.now() is sub-millisecond
+    // precision, and the server accepts any non-negative finite duration
+    // here regardless, but there's no reason to ship the extra digits.
+    const windowMs = Math.max(1, Math.round(performance.now() - windowStartedAt));
     const digest = buildDigest({
       windowMs,
       clickTimestamps,
@@ -304,6 +307,12 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     recordHiddenClick,
     recordPurchase,
     sendHeartbeat,
-    fetchStatus
+    fetchStatus,
+    // Exposed for lib/api.ts's shared request() interceptor — a restricted
+    // account gets a 403 from ANY write endpoint (PUT /save, boosters/claim,
+    // not just the report/status ones this store otherwise calls), and that
+    // 403 must update isRestricted/restrictedUntil (and pop the modal)
+    // immediately, not wait up to a minute for the next heartbeat.
+    applyServerResult
   };
 });

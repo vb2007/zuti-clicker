@@ -1,5 +1,6 @@
 import type { LeaderboardMetric } from "@/types";
 import type { AntiCheatDigest } from "@/utils/clickTelemetry";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
 
 export class ApiError extends Error {
   constructor(
@@ -32,6 +33,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   const data = (await res.json()) as { error?: string } & T;
   if (!res.ok) {
+    // 403 is exclusively ANTICHEAT.RESTRICTED (see api/src/constants/
+    // responses.ts — the only 403 this API ever returns) from ANY gated
+    // write endpoint, not just POST /anticheat/report and GET /anticheat/
+    // status. Applying it here, centrally, means a restricted PUT /save or
+    // POST /boosters/claim pops the warning modal immediately instead of
+    // surfacing as a generic sync/claim error and waiting up to a minute
+    // for the next heartbeat to notice.
+    if (res.status === 403) {
+      const restricted = data as unknown as { restrictedUntil: string | null; strikeCount: number };
+      useAntiCheatStore().applyServerResult({ ...restricted, isRestricted: true });
+    }
     throw new ApiError(res.status, data.error ?? `HTTP ${res.status}`, data);
   }
   return data;
