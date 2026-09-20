@@ -176,6 +176,32 @@ describe("useBoosters", () => {
 
       expect(toast.toasts.some((t) => t.kind === "error")).toBe(true);
     });
+
+    // Regression: a 403 here is exclusively ANTICHEAT.RESTRICTED (the only
+    // 403 this API ever returns) — lib/api.ts's shared interceptor already
+    // applies it to antiCheatStore and the warning modal is showing by the
+    // time this catch block runs, so a second, generic "couldn't claim the
+    // booster" toast on top of it would only muddy an already-explained
+    // situation. This used to fall through to the same generic-toast branch
+    // as the 401 case above.
+    it("regression: on 403 (restricted), re-schedules silently — the warning modal covers it, no error toast", async () => {
+      loginAs();
+      const toast = useToastStore();
+      const { ApiError } = await import("@/lib/api");
+      vi.mocked(api.boosters.claim).mockRejectedValue(
+        new ApiError(403, "This account is temporarily restricted due to suspected automation.", {
+          restrictedUntil: new Date(Date.now() + 900_000).toISOString(),
+          strikeCount: 2
+        })
+      );
+
+      const { boosters } = mountBoosters();
+      forcePickupVisible();
+
+      await boosters.claimPickup();
+
+      expect(toast.toasts.some((t) => t.kind === "error")).toBe(false);
+    });
   });
 
   describe("guest", () => {
