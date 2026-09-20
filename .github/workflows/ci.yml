@@ -10,7 +10,10 @@ name: PR Tests
 # database instead of re-applying migrations itself.
 on:
   pull_request:
-    branches: [main]
+    # TEMPORARY: feat/anti-cheat added only to get a live CI run on PR #29
+    # (fix/ci-junit-entity-limit -> feat/anti-cheat), which otherwise can't
+    # trigger this workflow at all. Revert to [main] before merging #29.
+    branches: [main, feat/anti-cheat]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
