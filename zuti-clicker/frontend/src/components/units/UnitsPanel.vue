@@ -43,7 +43,13 @@ const discountPercent = computed(() => formatPercent((1 - game.boosterCostMultip
          than shown-but-inert. -->
     <MultiplierSelector v-if="ui.shopTab === 'units'" v-model="multiplier" />
 
-    <div v-if="ui.shopTab === 'units'" class="units-list">
+    <div
+      v-if="ui.shopTab === 'units'"
+      id="shop-panel-units"
+      class="units-list"
+      role="tabpanel"
+      aria-labelledby="shop-tab-units"
+    >
       <UnitCard
         v-for="unit in UNIT_DEFINITIONS"
         :key="unit.id"
@@ -51,7 +57,7 @@ const discountPercent = computed(() => formatPercent((1 - game.boosterCostMultip
         :multiplier="multiplier"
       />
     </div>
-    <div v-else class="units-list">
+    <div v-else id="shop-panel-upgrades" class="units-list" role="tabpanel" aria-labelledby="shop-tab-upgrades">
       <UpgradesPanel />
     </div>
   </aside>

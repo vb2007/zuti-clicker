@@ -13,10 +13,12 @@ const TABS: ShopTab[] = ["units", "upgrades"];
   <div class="shop-tabs" role="tablist">
     <button
       v-for="tab in TABS"
+      :id="`shop-tab-${tab}`"
       :key="tab"
       class="shop-tab-btn"
       role="tab"
       :aria-selected="ui.shopTab === tab"
+      :aria-controls="`shop-panel-${tab}`"
       :class="{ active: ui.shopTab === tab }"
       @click="ui.shopTab = tab"
     >
