@@ -120,20 +120,33 @@ export interface DigestVerdict {
   flagged: boolean; // score/signal thresholds met, independent of consistency
 }
 
-function isValidMethodCounts(value: AntiCheatDigest["methodCounts"]): boolean {
-  if (value === undefined) return true; // omitted entirely — see the field's own comment
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    Number.isInteger(value.primary) &&
-    value.primary >= 0 &&
-    Number.isInteger(value.secondary) &&
-    value.secondary >= 0 &&
-    Number.isInteger(value.enter) &&
-    value.enter >= 0 &&
-    Number.isInteger(value.space) &&
-    value.space >= 0
-  );
+// Absent, OR present but not matching the expected shape, are both treated
+// as "no method data" for the singleMethodExceedsHumanLimit signal ONLY —
+// NEVER a reason to reject the whole digest. Regression: this used to be
+// part of isValidShape, so a malformed-but-present methodCounts (e.g. a
+// stale cached client still shipping the old {primary, secondary, keyboard}
+// shape from before enter/space were split out) 400'd the ENTIRE report —
+// not just skipping this one signal, skipping every signal — reproducing
+// the exact class of bug the windowMs incident already taught this project
+// to avoid for an optional field.
+function sanitizeMethodCounts(
+  value: AntiCheatDigest["methodCounts"]
+): { primary: number; secondary: number; enter: number; space: number } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { primary, secondary, enter, space } = value;
+  if (
+    Number.isInteger(primary) &&
+    primary >= 0 &&
+    Number.isInteger(secondary) &&
+    secondary >= 0 &&
+    Number.isInteger(enter) &&
+    enter >= 0 &&
+    Number.isInteger(space) &&
+    space >= 0
+  ) {
+    return { primary, secondary, enter, space };
+  }
+  return undefined;
 }
 
 function isValidShape(digest: AntiCheatDigest): boolean {
@@ -151,8 +164,7 @@ function isValidShape(digest: AntiCheatDigest): boolean {
     Array.isArray(digest.integrityFlags) &&
     digest.integrityFlags.every((f) => typeof f === "string") &&
     Array.isArray(digest.weakSignals) &&
-    digest.weakSignals.every((f) => typeof f === "string") &&
-    isValidMethodCounts(digest.methodCounts)
+    digest.weakSignals.every((f) => typeof f === "string")
   );
 }
 
@@ -240,10 +252,12 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   }
 
   // singleMethodExceedsHumanLimit — see the constant's own comment for the
-  // research this threshold is based on. Absent for an older client that
-  // doesn't report it yet (never a rejection — see the field's own comment).
-  if (digest.methodCounts) {
-    const { primary, secondary, enter, space } = digest.methodCounts;
+  // research this threshold is based on. Absent, or present but malformed
+  // (e.g. a stale client's old shape), for an older client — never a
+  // rejection, see sanitizeMethodCounts's own comment.
+  const sanitizedMethodCounts = sanitizeMethodCounts(digest.methodCounts);
+  if (sanitizedMethodCounts) {
+    const { primary, secondary, enter, space } = sanitizedMethodCounts;
     const methodTotal = primary + secondary + enter + space;
     if (methodTotal >= MIN_CLICKS_FOR_VARIANCE_SIGNAL) {
       const dominant = Math.max(primary, secondary, enter, space);

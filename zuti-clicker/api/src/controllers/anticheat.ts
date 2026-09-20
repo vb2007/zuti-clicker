@@ -25,22 +25,29 @@ function isNonNegativeInt(value: unknown): value is number {
 
 type MethodCounts = { primary: number; secondary: number; enter: number; space: number };
 
-// Optional — omitted entirely is valid (an older cached client, or a
-// pre-this-feature deploy still mid-rollout): the digest is simply
-// evaluated without the singleMethodExceedsHumanLimit signal, never
-// rejected for lacking it. See services/antiCheat.ts's own comment on this
-// field for why (the windowMs incident this project already had once), and
-// for why enter/space are tracked separately rather than combined.
-function isValidMethodCounts(value: unknown): value is MethodCounts | undefined {
-  if (value === undefined) return true;
-  if (typeof value !== "object" || value === null) return false;
+// Absent, OR present but not matching the expected shape, are both treated
+// as "no method data" — NEVER a reason to reject the whole digest. This is
+// deliberately more lenient than a plain type guard: a stale cached client
+// (still shipping the old {primary, secondary, keyboard} shape from before
+// enter/space were split out, e.g. mid-rollout or a browser serving a
+// cached bundle) sends a well-formed but differently-shaped methodCounts
+// object, which must not poison an otherwise-valid report the same way the
+// windowMs incident did. Confirmed empirically: before this fix, the old
+// shape's mismatch made isValidMethodCounts return false, which fed
+// straight into parseDigest's overall condition and 400'd the ENTIRE
+// digest — not just skipping the new signal, skipping every signal.
+function sanitizeMethodCounts(value: unknown): MethodCounts | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
   const v = value as Record<string, unknown>;
-  return (
+  if (
     isNonNegativeInt(v["primary"]) &&
     isNonNegativeInt(v["secondary"]) &&
     isNonNegativeInt(v["enter"]) &&
     isNonNegativeInt(v["space"])
-  );
+  ) {
+    return { primary: v["primary"], secondary: v["secondary"], enter: v["enter"], space: v["space"] };
+  }
+  return undefined;
 }
 
 // windowMs is a genuine millisecond DURATION (performance.now() delta), not
@@ -74,8 +81,7 @@ function parseDigest(body: ReportBody): AntiCheatDigest | null {
     !Array.isArray(body.integrityFlags) ||
     !body.integrityFlags.every((f) => typeof f === "string") ||
     !Array.isArray(body.weakSignals) ||
-    !body.weakSignals.every((f) => typeof f === "string") ||
-    !isValidMethodCounts(body.methodCounts)
+    !body.weakSignals.every((f) => typeof f === "string")
   ) {
     return null;
   }
@@ -90,7 +96,7 @@ function parseDigest(body: ReportBody): AntiCheatDigest | null {
     droppedClicks: body.droppedClicks,
     integrityFlags: body.integrityFlags as string[],
     weakSignals: body.weakSignals as string[],
-    methodCounts: body.methodCounts
+    methodCounts: sanitizeMethodCounts(body.methodCounts)
   };
 }
 

@@ -218,6 +218,24 @@ describe("evaluateDigest — single-input-method signal", () => {
     expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
   });
 
+  // Regression (found live, post-deploy): a malformed-but-PRESENT
+  // methodCounts (e.g. a stale cached client's old {primary, secondary,
+  // keyboard} shape from before enter/space were split out) used to make
+  // the WHOLE digest inconsistent (malformed_digest) — not just skip this
+  // one signal, reject everything, including signals that have nothing to
+  // do with methodCounts at all. The cast below simulates exactly what a
+  // real stale client's JSON produces, which TypeScript would otherwise
+  // never let this file construct as a valid AntiCheatDigest.
+  it("regression: a malformed (not just absent) methodCounts never invalidates the whole digest", () => {
+    const staleShape = { primary: 0, secondary: 1400, keyboard: 0 } as unknown as NonNullable<
+      AntiCheatDigest["methodCounts"]
+    >;
+    const verdict = evaluateDigest(narrowDigest({ methodCounts: staleShape }));
+    expect(verdict.consistent).toBe(true); // NOT "malformed_digest"
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit"); // the one signal that IS skipped
+    expect(verdict.signals).toContain("metronome"); // every OTHER signal still evaluates normally
+  });
+
   it("does not flag a single method held under the human ceiling", () => {
     const buckets = emptyBuckets();
     const idx = bucketIndexForIntervalMs(100); // 10 cps flat

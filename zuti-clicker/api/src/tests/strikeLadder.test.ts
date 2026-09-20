@@ -187,6 +187,29 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     expect(res.body.strikeCount).toBe(1);
   });
 
+  // Regression (found live, post-deploy): a stale cached client still
+  // shipping the OLD methodCounts shape (before enter/space were split
+  // out of one combined "keyboard" field) sends a well-formed but
+  // differently-shaped object. This used to 400 the ENTIRE report — not
+  // just skip singleMethodExceedsHumanLimit, skip every signal, including
+  // ones that had nothing to do with methodCounts — because the shape
+  // check lived inside the overall isValidShape/parseDigest condition.
+  // Reproducing the exact incident: the SAME shape/pattern that
+  // RIGHT_CLICK_AUTOCLICKER_DIGEST above proves gets restricted must still
+  // work when methodCounts is shaped like an old client's.
+  it("regression: a stale client's outdated methodCounts shape never blocks the OTHER signals from still restricting", async () => {
+    const cookie = await registerAndLogin();
+    const staleShapeDigest = {
+      ...AUTOCLICKER_DIGEST, // flags on metronome/narrowSupport alone, nothing to do with methodCounts
+      methodCounts: { primary: 0, secondary: 100, keyboard: 0 } // old shape — no enter/space
+    };
+    await api.post("/anticheat/report").set("Cookie", cookie).send(staleShapeDigest);
+    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(staleShapeDigest);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("restricted");
+    expect(res.body.strikeCount).toBe(1);
+  });
+
   it("a single flagged (non-decisive) digest is not enough to strike on its own", async () => {
     const cookie = await registerAndLogin();
     const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
