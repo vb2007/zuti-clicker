@@ -26,20 +26,52 @@ const visible = computed(() => antiCheat.isRestricted && !dismissed.value);
 const now = ref(Date.now());
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
+  // Purely local — just advances the displayed countdown, never touches
+  // the network. Kept entirely separate from the server-check below.
   tickTimer = setInterval(() => {
     now.value = Date.now();
-    // The countdown can reach zero before the next scheduled heartbeat
-    // confirms the restriction actually lifted — ask immediately instead of
-    // leaving the player blocked (and this modal open) for up to another
-    // heartbeat interval past when they can see it should be over.
-    if (antiCheat.restrictedUntil !== null && now.value >= antiCheat.restrictedUntil.getTime()) {
-      void antiCheat.fetchStatus();
-    }
   }, 1000);
 });
 onUnmounted(() => {
   if (tickTimer !== null) clearInterval(tickTimer);
 });
+
+// The countdown can reach zero before the next scheduled heartbeat confirms
+// the restriction actually lifted — ask once, right when it should expire,
+// instead of leaving the player blocked for up to another heartbeat
+// interval past when they can see it should be over.
+//
+// Regression: this used to be a per-second poll (re-checking "is now past
+// restrictedUntil" inside the 1s countdown tick above) — if that single
+// fetchStatus() call ever failed (network blip) or the server's clock
+// lagged slightly behind the client's, restrictedUntil never changed, so
+// the SAME stale comparison kept re-firing every second, forever, for the
+// rest of the session, with no backoff and no cap. A ONE-SHOT timer
+// scheduled for exactly when the restriction should end fires exactly
+// once; if the server says it's still restricted (clock skew, or a
+// genuinely extended restriction), the watch below reschedules exactly one
+// more one-shot check for the new time — never a recurring poll. If the
+// single fetchStatus() call fails outright, this does not retry itself;
+// the regular 60s heartbeat (stores/antiCheatStore.ts) still self-heals
+// within its own next cycle, the same safety net every other failed report
+// already relies on.
+let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+function clearExpiryTimer(): void {
+  if (expiryTimer !== null) {
+    clearTimeout(expiryTimer);
+    expiryTimer = null;
+  }
+}
+function scheduleExpiryCheck(): void {
+  clearExpiryTimer();
+  if (antiCheat.restrictedUntil === null) return;
+  const msRemaining = antiCheat.restrictedUntil.getTime() - Date.now();
+  // A small buffer past the exact deadline absorbs client/server clock
+  // skew without costing the player anything beyond a fraction of a second.
+  expiryTimer = setTimeout(() => void antiCheat.fetchStatus(), Math.max(0, msRemaining) + 250);
+}
+watch(() => antiCheat.restrictedUntil?.getTime(), scheduleExpiryCheck, { immediate: true });
+onUnmounted(clearExpiryTimer);
 
 const remainingLabel = computed(() => {
   if (antiCheat.restrictedUntil === null) return "";
