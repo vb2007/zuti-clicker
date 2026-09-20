@@ -42,6 +42,7 @@ services:
             dockerfile: Dockerfile
             args:
                 - VITE_API_BASE_URL=https://zuticlicker-api.vb2007.hu
+                - VITE_ENABLE_QUICK_RESET=${VITE_ENABLE_QUICK_RESET:-false}
         container_name: zuticlicker-frontend
         restart: unless-stopped
         networks:

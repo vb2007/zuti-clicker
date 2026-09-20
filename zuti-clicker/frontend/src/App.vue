@@ -21,6 +21,7 @@ import PrestigeCeremony from "@/components/prestige/PrestigeCeremony.vue";
 import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import { useGameLoop } from "@/composables/useGameLoop";
 import { useBreakpoint } from "@/composables/useBreakpoint";
+import { QUICK_RESET_ENABLED, shouldQuickReset } from "@/utils/featureFlags";
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -42,7 +43,8 @@ watch(isCompact, (compact) => {
 });
 
 async function onKeydown(e: KeyboardEvent) {
-  if (!e.repeat && e.altKey && e.code === "KeyX") {
+  if (shouldQuickReset(e, QUICK_RESET_ENABLED)) {
+    e.preventDefault();
     await save.resetSave();
     await auth.logout();
   }

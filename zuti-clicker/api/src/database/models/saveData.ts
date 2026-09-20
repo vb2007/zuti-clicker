@@ -1,4 +1,5 @@
 import { prisma } from "../prisma";
+import { withWriteConflictRetry } from "../retry";
 
 export interface UnitInput {
   unitId: string;
@@ -70,50 +71,57 @@ export const upsertSave = async (userId: number, data: SaveInput) => {
     runSeconds: data.runSeconds ?? elapsedSeconds
   };
 
-  return prisma.$transaction(async (tx) => {
-    const gameSave = await tx.gameSave.upsert({
-      where: { userId },
-      create: {
-        userId,
-        tokens,
-        totalTokensEarned,
-        totalClicks,
-        elapsedSeconds,
-        ...prestigeCreate,
-        savedAt: now
-      },
-      update: {
-        tokens,
-        totalTokensEarned,
-        totalClicks,
-        elapsedSeconds,
-        ...prestigeUpdate,
-        savedAt: now
-      }
-    });
-
-    await tx.unitSave.deleteMany({ where: { gameSaveId: gameSave.id } });
-
-    if (units.length > 0) {
-      await tx.unitSave.createMany({
-        data: units.map((u) => ({ gameSaveId: gameSave.id, unitId: u.unitId, owned: u.owned }))
+  // Two upsertSave() calls for the same user (two tabs autosaving, or a
+  // manual "Sync" landing mid-autosave) can race inside this transaction and
+  // have MariaDB report a write conflict/deadlock (Prisma P2034) — retried
+  // here rather than surfaced as a 500, since the transaction itself is
+  // idempotent for a given payload. See database/retry.ts.
+  return withWriteConflictRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const gameSave = await tx.gameSave.upsert({
+        where: { userId },
+        create: {
+          userId,
+          tokens,
+          totalTokensEarned,
+          totalClicks,
+          elapsedSeconds,
+          ...prestigeCreate,
+          savedAt: now
+        },
+        update: {
+          tokens,
+          totalTokensEarned,
+          totalClicks,
+          elapsedSeconds,
+          ...prestigeUpdate,
+          savedAt: now
+        }
       });
-    }
 
-    // Upgrades follow the units replace-wholesale pattern, but ONLY when
-    // present — an absent `upgrades` (a legacy client) must leave whatever
-    // is already stored untouched, never wipe a player's purchases.
-    if (data.upgrades !== undefined) {
-      await tx.upgradeSave.deleteMany({ where: { gameSaveId: gameSave.id } });
-      if (data.upgrades.length > 0) {
-        await tx.upgradeSave.createMany({
-          data: data.upgrades.map((upgradeId) => ({ gameSaveId: gameSave.id, upgradeId }))
+      await tx.unitSave.deleteMany({ where: { gameSaveId: gameSave.id } });
+
+      if (units.length > 0) {
+        await tx.unitSave.createMany({
+          data: units.map((u) => ({ gameSaveId: gameSave.id, unitId: u.unitId, owned: u.owned }))
         });
       }
-    }
 
-    return gameSave;
-  });
+      // Upgrades follow the units replace-wholesale pattern, but ONLY when
+      // present — an absent `upgrades` (a legacy client) must leave whatever
+      // is already stored untouched, never wipe a player's purchases.
+      if (data.upgrades !== undefined) {
+        await tx.upgradeSave.deleteMany({ where: { gameSaveId: gameSave.id } });
+        if (data.upgrades.length > 0) {
+          await tx.upgradeSave.createMany({
+            data: data.upgrades.map((upgradeId) => ({ gameSaveId: gameSave.id, upgradeId }))
+          });
+        }
+      }
+
+      return gameSave;
+    })
+  );
 };
 
 export const deleteSave = async (userId: number) => {

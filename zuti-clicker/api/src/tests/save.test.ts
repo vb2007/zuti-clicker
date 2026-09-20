@@ -56,6 +56,19 @@ describe("Save endpoints - authenticated", () => {
     expect(res.body.error).toBe(Responses.SAVE.INVALID_UNITS.body.error);
   });
 
+  // Regression: a shape-valid units array with a duplicate unitId used to
+  // reach upsertSave's createMany and 500 on UnitSave's unique constraint
+  // instead of being caught as a 400 here, like isValidUpgrades already
+  // catches a duplicate upgrade id.
+  it("PUT /save returns 400 when units contain a duplicate unitId", async () => {
+    const res = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(TestData.SAVE_DUPLICATE_UNIT_IDS);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_UNITS.body.error);
+  });
+
   it("PUT /save creates a save and returns 200 with savedAt", async () => {
     const res = await api.put("/save").set("Cookie", cookie).send(TestData.VALID_SAVE);
     expect(res.status).toBe(200);
@@ -379,5 +392,78 @@ describe("Save endpoints - upgrades validation", () => {
       .send({ ...TestData.PRESTIGE_SAVE, upgrades: ["not-a-real-upgrade"] });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe(Responses.SAVE.INVALID_UPGRADES.body.error);
+  });
+});
+
+// Regression for a real production bug: two upsertSave() calls for the SAME
+// user (two tabs autosaving, or a manual "Sync" landing mid-autosave) race
+// inside the transaction's unitSave.deleteMany + createMany and MariaDB can
+// report a write conflict/deadlock (Prisma P2034), which storeSave's
+// catch-all previously turned into a bare 500. See database/retry.ts.
+describe("Save endpoints - concurrent writes for the same user", () => {
+  it("every response is 200 when several PUT /save calls race for one user", async () => {
+    const user = TestData.generateUser();
+    await api.post("/auth/register").send(user);
+    const loginRes = await api
+      .post("/auth/login")
+      .send({ email: user.email, password: user.password });
+    const rawHeader = (loginRes.headers["set-cookie"] as unknown as string[])[0];
+    const cookie = rawHeader.split(";")[0];
+
+    const CONCURRENT_WRITES = 8;
+    const responses = await Promise.all(
+      Array.from({ length: CONCURRENT_WRITES }, (_, i) =>
+        api
+          .put("/save")
+          .set("Cookie", cookie)
+          .send({
+            ...TestData.VALID_SAVE,
+            tokens: TestData.VALID_SAVE.tokens + i,
+            units: [
+              { unitId: "alpha", owned: i },
+              { unitId: "beta", owned: i * 2 }
+            ]
+          })
+      )
+    );
+
+    for (const res of responses) {
+      expect(res.status).toBe(200);
+      expect(res.body.message).toBe(Responses.SAVE.SAVE_SUCCESS.body.message);
+    }
+
+    // The save must still be internally consistent afterward — exactly one
+    // gameSave row's worth of units, whichever write landed last.
+    const finalGet = await api.get("/save").set("Cookie", cookie);
+    expect(finalGet.status).toBe(200);
+    expect(finalGet.body.save.units).toHaveLength(2);
+  });
+
+  it("running several users' racing writes in parallel is also all-200s", async () => {
+    const users = await Promise.all(
+      Array.from({ length: 4 }, async () => {
+        const user = TestData.generateUser();
+        await api.post("/auth/register").send(user);
+        const loginRes = await api
+          .post("/auth/login")
+          .send({ email: user.email, password: user.password });
+        const rawHeader = (loginRes.headers["set-cookie"] as unknown as string[])[0];
+        return rawHeader.split(";")[0];
+      })
+    );
+
+    const allWrites = users.flatMap((cookie) =>
+      Array.from({ length: 4 }, (_, i) =>
+        api
+          .put("/save")
+          .set("Cookie", cookie)
+          .send({ ...TestData.VALID_SAVE, tokens: TestData.VALID_SAVE.tokens + i })
+      )
+    );
+
+    const responses = await Promise.all(allWrites);
+    for (const res of responses) {
+      expect(res.status).toBe(200);
+    }
   });
 });

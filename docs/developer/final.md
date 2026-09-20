@@ -108,6 +108,15 @@ pnpm build # type-check + bundle
 pnpm preview # a build előnézete lokálisan
 ```
 
+A frontend statikus nginx image-ként fut, futásidejű környezeti változó nélkül
+— minden konfiguráció build time-kor épül be a bundle-be Docker `ARG`/`ENV`
+párokon keresztül (lásd `frontend/Dockerfile`):
+
+| Változó | Alapérték | Mit csinál |
+|---|---|---|
+| `VITE_API_BASE_URL` | `https://zuticlicker-api.vb2007.hu` | Az API abszolút URL-je production build-ben; fejlesztésben a Vite proxy váltja ki, ürese esetén a kód `/api`-ra esik vissza. |
+| `VITE_ENABLE_QUICK_RESET` | `false` | Bekapcsolva engedélyezi az Alt+X gyorsbillentyűt, ami megerősítés nélkül azonnal törli a mentést és kijelentkeztet — szándékosan csak power-user/QA célra, alapból kikapcsolva (lásd `src/utils/featureFlags.ts`). Mivel build time-kor dől el, bekapcsolása image-újraépítést igényel, nem csak egy `.env` módosítást. |
+
 ### Tesztek futtatása
 
 A frontend a Vitest keretrendszert használja, valós szerver vagy adatbázis nélkül:
@@ -419,7 +428,10 @@ Az `api-tests` és a `verify-migrations` job egyaránt egy futtatáshoz kötött
 Mind a négy job feltölt egy `junit-<stage>` artifactot; egy ötödik (`reports`) job ezekből generálja a `.github/scripts/junit-report.mjs` scripttel a `report.html`, `report.ods` (valódi OpenDocument táblázat, Summary + Tests munkalapokkal) és `summary.md`/`summary.json` fájlokat, `test-reports` artifactként. A hatodik (`summary`) job publikálja az eredményt:
 
 - a futás GitHub Actions job summary-jába,
-- egy "sticky" PR-kommentbe (pusholásonként frissül, nem szaporodik),
+- egy "sticky" PR-kommentbe (pusholásonként frissül, nem szaporodik) — **csak
+  ugyanabból a repóból nyitott PR-eken**: egy fork PR `GITHUB_TOKEN`-je
+  írásvédett a job `permissions:` blokkjától függetlenül, így ott ez a lépés
+  kimarad, és a job summary-ba egy egysoros megjegyzés kerül helyette,
 - inline check-run annotációkba a hibás teszteknél.
 
 ### `deploy.yml` – build, release, deploy
@@ -427,7 +439,7 @@ Mind a négy job feltölt egy `junit-<stage>` artifactot; egy ötödik (`reports
 Minden `main`-re kerülő push-on lefut (branch protection miatt ez mindig egy már CI-tesztelt, mergelt PR):
 
 1. **version** — beolvassa és összeveti az `api/package.json` és `frontend/package.json` verzióját (a kettőnek meg kell egyeznie — lásd a repo-konvenciót a kézzel duplikált értékekről), és megnézi, létezik-e már `v<version>` tag.
-2. **build-push** — megépíti és pusholja mindkét image-et a GitHub Container Registry-be (`ghcr.io/vb2007/zuti-clicker-api`, `ghcr.io/vb2007/zuti-clicker-frontend`), mindig `sha-<rövid_sha>` és `latest` taggel, új verzió esetén a puszta `<version>` taggel is.
+2. **build-push** — megépíti és pusholja mindkét image-et a GitHub Container Registry-be (`ghcr.io/vb2007/zuti-clicker-api`, `ghcr.io/vb2007/zuti-clicker-frontend`), mindig `sha-<rövid_sha>` és `latest` taggel, új verzió esetén a puszta `<version>` taggel is. A frontend image build-argjai közt a `VITE_ENABLE_QUICK_RESET` értékét egy `ENABLE_QUICK_RESET` nevű repo-szintű Actions variable adja (hiányában `'false'`) — ez az egyetlen módja annak, hogy az Alt+X gyorsbillentyű production-ben bekapcsoljon, és mivel build time-kor dől el, a variable módosítása után is csak egy új push/deploy után lép életbe.
 3. **migrate** — a **build-push**-sal párhuzamosan fut (nem függ az image-ektől), és lefuttatja a `prisma migrate deploy`-t az **éles, production adatbázis** ellen. A hitelesítő adatokat a telepítési könyvtár saját `.env` fájljából olvassa ki (sosem írja) — ugyanabból a fájlból, amit a `docker-compose.prod.yml` is használ `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`/`SHADOW_DB_NAME` néven —, és ezekből építi fel mind a `DATABASE_URL`-t, mind a `SHADOW_DATABASE_URL`-t. Ez utóbbit a `prisma migrate deploy` ténylegesen nem használja, de a `prisma.config.ts` minden Prisma-parancsnál rögtön betöltéskor feloldja — hiányzó env változó esetén hibával leáll még azelőtt, hogy a tényleges parancs lefutna (ezt ez a job éles hibaként tapasztalta meg először, miután egy korábbi helyi teszt hamisan biztonságosnak tűnt egy megmaradt `.env` fájl miatt, ami a hiányzó változót észrevétlenül visszatöltötte). A `DB_HOST` értéke a `.env`-ben tipikusan `host.docker.internal` (ez a Docker-only alias csak konténeren belülről oldható fel, a `docker-compose.prod.yml` `extra_hosts: host.docker.internal:host-gateway` beállítása miatt) — mivel ez a job sima folyamatként fut közvetlenül a runner gépén, nem konténerben, a job `127.0.0.1`-re cseréli ezt az értéket (szintén éles hibaként derült ki: `P1001: Can't reach database server at host.docker.internal:3306`). Mivel a migráció idempotens, ez a job feltétel nélkül, minden `main`-push-on lefut, nem csak új verziónál.
 4. **release** (csak ha a verzió új) — létrehozza a `v<version>` taget és egy GitHub release-t automatikusan generált jegyzetekkel, kiegészítve image digest-ekkel és a mergelt PR CI-futásának teszteredményeivel. Csatolt fájlok: a verzióra rögzített `docker-compose.prod.yml`, egy `images.json` digest-lista, a frontend build tartalma (`.tar.gz`), és a teszt-riport csomag.
 5. **deploy** — csak a `docker-compose.prod.yml`-t szinkronizálja a `/mnt/raid1/zuti-clicker` telepítési könyvtárba (a már ott lévő `.env`-hez soha nem nyúl), lehúzza a sha-hoz rögzített image-eket, és újraindítja a stacket a meglévő healthcheckek megvárásával. Csak akkor fut, ha a **migrate** job is sikeres volt — egy sikertelen migráció blokkolja a deployt (a régi konténerek változatlanul futnak tovább a régi sémán/image-eken).

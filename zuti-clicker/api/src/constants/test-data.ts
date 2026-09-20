@@ -51,6 +51,19 @@ export class TestData {
     units: [{ unitId: 123, owned: -1 }]
   };
 
+  // units array is shape-valid but has the same unitId twice - would 500 on
+  // UnitSave's (gameSaveId, unitId) unique constraint if it reached the DB
+  static readonly SAVE_DUPLICATE_UNIT_IDS = {
+    tokens: 100,
+    totalTokensEarned: 100,
+    totalClicks: 1,
+    elapsedSeconds: 10,
+    units: [
+      { unitId: "alpha", owned: 1 },
+      { unitId: "alpha", owned: 2 }
+    ]
+  };
+
   // Full save shape including the prestige fields
   static readonly PRESTIGE_SAVE = {
     tokens: 500.25,

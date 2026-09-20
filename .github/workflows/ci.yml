@@ -578,7 +578,18 @@ jobs:
       - name: Publish job summary
         run: cat "test-reports/summary-${{ github.run_number }}.md" >> "$GITHUB_STEP_SUMMARY"
 
+      # A fork PR's GITHUB_TOKEN is read-only no matter what this job's
+      # `permissions:` block says, so issues.createComment/updateComment
+      # throws "Resource not accessible by integration" and fails this whole
+      # job even though every test stage passed (see PR #25, run 34969728756
+      # - every job green except this one). Job summary + check-run
+      # annotations below don't need write access and already work on forks;
+      # only the PR comment does, so it's the one that needs gating. The `if:`
+      # below is the fix - it fully excludes the one case that's known to
+      # fail, so a real failure on a same-repo PR (API outage, a script bug)
+      # still fails this job rather than being swallowed.
       - name: Post sticky PR comment
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v9
         with:
           script: |
@@ -610,6 +621,10 @@ jobs:
                 body: commentBody
               });
             }
+
+      - name: Note skipped PR comment for fork PRs
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: echo "ℹ️ Sticky PR comment skipped - fork PRs get a read-only token and can't post comments. See the job summary above and the check-run annotations below for results." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish check-run annotations
         if: always()

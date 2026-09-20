@@ -132,6 +132,7 @@ jobs:
           tags: ${{ steps.tags.outputs.fe_tags }}
           build-args: |
             VITE_API_BASE_URL=${{ env.FRONTEND_API_BASE_URL }}
+            VITE_ENABLE_QUICK_RESET=${{ vars.ENABLE_QUICK_RESET || 'false' }}
 
   # ---------------------------------------------------------------------------
   # Applies pending migrations to the LIVE production database. Runs in
