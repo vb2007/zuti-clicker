@@ -73,16 +73,23 @@ export function computeMaxRunLength(intervalsMs: number[], tolerance = 0.05): nu
   return longest;
 }
 
-// primary = left click, secondary = right click, keyboard = Enter/Space
-// activation (MouseEvent.detail === 0) — see ClickerCircle.vue's own
-// button/detail split, which already computes this distinction and
-// previously discarded it before it ever reached telemetry.
-export type ClickMethod = "primary" | "secondary" | "keyboard";
+// primary = left click, secondary = right click. Enter and Space are
+// tracked SEPARATELY, not combined into one "keyboard" bucket — a human
+// alternating both keys (one finger each) can legitimately sustain nearly
+// double the rate either key alone could, the same way alternating
+// left/right mouse buttons can; lumping them together would make that
+// entirely normal two-key alternation look like 100% concentration in a
+// single method to the server's singleMethodExceedsHumanLimit signal. See
+// ClickerCircle.vue's own button/detail/keydown split, which already
+// computes this distinction and previously discarded it before it ever
+// reached telemetry.
+export type ClickMethod = "primary" | "secondary" | "enter" | "space";
 
 export interface MethodCounts {
   primary: number;
   secondary: number;
-  keyboard: number;
+  enter: number;
+  space: number;
 }
 
 export interface AntiCheatDigest {

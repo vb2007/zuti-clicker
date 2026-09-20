@@ -108,7 +108,7 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
   let untrustedClicks = 0;
   let hiddenClicks = 0;
   let droppedClicks = 0;
-  let methodCounts: MethodCounts = { primary: 0, secondary: 0, keyboard: 0 };
+  let methodCounts: MethodCounts = { primary: 0, secondary: 0, enter: 0, space: 0 };
   let windowStartedAt = performance.now();
 
   const honeypot = createHoneypotTracker();
@@ -132,7 +132,7 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     untrustedClicks = 0;
     hiddenClicks = 0;
     droppedClicks = 0;
-    methodCounts = { primary: 0, secondary: 0, keyboard: 0 };
+    methodCounts = { primary: 0, secondary: 0, enter: 0, space: 0 };
     windowStartedAt = performance.now();
   }
 

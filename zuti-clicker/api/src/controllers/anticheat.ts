@@ -23,18 +23,24 @@ function isNonNegativeInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
-type MethodCounts = { primary: number; secondary: number; keyboard: number };
+type MethodCounts = { primary: number; secondary: number; enter: number; space: number };
 
 // Optional — omitted entirely is valid (an older cached client, or a
 // pre-this-feature deploy still mid-rollout): the digest is simply
 // evaluated without the singleMethodExceedsHumanLimit signal, never
 // rejected for lacking it. See services/antiCheat.ts's own comment on this
-// field for why (the windowMs incident this project already had once).
+// field for why (the windowMs incident this project already had once), and
+// for why enter/space are tracked separately rather than combined.
 function isValidMethodCounts(value: unknown): value is MethodCounts | undefined {
   if (value === undefined) return true;
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  return isNonNegativeInt(v["primary"]) && isNonNegativeInt(v["secondary"]) && isNonNegativeInt(v["keyboard"]);
+  return (
+    isNonNegativeInt(v["primary"]) &&
+    isNonNegativeInt(v["secondary"]) &&
+    isNonNegativeInt(v["enter"]) &&
+    isNonNegativeInt(v["space"])
+  );
 }
 
 // windowMs is a genuine millisecond DURATION (performance.now() delta), not

@@ -172,7 +172,7 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     droppedClicks: 0,
     integrityFlags: [] as string[],
     weakSignals: ["frozenPressure"], // the one corroborator needed to cross the flag threshold
-    methodCounts: { primary: 0, secondary: 1260, keyboard: 0 }
+    methodCounts: { primary: 0, secondary: 1260, enter: 0, space: 0 }
   };
 
   it("regression: a realistic pure-right-click autoclicker session (isolated shape, over the single-method ceiling) is restricted end-to-end", async () => {

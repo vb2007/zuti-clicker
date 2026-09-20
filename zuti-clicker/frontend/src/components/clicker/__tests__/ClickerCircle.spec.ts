@@ -118,7 +118,7 @@ describe("ClickerCircle", () => {
     expect(circle.classList.contains("circle-pressed")).toBe(false);
   });
 
-  it("reports the correct input method to antiCheat.recordClick for left-click, right-click, and keyboard", async () => {
+  it("reports the correct input method to antiCheat.recordClick for left-click and right-click", async () => {
     const antiCheat = useAntiCheatStore();
     const spy = vi.spyOn(antiCheat, "recordClick");
     const wrapper = mount(ClickerCircle);
@@ -128,9 +128,27 @@ describe("ClickerCircle", () => {
 
     await dispatchTrusted(wrapper.element, "pointerdown", { button: 2, clientX: 1, clientY: 1 });
     expect(spy).toHaveBeenLastCalledWith(true, "secondary");
+  });
 
+  // Regression: Enter and Space used to be reported as one shared "keyboard"
+  // method — a human alternating both keys can legitimately sustain nearly
+  // double the rate either key alone could, which the server's
+  // singleMethodExceedsHumanLimit signal would have seen as 100%
+  // concentration in a single method and falsely flagged. They must be
+  // distinguished so alternating both looks like the mixed-method session
+  // it actually is, the same way alternating mouse buttons already does.
+  it("distinguishes Enter from Space, not a single shared 'keyboard' method", async () => {
+    const antiCheat = useAntiCheatStore();
+    const spy = vi.spyOn(antiCheat, "recordClick");
+    const wrapper = mount(ClickerCircle);
+
+    wrapper.element.dispatchEvent(new KeyboardEvent("keydown", { code: "Enter", bubbles: true }));
     await dispatchTrusted(wrapper.element, "click"); // detail 0 — keyboard activation
-    expect(spy).toHaveBeenLastCalledWith(true, "keyboard");
+    expect(spy).toHaveBeenLastCalledWith(true, "enter");
+
+    wrapper.element.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", bubbles: true }));
+    await dispatchTrusted(wrapper.element, "click");
+    expect(spy).toHaveBeenLastCalledWith(true, "space");
   });
 
   it("the portrait cannot be dragged out of the circle", () => {

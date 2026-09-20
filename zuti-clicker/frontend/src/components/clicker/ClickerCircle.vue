@@ -118,6 +118,24 @@ function handlePointerDown(e: PointerEvent) {
   attemptClick(e.isTrusted, e.button === 0 ? "primary" : "secondary", e.clientX, e.clientY);
 }
 
+// Enter and Space are tracked as SEPARATE methods, not one shared
+// "keyboard" bucket — a human alternating both keys (e.g. one finger on
+// each) can legitimately sustain nearly double the rate either key alone
+// could, exactly the way alternating left/right mouse buttons can. Lumping
+// them together would make that entirely normal two-key alternation look
+// like 100% concentration in a single method to the server's
+// singleMethodExceedsHumanLimit signal — a false positive this split
+// avoids the same way primary/secondary already do for mouse buttons.
+// A native <button>'s own activation fires the synthesized `click` on
+// Enter's keydown and Space's keyup, always strictly after this handler
+// — see MDN's HTMLElement click-event-activation-behavior notes — so
+// `lastKeyMethod` is always current by the time handleClick reads it.
+let lastKeyMethod: "enter" | "space" = "enter";
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.code === "Enter") lastKeyMethod = "enter";
+  else if (e.code === "Space") lastKeyMethod = "space";
+}
+
 function handleClick(e: MouseEvent) {
   if (e.detail !== 0) return; // a real pointer click — pointerdown already handled it
   // Keyboard-triggered activation: MouseEvent.clientX/Y are 0 for a
@@ -126,7 +144,7 @@ function handleClick(e: MouseEvent) {
   const rect = wrapperRef.value?.getBoundingClientRect();
   const x = rect ? rect.left + rect.width / 2 : e.clientX;
   const y = rect ? rect.top + rect.height / 2 : e.clientY;
-  attemptClick(e.isTrusted, "keyboard", x, y);
+  attemptClick(e.isTrusted, lastKeyMethod, x, y);
 }
 </script>
 
@@ -137,6 +155,7 @@ function handleClick(e: MouseEvent) {
     class="circle-wrap"
     :aria-label="t('clicker.ariaLabel')"
     @pointerdown="handlePointerDown"
+    @keydown="handleKeyDown"
     @click="handleClick"
     @contextmenu.prevent
     @dragstart.prevent

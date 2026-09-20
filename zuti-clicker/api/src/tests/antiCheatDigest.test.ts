@@ -199,7 +199,7 @@ describe("evaluateDigest — single-input-method signal", () => {
 
   it("flags singleMethodExceedsHumanLimit when effectively all clicks come from one method", () => {
     const verdict = evaluateDigest(
-      narrowDigest({ methodCounts: { primary: 0, secondary: 1400, keyboard: 0 } })
+      narrowDigest({ methodCounts: { primary: 0, secondary: 1400, enter: 0, space: 0 } })
     );
     expect(verdict.consistent).toBe(true);
     expect(verdict.signals).toContain("singleMethodExceedsHumanLimit");
@@ -207,7 +207,7 @@ describe("evaluateDigest — single-input-method signal", () => {
 
   it("does not flag it when the same aggregate rate is split across multiple methods", () => {
     const verdict = evaluateDigest(
-      narrowDigest({ methodCounts: { primary: 700, secondary: 700, keyboard: 0 } })
+      narrowDigest({ methodCounts: { primary: 700, secondary: 700, enter: 0, space: 0 } })
     );
     expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
   });
@@ -228,7 +228,7 @@ describe("evaluateDigest — single-input-method signal", () => {
         windowMs: 60_000,
         buckets,
         maxRunLength: 599,
-        methodCounts: { primary: 0, secondary: 600, keyboard: 0 }
+        methodCounts: { primary: 0, secondary: 600, enter: 0, space: 0 }
       })
     );
     expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");

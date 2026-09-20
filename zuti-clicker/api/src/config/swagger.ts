@@ -388,11 +388,12 @@ export const buildSwaggerSpec = (): object => {
               methodCounts: {
                 type: "object",
                 description:
-                  "Optional per-input-method click counts for the window. Omitted entirely is valid (an older client) — never rejected for lacking it.",
+                  "Optional per-input-method click counts for the window. Omitted entirely is valid (an older client) — never rejected for lacking it. Enter/Space are tracked separately (not combined) since alternating both keys can legitimately double a human's sustained rate.",
                 properties: {
                   primary: { type: "integer", minimum: 0, description: "Left click." },
                   secondary: { type: "integer", minimum: 0, description: "Right click." },
-                  keyboard: { type: "integer", minimum: 0, description: "Enter/Space activation." }
+                  enter: { type: "integer", minimum: 0, description: "Enter key activation." },
+                  space: { type: "integer", minimum: 0, description: "Space key activation." }
                 }
               }
             }

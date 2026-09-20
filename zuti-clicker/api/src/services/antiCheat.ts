@@ -98,7 +98,14 @@ export interface AntiCheatDigest {
   // for it (see the windowMs incident this project already had once): the
   // digest is simply evaluated without the singleMethodExceedsHumanLimit
   // signal, exactly as if it always reported a perfectly even split.
-  methodCounts?: { primary: number; secondary: number; keyboard: number };
+  //
+  // enter/space are tracked SEPARATELY, not combined into one "keyboard"
+  // count — a human alternating both keys (one finger each) can
+  // legitimately sustain nearly double the rate either key alone could,
+  // the same way alternating left/right mouse buttons can. Combining them
+  // would make that entirely normal two-key alternation look like 100%
+  // concentration in a single method below.
+  methodCounts?: { primary: number; secondary: number; enter: number; space: number };
 }
 
 export interface DigestVerdict {
@@ -122,8 +129,10 @@ function isValidMethodCounts(value: AntiCheatDigest["methodCounts"]): boolean {
     value.primary >= 0 &&
     Number.isInteger(value.secondary) &&
     value.secondary >= 0 &&
-    Number.isInteger(value.keyboard) &&
-    value.keyboard >= 0
+    Number.isInteger(value.enter) &&
+    value.enter >= 0 &&
+    Number.isInteger(value.space) &&
+    value.space >= 0
   );
 }
 
@@ -234,10 +243,10 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   // research this threshold is based on. Absent for an older client that
   // doesn't report it yet (never a rejection — see the field's own comment).
   if (digest.methodCounts) {
-    const { primary, secondary, keyboard } = digest.methodCounts;
-    const methodTotal = primary + secondary + keyboard;
+    const { primary, secondary, enter, space } = digest.methodCounts;
+    const methodTotal = primary + secondary + enter + space;
     if (methodTotal >= MIN_CLICKS_FOR_VARIANCE_SIGNAL) {
-      const dominant = Math.max(primary, secondary, keyboard);
+      const dominant = Math.max(primary, secondary, enter, space);
       if (dominant / methodTotal >= SINGLE_METHOD_CONCENTRATION) {
         const methodCps = methodTotal / (digest.windowMs / 1000);
         if (methodCps > SINGLE_METHOD_MAX_CPS) {
