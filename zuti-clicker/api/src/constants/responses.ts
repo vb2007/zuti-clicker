@@ -111,4 +111,24 @@ export class Responses {
     INVALID_LIMIT: { status: 400, body: { error: "limit must be an integer between 1 and 100." } },
     INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
   } as const;
+
+  static readonly ANTICHEAT = {
+    // 403, not 401: the session is valid, the account is simply barred from
+    // this action for now. restrictedUntil/strikeCount are appended
+    // dynamically by the caller (see middlewares/index.ts's
+    // requireNotRestricted), never hardcoded here.
+    RESTRICTED: {
+      status: 403,
+      body: {
+        error:
+          "This account is temporarily restricted due to suspected automation. Progress, purchases, and prestige are paused until the restriction expires."
+      }
+    },
+    INVALID_DIGEST: {
+      status: 400,
+      body: { error: "Malformed anti-cheat report." }
+    },
+    REPORT_SUCCESS: { status: 200, body: { message: "Report received." } },
+    INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
+  } as const;
 }

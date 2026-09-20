@@ -335,6 +335,68 @@ export const buildSwaggerSpec = (): object => {
                 }
               }
             ]
+          },
+          AntiCheatRestrictedResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/ErrorResponse" },
+              {
+                type: "object",
+                properties: {
+                  restrictedUntil: { type: "string", format: "date-time" },
+                  strikeCount: { type: "integer", minimum: 1, example: 2 }
+                }
+              }
+            ]
+          },
+          AntiCheatReportRequest: {
+            type: "object",
+            description: "A compact, anonymous digest of client-side click timing — no coordinates, timestamps, or device/browser identifiers.",
+            required: ["windowMs", "clicks", "purchases", "buckets", "maxRunLength", "untrustedClicks", "hiddenClicks", "droppedClicks", "integrityFlags"],
+            properties: {
+              windowMs: { type: "integer", minimum: 1, example: 60000 },
+              clicks: { type: "integer", minimum: 0, example: 341 },
+              purchases: { type: "integer", minimum: 0, example: 4 },
+              buckets: {
+                type: "array",
+                items: { type: "integer", minimum: 0 },
+                description: "Fixed-length (24) log-spaced inter-click-interval histogram.",
+                example: [0, 0, 0, 3, 41, 118, 96, 40, 20, 12, 5, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+              },
+              maxRunLength: {
+                type: "integer",
+                minimum: 0,
+                description: "Longest run of consecutive intervals within ~5% of the running median."
+              },
+              untrustedClicks: { type: "integer", minimum: 0 },
+              hiddenClicks: { type: "integer", minimum: 0 },
+              droppedClicks: { type: "integer", minimum: 0 },
+              integrityFlags: { type: "array", items: { type: "string" } }
+            }
+          },
+          AntiCheatReportResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/MessageResponse" },
+              {
+                type: "object",
+                properties: {
+                  status: { type: "string", enum: ["clean", "restricted"] },
+                  restrictedUntil: {
+                    oneOf: [{ type: "string", format: "date-time" }, { type: "null" }]
+                  },
+                  strikeCount: { type: "integer", minimum: 0 }
+                }
+              }
+            ]
+          },
+          AntiCheatStatusResponse: {
+            type: "object",
+            properties: {
+              isRestricted: { type: "boolean" },
+              restrictedUntil: {
+                oneOf: [{ type: "string", format: "date-time" }, { type: "null" }]
+              },
+              strikeCount: { type: "integer", minimum: 0 }
+            }
           }
         },
         responses: {
@@ -344,6 +406,14 @@ export const buildSwaggerSpec = (): object => {
               "application/json": {
                 schema: { $ref: "#/components/schemas/ErrorResponse" },
                 example: { error: "Unauthorized." }
+              }
+            }
+          },
+          Restricted: {
+            description: "The account is under an active anti-cheat restriction",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/AntiCheatRestrictedResponse" }
               }
             }
           },

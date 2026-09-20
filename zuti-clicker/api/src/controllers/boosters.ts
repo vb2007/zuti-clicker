@@ -25,6 +25,8 @@ import { Responses } from "../constants/responses";
  *               $ref: '#/components/schemas/ClaimBoosterResponse'
  *       '401':
  *         $ref: '#/components/responses/Unauthorized'
+ *       '403':
+ *         $ref: '#/components/responses/Restricted'
  *       '404':
  *         description: No save exists yet to grant a booster against
  *         content:

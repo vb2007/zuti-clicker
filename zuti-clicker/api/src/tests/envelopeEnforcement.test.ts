@@ -1,6 +1,6 @@
 import { describe, it, beforeAll, afterAll, expect } from "@jest/globals";
 import request from "supertest";
-import { spawn, type ChildProcess } from "child_process";
+import type { ChildProcess } from "child_process";
 import { TestData } from "../constants/test-data.js";
 import { Responses } from "../constants/responses.js";
 import { getClickValue } from "../services/economy.js";
@@ -10,6 +10,7 @@ import {
   MAX_CLICK_BOOSTER_MULTIPLIER
 } from "../constants/gameBalance.js";
 import { EARNED_ACCEPT_MARGIN, REJECT_MULTIPLIER } from "../constants/antiCheat.js";
+import { startTestServer, stopTestServer } from "./testServerHelper.js";
 
 // This file spawns its OWN, isolated server instances with an explicit
 // ANTICHEAT_MODE, one per describe block — every other *.test.ts file runs
@@ -23,37 +24,6 @@ import { EARNED_ACCEPT_MARGIN, REJECT_MULTIPLIER } from "../constants/antiCheat.
 const PORT = 2711;
 const BASE_URL = `http://localhost:${PORT}`;
 const api = request(BASE_URL);
-
-async function startServer(mode: string): Promise<ChildProcess> {
-  const child = spawn("pnpm", ["exec", "tsx", "src/index.ts"], {
-    env: { ...process.env, PORT: String(PORT), ANTICHEAT_MODE: mode },
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  let output = "";
-  child.stdout?.on("data", (d: Buffer) => (output += d.toString()));
-  child.stderr?.on("data", (d: Buffer) => (output += d.toString()));
-
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`${BASE_URL}/docs`);
-      if (res.status < 500) return child;
-    } catch {
-      // not up yet
-    }
-    if (child.exitCode !== null) {
-      throw new Error(`Server (mode=${mode}) exited early (code ${child.exitCode}):\n${output}`);
-    }
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  child.kill();
-  throw new Error(`Server (mode=${mode}) did not become ready in time:\n${output}`);
-}
-
-async function stopServer(child: ChildProcess): Promise<void> {
-  child.kill();
-  await new Promise((r) => setTimeout(r, 300));
-}
 
 async function registerAndLogin(): Promise<string> {
   const user = TestData.generateUser();
@@ -81,11 +51,11 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=enforce", () =
   let server: ChildProcess;
 
   beforeAll(async () => {
-    server = await startServer("enforce");
+    server = await startTestServer(PORT, "enforce");
   }, 25_000);
 
   afterAll(async () => {
-    await stopServer(server);
+    await stopTestServer(server);
   });
 
   it("accepts a modest, achievable first save unchanged", async () => {
@@ -165,11 +135,11 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=monitor", () =
   let server: ChildProcess;
 
   beforeAll(async () => {
-    server = await startServer("monitor");
+    server = await startTestServer(PORT, "monitor");
   }, 25_000);
 
   afterAll(async () => {
-    await stopServer(server);
+    await stopTestServer(server);
   });
 
   it("writes an implausible save through unchanged and never blocks it", async () => {
@@ -195,11 +165,11 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=off", () => {
   let server: ChildProcess;
 
   beforeAll(async () => {
-    server = await startServer("off");
+    server = await startTestServer(PORT, "off");
   }, 25_000);
 
   afterAll(async () => {
-    await stopServer(server);
+    await stopTestServer(server);
   });
 
   it("skips the envelope entirely — an implausible save is accepted unchanged", async () => {

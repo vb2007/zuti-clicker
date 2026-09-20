@@ -9,7 +9,7 @@ import {
   type PrevSaveSnapshot,
   type IncomingSave
 } from "../services/saveValidator";
-import { logAntiCheatEvent } from "../database/models/antiCheat";
+import { applyStrike, recordSoftClamp } from "../database/models/antiCheat";
 
 interface SaveBody {
   tokens?: unknown;
@@ -204,6 +204,8 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *               $ref: '#/components/schemas/ErrorResponse'
  *       '401':
  *         $ref: '#/components/responses/Unauthorized'
+ *       '403':
+ *         $ref: '#/components/responses/Restricted'
  *       '409':
  *         description: >
  *           Rejected by the save plausibility envelope: a monotonicity
@@ -367,21 +369,23 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
         incomingSnapshot
       );
 
-      if (verdict.outcome !== "accept") {
-        await logAntiCheatEvent({
-          userId,
-          kind: verdict.outcome === "reject" ? "envelope_reject" : "envelope_clamp",
-          severity: "info",
-          mode: ANTICHEAT_MODE,
-          detail:
-            verdict.outcome === "reject"
-              ? { reason: verdict.reason, ...verdict.detail }
-              : { reasons: verdict.reasons, ...verdict.detail },
-          enforced: ANTICHEAT_MODE === "enforce"
-        }).catch((e: unknown) => console.error("Failed to log anti-cheat event:", e));
+      const enforced = ANTICHEAT_MODE === "enforce";
+      if (verdict.outcome === "reject") {
+        // A rejection is already >REJECT_MULTIPLIER times what's achievable
+        // or a monotonicity break — certain enough to strike immediately,
+        // unlike a soft clamp (see recordSoftClamp) which needs a pattern.
+        await applyStrike(userId, "envelope_reject", ANTICHEAT_MODE, enforced, {
+          reason: verdict.reason,
+          ...verdict.detail
+        }).catch((e: unknown) => console.error("Failed to record anti-cheat strike:", e));
+      } else if (verdict.outcome === "clamp") {
+        await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, {
+          reasons: verdict.reasons,
+          ...verdict.detail
+        }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));
       }
 
-      if (ANTICHEAT_MODE === "enforce") {
+      if (enforced) {
         if (verdict.outcome === "reject") {
           const r = Responses.SAVE.IMPLAUSIBLE;
           res.status(r.status).json(r.body);
