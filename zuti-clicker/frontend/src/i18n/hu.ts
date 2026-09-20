@@ -194,7 +194,10 @@ export default {
   prestige: {
     title: "Fokozat",
     lockedProgress: "Haladás a következő PhD-ig",
-    unlockedHint: "Készen állsz a disszertáció megvédésére.",
+    tokensToNext: "{amount} hiányzik",
+    unlockedHint: "+{gain} PhD készen áll megvédésre",
+    progressToNextGain: "Haladás +{next}. PhD felé",
+    afterPrestige: "Utána: +{prod}% termelés · -{cost}% ár",
     phdOwned: "Megszerzett PhD",
     production: "Termelés",
     costDiscount: "Egységár",

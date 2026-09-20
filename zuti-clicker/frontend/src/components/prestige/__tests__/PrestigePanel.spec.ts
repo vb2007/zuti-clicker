@@ -82,4 +82,46 @@ describe("PrestigePanel", () => {
     expect(chips.some((c) => c.startsWith("-0.5%"))).toBe(true);
     expect(chips.some((c) => c.startsWith("-1%"))).toBe(false);
   });
+
+  describe("pending PhD count", () => {
+    // Regression: the panel never read game.phdGain at all — a player saw a
+    // fully lit "ready" button and a progress bar, but no number telling
+    // them how many PhDs they were actually about to get.
+    it("below the threshold: shows the not-ready progress block, no ready headline", () => {
+      const game = useGameStore();
+      game.totalTokensEarned = 500_000;
+      game.runTokensEarned = 500_000;
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".progress-caption").exists()).toBe(true);
+      expect(wrapper.find(".ready-headline").exists()).toBe(false);
+    });
+
+    it("at 1 PhD ready: shows the pending gain and the relabeled progress bar", () => {
+      const game = useGameStore();
+      game.totalTokensEarned = 1_000_000;
+      game.runTokensEarned = 1_000_000;
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".ready-headline").text()).toContain("+1");
+      expect(wrapper.find(".progress-caption").exists()).toBe(false);
+    });
+
+    it("at multiple PhDs ready: the headline reflects the exact pending count", () => {
+      const game = useGameStore();
+      game.totalTokensEarned = 9_000_000;
+      game.runTokensEarned = 9_000_000; // getPhdGain(9e6) = 3
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".ready-headline").text()).toContain("+3");
+    });
+
+    it("the ready state's after-line shows the production/cost effect at the new total", () => {
+      const game = useGameStore();
+      game.phdCount = 0;
+      game.totalTokensEarned = 4_000_000;
+      game.runTokensEarned = 4_000_000; // getPhdGain(4e6) = 2 -> newPhdCount = 2
+      const wrapper = mount(PrestigePanel);
+      const after = wrapper.find(".after-line").text();
+      expect(after).toContain("+4%"); // 2 PhD * 2% production
+      expect(after).toContain("-1%"); // 2 PhD * 0.5% cost
+    });
+  });
 });

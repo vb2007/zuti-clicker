@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { formatNumber, formatPercent } from "@/utils/formatters";
+import { getProductionMultiplier, getCostMultiplier } from "@/utils/prestige";
 import { PHD_TOKEN_SCALE, UNIT_REVEAL_FRACTION } from "@/utils/gameConstants";
 
 const { t } = useI18n();
@@ -24,6 +25,22 @@ const progressPercent = computed(() => Math.round(game.prestigeProgress * 100));
 // rounding to a whole percent would make 1 PhD's true 0.5% look like 1%.
 const productionPercent = computed(() => formatPercent((game.productionMultiplier - 1) * 100));
 const costDiscountPercent = computed(() => formatPercent((1 - game.costMultiplier) * 100));
+
+// game.canPrestige is exactly "phdGain >= 1" — see gameStore.ts. Below this
+// point the panel previously showed nothing about the pending gain at all:
+// the progress bar and button both read as "ready" with no number in sight
+// until the confirm modal opened.
+const ready = computed(() => game.canPrestige);
+
+// Same before/after math PrestigeConfirmModal.vue already uses, applied one
+// bracket ahead — what the player would have *after* confirming right now.
+const newPhdCount = computed(() => game.phdCount + game.phdGain);
+const afterProductionPercent = computed(() =>
+  formatPercent((getProductionMultiplier(newPhdCount.value) - 1) * 100)
+);
+const afterCostPercent = computed(() =>
+  formatPercent((1 - getCostMultiplier(newPhdCount.value)) * 100)
+);
 </script>
 
 <template>
@@ -43,7 +60,9 @@ const costDiscountPercent = computed(() => formatPercent((1 - game.costMultiplie
         <span class="mult-chip">-{{ costDiscountPercent }}% {{ t("prestige.costDiscount") }}</span>
       </div>
 
-      <div class="progress-block">
+      <!-- Not ready: same progress bar as before, now with a caption saying
+           how many tokens are left instead of leaving the player to guess. -->
+      <div v-if="!ready" class="progress-block">
         <div class="progress-label">
           <span>{{ t("prestige.lockedProgress") }}</span>
           <span class="progress-percent">{{ progressPercent }}%</span>
@@ -51,6 +70,30 @@ const costDiscountPercent = computed(() => formatPercent((1 - game.costMultiplie
         <div class="progress-track">
           <div class="progress-fill" :style="{ transform: `scaleX(${progressPercent / 100})` }" />
         </div>
+        <span class="progress-caption">
+          {{ t("prestige.tokensToNext", { amount: formatNumber(game.tokensToNextPhd) }) }}
+        </span>
+      </div>
+
+      <!-- Ready: the headline number the panel used to hide entirely (only
+           the confirm modal showed it). The bar relabels to "progress to
+           +N" (rather than repeating "next PhD") because it resets to 0%
+           the instant a PhD is banked — showing that against the OLD label
+           would misleadingly look like nothing was gained. -->
+      <div v-else class="ready-block">
+        <span class="ready-headline">{{ t("prestige.unlockedHint", { gain: game.phdGain }) }}</span>
+        <div class="progress-block">
+          <div class="progress-label">
+            <span>{{ t("prestige.progressToNextGain", { next: game.phdGain + 1 }) }}</span>
+            <span class="progress-percent">{{ progressPercent }}%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" :style="{ transform: `scaleX(${progressPercent / 100})` }" />
+          </div>
+        </div>
+        <span class="after-line">
+          {{ t("prestige.afterPrestige", { prod: afterProductionPercent, cost: afterCostPercent }) }}
+        </span>
       </div>
 
       <button
@@ -147,6 +190,30 @@ const costDiscountPercent = computed(() => formatPercent((1 - game.costMultiplie
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
   font-weight: 600;
+}
+
+.progress-caption {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ready-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ready-headline {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+
+.after-line {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .progress-track {

@@ -194,7 +194,10 @@ export default {
   prestige: {
     title: "Prestige",
     lockedProgress: "Progress to next PhD",
-    unlockedHint: "Ready to defend your thesis.",
+    tokensToNext: "{amount} to go",
+    unlockedHint: "+{gain} PhD ready to defend",
+    progressToNextGain: "Progress to +{next} PhD",
+    afterPrestige: "After: +{prod}% production · -{cost}% cost",
     phdOwned: "PhDs owned",
     production: "Production",
     costDiscount: "Unit cost",
