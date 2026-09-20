@@ -163,17 +163,18 @@ describe("ClickerCircle", () => {
       expect(wrapper.emitted("click")).toBeUndefined();
     });
 
-    it("a trusted click still reaches the store while restricted (the store itself no-ops it)", async () => {
-      // ClickerCircle only gates trust/focus/burst — the actual restriction
-      // check lives in gameStore.clickToken() (see gameStore.spec.ts's
-      // "anti-cheat restriction gate" tests), so a restricted click must
-      // still reach that far rather than being silently swallowed here,
-      // which would hide the real gate from ever running.
+    it("a trusted click while restricted never even emits — no +0 popup, no CPS advance", async () => {
+      // Must behave like a disabled button: no press animation, no floating
+      // number, no CPS-readout advance — not a click that silently earns
+      // nothing while still looking like it landed. gameStore.clickToken()
+      // is ALSO gated independently (see gameStore.spec.ts's "anti-cheat
+      // restriction gate" tests) as a belt-and-braces measure against
+      // calling the store directly, but that alone isn't enough for the UI.
       const antiCheat = useAntiCheatStore();
       antiCheat.isRestricted = true;
       const wrapper = mount(ClickerCircle);
       await dispatchTrusted(wrapper.element, "pointerdown", { button: 0, clientX: 1, clientY: 1 });
-      expect(wrapper.emitted("click")).toHaveLength(1);
+      expect(wrapper.emitted("click")).toBeUndefined();
     });
   });
 });

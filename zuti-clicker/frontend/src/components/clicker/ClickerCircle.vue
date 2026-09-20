@@ -72,6 +72,14 @@ function registerClick(x: number, y: number) {
  * flag exists to catch, and it earns nothing, silently.
  */
 function attemptClick(trusted: boolean, x: number, y: number): void {
+  // While restricted, a click must behave like a disabled button — no press
+  // animation, no floating "+0", no advance of the CPS readout — not a
+  // click that silently earns nothing while still looking like it landed.
+  // gameStore.clickToken() itself is also gated (belt-and-braces: it can't
+  // be bypassed by calling the store directly), but that alone would let a
+  // "+0" popup and a moving CPS number through, which is exactly what a
+  // restricted player should NOT see.
+  if (antiCheat.isRestricted) return;
   if (document.hidden || !document.hasFocus()) {
     antiCheat.recordHiddenClick();
     return;

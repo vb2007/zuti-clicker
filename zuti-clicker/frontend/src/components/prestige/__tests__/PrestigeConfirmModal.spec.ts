@@ -4,6 +4,7 @@ import { mount, DOMWrapper } from "@vue/test-utils";
 import PrestigeConfirmModal from "@/components/prestige/PrestigeConfirmModal.vue";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { getProductionMultiplier, getCostMultiplier } from "@/utils/prestige";
 import { formatPercent } from "@/utils/formatters";
 import { dispatchTrusted } from "@/__tests__/testEvents";
@@ -112,5 +113,13 @@ describe("PrestigeConfirmModal", () => {
 
     expect(game.phdCount).toBe(0);
     expect(game.runTokensEarned).toBe(4_000_000);
+  });
+
+  it("the confirm button is disabled while restricted, even with a PhD available", () => {
+    const game = useGameStore();
+    game.runTokensEarned = 4_000_000;
+    useAntiCheatStore().isRestricted = true;
+    mount(PrestigeConfirmModal);
+    expect(body().find(".btn-confirm").attributes("disabled")).toBeDefined();
   });
 });

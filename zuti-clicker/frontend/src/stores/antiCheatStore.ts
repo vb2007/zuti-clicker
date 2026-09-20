@@ -13,6 +13,13 @@ import {
 } from "@/utils/antiCheatConstants";
 
 const GUEST_STRIKES_KEY = "zuti-clicker:guestAntiCheatStrikes";
+// Stores ONLY the restriction's end time (epoch ms), never a separate
+// "isRestricted" boolean — deriving isRestricted from a comparison against
+// the current clock, the same way the server does for a logged-in account,
+// means there is no second flag that can drift out of sync with it, and a
+// page reload can never "helpfully" clear an active restriction just
+// because that separate flag was never persisted in the first place.
+const GUEST_RESTRICTED_UNTIL_KEY = "zuti-clicker:guestRestrictedUntil";
 
 export interface ClickOutcome {
   credited: boolean;
@@ -35,6 +42,33 @@ function writeGuestStrikeCount(n: number): void {
   } catch {
     // localStorage unavailable (private browsing, quota) — the strike still
     // applies for this session via in-memory state, it just won't persist.
+  }
+}
+
+/** The persisted restriction end time, or null if absent/corrupt/already
+ * past — a past value is treated exactly like "none" by every caller, so
+ * this is the one place that distinction is made. */
+function readGuestRestrictedUntil(): Date | null {
+  try {
+    const raw = localStorage.getItem(GUEST_RESTRICTED_UNTIL_KEY);
+    if (raw === null) return null;
+    const ms = Number.parseInt(raw, 10);
+    if (!Number.isFinite(ms) || ms <= Date.now()) return null;
+    return new Date(ms);
+  } catch {
+    return null;
+  }
+}
+
+function writeGuestRestrictedUntil(until: Date | null): void {
+  try {
+    if (until === null) {
+      localStorage.removeItem(GUEST_RESTRICTED_UNTIL_KEY);
+    } else {
+      localStorage.setItem(GUEST_RESTRICTED_UNTIL_KEY, String(until.getTime()));
+    }
+  } catch {
+    // Same as writeGuestStrikeCount — applies for this session regardless.
   }
 }
 
@@ -107,9 +141,25 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     const strikes = readGuestStrikeCount() + 1;
     writeGuestStrikeCount(strikes);
     strikeCount.value = strikes;
-    restrictedUntil.value = new Date(Date.now() + guestRestrictionMinutes(strikes) * 60_000);
+    const until = new Date(Date.now() + guestRestrictionMinutes(strikes) * 60_000);
+    restrictedUntil.value = until;
+    writeGuestRestrictedUntil(until);
     isRestricted.value = true;
     return strikes >= GUEST_SAVE_RESET_STRIKE;
+  }
+
+  /** Re-derives isRestricted from the wall clock for a guest — the only way
+   * a guest's restriction ever clears, since there is no server to poll.
+   * Called from fetchStatus() (itself called on mount and by
+   * CheatWarningModal's own countdown reaching zero), so a guest gets the
+   * same "checked proactively as soon as the timer visually ends" behavior
+   * a logged-in account gets from the server. */
+  function checkGuestRestrictionExpiry(): void {
+    if (restrictedUntil.value !== null && Date.now() >= restrictedUntil.value.getTime()) {
+      isRestricted.value = false;
+      restrictedUntil.value = null;
+      writeGuestRestrictedUntil(null);
+    }
   }
 
   /**
@@ -176,6 +226,11 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
       // still a zero-false-positive local detection and must still strike.
       const guestSaveReset = integrityFlags.length > 0 && applyGuestStrike();
       resetWindow();
+      // A logged-in account gets a fresh isRestricted every heartbeat (the
+      // server recomputes it from its own clock on every report) even if
+      // CheatWarningModal was dismissed — mirror that for guests instead of
+      // relying solely on the modal's own countdown-driven fetchStatus call.
+      if (!guestSaveReset) checkGuestRestrictionExpiry();
       return guestSaveReset;
     }
 
@@ -205,10 +260,14 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
 
   /** Refreshes restriction status without waiting for the next heartbeat —
    * called on mount/login so a page reload mid-restriction shows the
-   * correct countdown immediately. No-op for guests (state is already
-   * authoritative in localStorage/memory for them). */
+   * correct countdown immediately, and by CheatWarningModal's own countdown
+   * reaching zero. For a guest this re-derives isRestricted from the wall
+   * clock (see checkGuestRestrictionExpiry) instead of calling the server. */
   async function fetchStatus(): Promise<void> {
-    if (!auth.isLoggedIn) return;
+    if (!auth.isLoggedIn) {
+      checkGuestRestrictionExpiry();
+      return;
+    }
     try {
       const result = await api.anticheat.status();
       applyServerResult(result);
@@ -217,13 +276,20 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     }
   }
 
-  /** Called once, on app mount — wires the honeypot and, for a guest with a
-   * still-active restriction from a previous session, restores it. */
+  /** Called once, on app mount — wires the honeypot and, for a guest,
+   * restores strikeCount and any still-active restriction from a previous
+   * session (an already-expired one is treated as none — see
+   * readGuestRestrictedUntil). */
   function initialize(): void {
     installClientChecks();
     if (!auth.isLoggedIn) {
       const strikes = readGuestStrikeCount();
       if (strikes > 0) strikeCount.value = strikes;
+      const until = readGuestRestrictedUntil();
+      if (until !== null) {
+        restrictedUntil.value = until;
+        isRestricted.value = true;
+      }
     }
   }
 

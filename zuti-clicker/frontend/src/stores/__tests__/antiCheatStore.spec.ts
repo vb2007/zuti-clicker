@@ -157,7 +157,7 @@ describe("antiCheatStore", () => {
   });
 
   describe("fetchStatus()", () => {
-    it("is a no-op for guests", async () => {
+    it("is a no-op (no API call) for guests", async () => {
       const store = useAntiCheatStore();
       await store.fetchStatus();
       expect(api.anticheat.status).not.toHaveBeenCalled();
@@ -174,6 +174,70 @@ describe("antiCheatStore", () => {
       await store.fetchStatus();
       expect(store.isRestricted).toBe(true);
       expect(store.strikeCount).toBe(2);
+    });
+
+    it("clears an expired guest restriction (the countdown-reached-zero path)", async () => {
+      vi.useFakeTimers();
+      const store = useAntiCheatStore();
+      store.recordClick(false); // strike 1 -> restricted for 1 minute
+      expect(store.isRestricted).toBe(true);
+
+      vi.advanceTimersByTime(60_001);
+      await store.fetchStatus();
+      expect(store.isRestricted).toBe(false);
+      expect(store.restrictedUntil).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it("leaves a still-active guest restriction untouched", async () => {
+      const store = useAntiCheatStore();
+      store.recordClick(false);
+      await store.fetchStatus();
+      expect(store.isRestricted).toBe(true);
+    });
+  });
+
+  describe("guest restriction persistence across a reload", () => {
+    it("restores an active restriction in a fresh store instance", () => {
+      const first = useAntiCheatStore();
+      first.recordClick(false); // strike 1
+      expect(first.isRestricted).toBe(true);
+
+      // Simulate a page reload: a brand-new Pinia instance, same localStorage.
+      setActivePinia(createPinia());
+      const second = useAntiCheatStore();
+      second.initialize();
+      expect(second.isRestricted).toBe(true);
+      expect(second.restrictedUntil).not.toBeNull();
+      expect(second.strikeCount).toBe(1);
+    });
+
+    it("does not restore an already-expired restriction", () => {
+      vi.useFakeTimers();
+      const first = useAntiCheatStore();
+      first.recordClick(false);
+      vi.advanceTimersByTime(60_001);
+
+      setActivePinia(createPinia());
+      const second = useAntiCheatStore();
+      second.initialize();
+      expect(second.isRestricted).toBe(false);
+      expect(second.restrictedUntil).toBeNull();
+      vi.useRealTimers();
+    });
+  });
+
+  describe("sendHeartbeat() also self-heals an expired guest restriction", () => {
+    it("clears isRestricted once the restriction has expired, even without the modal open", async () => {
+      vi.useFakeTimers();
+      const store = useAntiCheatStore();
+      store.recordClick(false);
+      expect(store.isRestricted).toBe(true);
+
+      vi.advanceTimersByTime(60_001);
+      await store.sendHeartbeat();
+      expect(store.isRestricted).toBe(false);
+      vi.useRealTimers();
     });
   });
 });
