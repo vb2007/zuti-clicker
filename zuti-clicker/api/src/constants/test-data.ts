@@ -64,6 +64,82 @@ export class TestData {
     ]
   };
 
+  // unitId is a plausible-looking string but not one of the eight known unit
+  // ids — previously accepted (any string was allowed), now hard-rejected.
+  static readonly SAVE_UNKNOWN_UNIT_ID = {
+    tokens: 1,
+    totalTokensEarned: 1,
+    totalClicks: 1,
+    elapsedSeconds: 1,
+    units: [{ unitId: "not-a-real-unit", owned: 1 }]
+  };
+
+  static readonly SAVE_FRACTIONAL_UNIT_OWNED = {
+    tokens: 1,
+    totalTokensEarned: 1,
+    totalClicks: 1,
+    elapsedSeconds: 1,
+    units: [{ unitId: "alpha", owned: 1.5 }]
+  };
+
+  static readonly SAVE_UNIT_OWNED_TOO_LARGE = {
+    tokens: 1,
+    totalTokensEarned: 1,
+    totalClicks: 1,
+    elapsedSeconds: 1,
+    units: [{ unitId: "alpha", owned: 10001 }]
+  };
+
+  static readonly SAVE_NEGATIVE_TOKENS = {
+    tokens: -1,
+    totalTokensEarned: 100,
+    totalClicks: 1,
+    elapsedSeconds: 1,
+    units: []
+  };
+
+  static readonly SAVE_NEGATIVE_ELAPSED = {
+    tokens: 1,
+    totalTokensEarned: 100,
+    totalClicks: 1,
+    elapsedSeconds: -1,
+    units: []
+  };
+
+  static readonly SAVE_FRACTIONAL_TOTAL_CLICKS = {
+    tokens: 1,
+    totalTokensEarned: 100,
+    totalClicks: 1.5,
+    elapsedSeconds: 1,
+    units: []
+  };
+
+  static readonly SAVE_NEGATIVE_TOTAL_CLICKS = {
+    tokens: 1,
+    totalTokensEarned: 100,
+    totalClicks: -1,
+    elapsedSeconds: 1,
+    units: []
+  };
+
+  static readonly SAVE_TOTAL_CLICKS_TOO_LARGE = {
+    tokens: 1,
+    totalTokensEarned: 100,
+    totalClicks: 3000000000,
+    elapsedSeconds: 1,
+    units: []
+  };
+
+  // tokens must never exceed totalTokensEarned — spending only ever
+  // decreases tokens, never lifetime earnings.
+  static readonly SAVE_TOKENS_EXCEED_EARNED = {
+    tokens: 1000,
+    totalTokensEarned: 10,
+    totalClicks: 1,
+    elapsedSeconds: 1,
+    units: []
+  };
+
   // Full save shape including the prestige fields
   static readonly PRESTIGE_SAVE = {
     tokens: 500.25,

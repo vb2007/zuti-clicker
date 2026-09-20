@@ -230,5 +230,12 @@ export default {
     hiddenNote: "You're hidden from other players' leaderboards.",
     empty: "No players on this leaderboard yet.",
     loadError: "Couldn't load the leaderboard."
+  },
+  anticheat: {
+    title: "Progress paused",
+    body: "Automated or unusually fast input was detected on this account. Clicking, purchases, and prestige are paused until the timer below runs out.",
+    timeRemaining: "Time remaining",
+    strikeNote: "This has happened {count} times on this account. Restrictions get longer each time.",
+    dismissBtn: "Got it"
   }
 };

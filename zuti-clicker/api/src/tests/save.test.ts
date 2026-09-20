@@ -69,6 +69,78 @@ describe("Save endpoints - authenticated", () => {
     expect(res.body.error).toBe(Responses.SAVE.INVALID_UNITS.body.error);
   });
 
+  it("PUT /save returns 400 when a unit's unitId is not a known unit", async () => {
+    const res = await api.put("/save").set("Cookie", cookie).send(TestData.SAVE_UNKNOWN_UNIT_ID);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_UNITS.body.error);
+  });
+
+  it("PUT /save returns 400 when a unit's owned count is fractional", async () => {
+    const res = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(TestData.SAVE_FRACTIONAL_UNIT_OWNED);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_UNITS.body.error);
+  });
+
+  it("PUT /save returns 400 when a unit's owned count exceeds the hard ceiling", async () => {
+    const res = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(TestData.SAVE_UNIT_OWNED_TOO_LARGE);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_UNITS.body.error);
+  });
+
+  it("PUT /save returns 400 for negative tokens", async () => {
+    const res = await api.put("/save").set("Cookie", cookie).send(TestData.SAVE_NEGATIVE_TOKENS);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_CORE_FIELDS.body.error);
+  });
+
+  it("PUT /save returns 400 for negative elapsedSeconds", async () => {
+    const res = await api.put("/save").set("Cookie", cookie).send(TestData.SAVE_NEGATIVE_ELAPSED);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_CORE_FIELDS.body.error);
+  });
+
+  it("PUT /save returns 400 for a fractional totalClicks", async () => {
+    const res = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(TestData.SAVE_FRACTIONAL_TOTAL_CLICKS);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_CORE_FIELDS.body.error);
+  });
+
+  it("PUT /save returns 400 for a negative totalClicks", async () => {
+    const res = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(TestData.SAVE_NEGATIVE_TOTAL_CLICKS);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_CORE_FIELDS.body.error);
+  });
+
+  it("PUT /save returns 400 when totalClicks exceeds the Int32 column range", async () => {
+    const res = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(TestData.SAVE_TOTAL_CLICKS_TOO_LARGE);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.INVALID_CORE_FIELDS.body.error);
+  });
+
+  it("PUT /save returns 400 when tokens exceeds totalTokensEarned", async () => {
+    const res = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(TestData.SAVE_TOKENS_EXCEED_EARNED);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(Responses.SAVE.TOKENS_EXCEED_EARNED.body.error);
+  });
+
   it("PUT /save creates a save and returns 200 with savedAt", async () => {
     const res = await api.put("/save").set("Cookie", cookie).send(TestData.VALID_SAVE);
     expect(res.status).toBe(200);

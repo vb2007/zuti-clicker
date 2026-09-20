@@ -23,7 +23,36 @@ export class Responses {
     },
     INVALID_UNITS: {
       status: 400,
-      body: { error: "Each unit must have a valid unitId (string) and owned count (number >= 0)." }
+      body: {
+        error:
+          "Each unit must have a known unitId and an integer owned count between 0 and 10000, with no duplicate unitId."
+      }
+    },
+    // Present but out-of-range core fields (negative, non-finite, or a
+    // fractional totalClicks) — distinct from MISSING_FIELDS, which covers a
+    // field that is absent or the wrong type entirely.
+    INVALID_CORE_FIELDS: {
+      status: 400,
+      body: {
+        error:
+          "tokens, totalTokensEarned, and elapsedSeconds must be finite numbers >= 0, and totalClicks must be a non-negative integer no greater than 2147483647."
+      }
+    },
+    TOKENS_EXCEED_EARNED: {
+      status: 400,
+      body: { error: "tokens cannot exceed totalTokensEarned." }
+    },
+    // The save plausibility envelope's reject tier (services/saveValidator.ts)
+    // — a monotonicity break, or a value more than twice what's achievable
+    // since the last save. 409, not 400: the request is well-formed, it's
+    // the claimed progress that couldn't be verified. Nothing is written;
+    // the client's next GET /save returns the last verified state unchanged.
+    IMPLAUSIBLE: {
+      status: 409,
+      body: {
+        error:
+          "This save could not be verified as achievable since your last sync and was rejected. Reload to continue from your last verified save."
+      }
     },
     INVALID_PRESTIGE: {
       status: 400,
@@ -80,6 +109,26 @@ export class Responses {
       body: { error: "metric must be one of: tokens, clicks, phd, playtime." }
     },
     INVALID_LIMIT: { status: 400, body: { error: "limit must be an integer between 1 and 100." } },
+    INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
+  } as const;
+
+  static readonly ANTICHEAT = {
+    // 403, not 401: the session is valid, the account is simply barred from
+    // this action for now. restrictedUntil/strikeCount are appended
+    // dynamically by the caller (see middlewares/index.ts's
+    // requireNotRestricted), never hardcoded here.
+    RESTRICTED: {
+      status: 403,
+      body: {
+        error:
+          "This account is temporarily restricted due to suspected automation. Progress, purchases, and prestige are paused until the restriction expires."
+      }
+    },
+    INVALID_DIGEST: {
+      status: 400,
+      body: { error: "Malformed anti-cheat report." }
+    },
+    REPORT_SUCCESS: { status: 200, body: { message: "Report received." } },
     INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
   } as const;
 }

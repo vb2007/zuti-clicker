@@ -3,6 +3,8 @@ import { setActivePinia, createPinia } from "pinia";
 import { mount, DOMWrapper } from "@vue/test-utils";
 import UpgradeTile from "@/components/units/UpgradeTile.vue";
 import { useGameStore } from "@/stores/gameStore";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
+import { dispatchTrusted } from "@/__tests__/testEvents";
 
 const body = () => new DOMWrapper(document.body);
 
@@ -34,7 +36,7 @@ describe("UpgradeTile", () => {
     const wrapper = mount(UpgradeTile, { props: { upgradeId: "chalk" } });
     expect(wrapper.find(".upgrade-tile").classes()).toContain("affordable");
 
-    await wrapper.find(".upgrade-tile").trigger("click");
+    await dispatchTrusted(wrapper.find(".upgrade-tile").element, "click");
     expect(game.tokens).toBe(50);
     expect(game.isUpgradeOwned("chalk")).toBe(true);
   });
@@ -43,9 +45,28 @@ describe("UpgradeTile", () => {
     const game = useGameStore();
     game.tokens = 10;
     const wrapper = mount(UpgradeTile, { props: { upgradeId: "chalk" } });
-    await wrapper.find(".upgrade-tile").trigger("click");
+    await dispatchTrusted(wrapper.find(".upgrade-tile").element, "click");
     expect(game.tokens).toBe(10);
     expect(game.isUpgradeOwned("chalk")).toBe(false);
+  });
+
+  describe("anti-cheat gate", () => {
+    it("an untrusted (synthetic) click does not buy, even though affordable", async () => {
+      const game = useGameStore();
+      game.tokens = 200;
+      const wrapper = mount(UpgradeTile, { props: { upgradeId: "chalk" } });
+      await wrapper.find(".upgrade-tile").trigger("click"); // untrusted by default
+      expect(game.tokens).toBe(200);
+      expect(game.isUpgradeOwned("chalk")).toBe(false);
+    });
+
+    it("is disabled while restricted, even though affordable", () => {
+      const game = useGameStore();
+      game.tokens = 200;
+      useAntiCheatStore().isRestricted = true;
+      const wrapper = mount(UpgradeTile, { props: { upgradeId: "chalk" } });
+      expect(wrapper.find(".upgrade-tile").attributes("disabled")).toBeDefined();
+    });
   });
 
   // Half-percent regression, shared via utils/upgrades.ts's

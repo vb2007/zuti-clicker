@@ -4,8 +4,10 @@ import { mount, DOMWrapper } from "@vue/test-utils";
 import PrestigeConfirmModal from "@/components/prestige/PrestigeConfirmModal.vue";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { getProductionMultiplier, getCostMultiplier } from "@/utils/prestige";
 import { formatPercent } from "@/utils/formatters";
+import { dispatchTrusted } from "@/__tests__/testEvents";
 
 // PrestigeConfirmModal renders via <Teleport to="body">, so its content lives
 // under document.body rather than under the mounted wrapper's own element —
@@ -96,9 +98,28 @@ describe("PrestigeConfirmModal", () => {
     game.runTokensEarned = 4_000_000;
     mount(PrestigeConfirmModal);
 
-    await body().find(".btn-confirm").trigger("click");
+    await dispatchTrusted(body().find(".btn-confirm").element, "click");
 
     expect(game.phdCount).toBe(2);
     expect(game.runTokensEarned).toBe(0);
+  });
+
+  it("an untrusted (synthetic) confirm click does not prestige", async () => {
+    const game = useGameStore();
+    game.runTokensEarned = 4_000_000;
+    mount(PrestigeConfirmModal);
+
+    await body().find(".btn-confirm").trigger("click"); // untrusted by default
+
+    expect(game.phdCount).toBe(0);
+    expect(game.runTokensEarned).toBe(4_000_000);
+  });
+
+  it("the confirm button is disabled while restricted, even with a PhD available", () => {
+    const game = useGameStore();
+    game.runTokensEarned = 4_000_000;
+    useAntiCheatStore().isRestricted = true;
+    mount(PrestigeConfirmModal);
+    expect(body().find(".btn-confirm").attributes("disabled")).toBeDefined();
   });
 });

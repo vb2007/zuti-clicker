@@ -3,6 +3,7 @@ import { setActivePinia, createPinia } from "pinia";
 import { mount } from "@vue/test-utils";
 import ClickerArea from "@/components/clicker/ClickerArea.vue";
 import { CPS_WINDOW_MS } from "@/utils/gameConstants";
+import { dispatchTrusted } from "@/__tests__/testEvents";
 
 describe("ClickerArea — clicks-per-second pill", () => {
   beforeEach(() => {
@@ -21,7 +22,7 @@ describe("ClickerArea — clicks-per-second pill", () => {
 
   it("shows a nonzero rate right after a click", async () => {
     const wrapper = mount(ClickerArea);
-    await wrapper.find(".circle-wrap").trigger("pointerdown", { button: 0, clientX: 1, clientY: 1 });
+    await dispatchTrusted(wrapper.find(".circle-wrap").element, "pointerdown", { button: 0, clientX: 1, clientY: 1 });
     expect(wrapper.find(".cps-pill").exists()).toBe(true);
     expect(wrapper.find(".cps-val").text()).not.toBe("0.0");
   });
@@ -38,7 +39,7 @@ describe("ClickerArea — clicks-per-second pill", () => {
     expect(slotBeforeClick.exists()).toBe(true);
     expect(wrapper.find(".cps-pill").exists()).toBe(false);
 
-    await wrapper.find(".circle-wrap").trigger("pointerdown", { button: 0, clientX: 1, clientY: 1 });
+    await dispatchTrusted(wrapper.find(".circle-wrap").element, "pointerdown", { button: 0, clientX: 1, clientY: 1 });
     expect(wrapper.find(".cps-slot").exists()).toBe(true);
     expect(wrapper.find(".cps-pill").exists()).toBe(true);
     // Same element throughout — never removed and re-added.
@@ -51,7 +52,7 @@ describe("ClickerArea — clicks-per-second pill", () => {
   // recomputeCps()/cpsInterval.
   it("regression: decays back to 0 and hides once clicking stops, without any further clicks", async () => {
     const wrapper = mount(ClickerArea);
-    await wrapper.find(".circle-wrap").trigger("pointerdown", { button: 0, clientX: 1, clientY: 1 });
+    await dispatchTrusted(wrapper.find(".circle-wrap").element, "pointerdown", { button: 0, clientX: 1, clientY: 1 });
     expect(wrapper.find(".cps-pill").exists()).toBe(true);
 
     vi.advanceTimersByTime(CPS_WINDOW_MS + 500);

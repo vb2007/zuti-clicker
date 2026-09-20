@@ -2,6 +2,14 @@ import express from "express";
 import { getSave, upsertSave, deleteSave, type UnitInput } from "../database/models/saveData";
 import { Responses } from "../constants/responses";
 import { isKnownUpgradeId } from "../constants/upgrades";
+import { isKnownUnitId, MAX_UNIT_OWNED } from "../constants/gameBalance";
+import { ANTICHEAT_MODE } from "../constants/antiCheat";
+import {
+  evaluateSaveEnvelope,
+  type PrevSaveSnapshot,
+  type IncomingSave
+} from "../services/saveValidator";
+import { applyStrike, recordSoftClamp } from "../database/models/antiCheat";
 
 interface SaveBody {
   tokens?: unknown;
@@ -17,15 +25,24 @@ interface SaveBody {
   upgrades?: unknown;
 }
 
+// Hardened as part of the anti-cheat save envelope (see
+// services/saveValidator.ts): unitId is now allowlisted against the known
+// unit ids (previously any string was accepted — see the comment this
+// replaced, which explicitly documented that as intentional), and `owned`
+// must be a genuine non-negative integer no greater than MAX_UNIT_OWNED, not
+// merely `>= 0`. This check runs unconditionally (not gated by
+// ANTICHEAT_MODE) — it is basic input validation, not a heuristic.
 function isValidUnits(units: unknown): units is UnitInput[] {
   if (!Array.isArray(units)) return false;
   const shapeValid = units.every((u) => {
     if (u === null || typeof u !== "object") return false;
     const entry = u as Record<string, unknown>;
     return (
-      typeof entry["unitId"] === "string" &&
+      isKnownUnitId(entry["unitId"]) &&
       typeof entry["owned"] === "number" &&
-      (entry["owned"] as number) >= 0
+      Number.isInteger(entry["owned"]) &&
+      (entry["owned"] as number) >= 0 &&
+      (entry["owned"] as number) <= MAX_UNIT_OWNED
     );
   });
   if (!shapeValid) return false;
@@ -39,11 +56,10 @@ function isValidUnits(units: unknown): units is UnitInput[] {
 }
 
 // Optional (older clients predate the upgrades system entirely), but a
-// *present* value must be an array of known upgrade ids — unlike unitId
-// (any string is accepted, since units are purely client-defined and never
-// validated server-side), upgrades ARE allowlisted here because the booster
-// system reads specific ids (conferenceBadge, departmentNewsletter) back off
-// this same data server-side (see database/models/boosters.ts).
+// *present* value must be an array of known upgrade ids — allowlisted here
+// (like unitId in isValidUnits above) because the booster system reads
+// specific ids (conferenceBadge, departmentNewsletter) back off this same
+// data server-side (see database/models/boosters.ts).
 function isValidUpgrades(upgrades: unknown): upgrades is string[] | undefined {
   if (upgrades === undefined) return true;
   if (!Array.isArray(upgrades)) return false;
@@ -59,19 +75,30 @@ function isValidUpgrades(upgrades: unknown): upgrades is string[] | undefined {
 // the catch block below would turn into a misleading 500 instead of a 400.
 const MAX_INT32 = 2147483647;
 
-// Prestige fields are optional (older clients omit them entirely), but a
-// *present* value must be a sane non-negative number. Number.isInteger matters
-// for the Int columns: a fractional value would make Prisma throw, which the
-// catch block below would turn into a misleading 500 instead of a 400.
-function isOptionalCount(value: unknown): value is number | undefined {
-  if (value === undefined) return true;
+// A genuine non-negative integer within the Int column's range. Number.isInteger
+// matters for the Int columns: a fractional value would make Prisma throw,
+// which the catch block below would turn into a misleading 500 instead of a 400.
+function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_INT32;
+}
+
+// Prestige fields are optional (older clients omit them entirely), but a
+// *present* value must be a sane non-negative number.
+function isOptionalCount(value: unknown): value is number | undefined {
+  return value === undefined || isCount(value);
 }
 
 function isOptionalAmount(value: unknown): value is number | undefined {
   if (value === undefined) return true;
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
+
+// tokens and totalTokensEarned can legitimately differ by a sliver at the
+// last representable float bit — this is slack for that, not an invitation
+// to overshoot: a real forged excess is caught by the plausibility envelope
+// (services/saveValidator.ts), which compares against the previous save
+// rather than trusting a single request in isolation.
+const CORE_FIELD_EPSILON = 1e-6;
 
 /**
  * @openapi
@@ -165,24 +192,43 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *             schema:
  *               $ref: '#/components/schemas/StoreSaveResponse'
  *       '400':
- *         description: Missing required fields, or invalid (present but malformed) units, prestige fields, or upgrades
+ *         description: >
+ *           Missing required fields; a present-but-invalid core field
+ *           (negative/non-finite, or a fractional totalClicks); tokens
+ *           exceeding totalTokensEarned; or invalid units, prestige fields,
+ *           or upgrades.
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       '401':
  *         $ref: '#/components/responses/Unauthorized'
+ *       '403':
+ *         $ref: '#/components/responses/Restricted'
+ *       '409':
+ *         description: >
+ *           Rejected by the save plausibility envelope: a monotonicity
+ *           break, or a value more than twice what's achievable since the
+ *           last save (see docs/developer/final.md's "Anti-cheat modell"
+ *           section). Nothing is written — GET /save still returns the last
+ *           verified state. Never returned when ANTICHEAT_MODE is "off" or
+ *           "monitor".
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *       '500':
  *         $ref: '#/components/responses/InternalError'
  */
 export const storeSave = async (req: express.Request, res: express.Response) => {
   try {
-    const userId = req.identity?.id;
-    if (userId === undefined) {
+    const identity = req.identity;
+    if (identity === undefined) {
       const r = Responses.AUTH.UNAUTHORIZED;
       res.status(r.status).json(r.body);
       return;
     }
+    const userId = identity.id;
 
     const {
       tokens,
@@ -202,16 +248,46 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       typeof tokens !== "number" ||
       typeof totalTokensEarned !== "number" ||
       typeof totalClicks !== "number" ||
-      typeof elapsedSeconds !== "number" ||
-      !isValidUnits(units)
+      typeof elapsedSeconds !== "number"
     ) {
-      const r =
-        typeof tokens !== "number" ||
-        typeof totalTokensEarned !== "number" ||
-        typeof totalClicks !== "number" ||
-        typeof elapsedSeconds !== "number"
-          ? Responses.SAVE.MISSING_FIELDS
-          : Responses.SAVE.INVALID_UNITS;
+      const r = Responses.SAVE.MISSING_FIELDS;
+      res.status(r.status).json(r.body);
+      return;
+    }
+
+    // From here tokens/totalTokensEarned/totalClicks/elapsedSeconds are all
+    // genuinely typeof "number" — but that alone still lets through NaN,
+    // Infinity, negative values, and a fractional totalClicks (an Int
+    // column). This runs unconditionally, independent of ANTICHEAT_MODE: it
+    // is basic input validation, not a heuristic — see services/
+    // saveValidator.ts for the plausibility envelope that IS mode-gated.
+    if (
+      !Number.isFinite(tokens) ||
+      tokens < 0 ||
+      !Number.isFinite(totalTokensEarned) ||
+      totalTokensEarned < 0 ||
+      !Number.isFinite(elapsedSeconds) ||
+      elapsedSeconds < 0 ||
+      !isCount(totalClicks)
+    ) {
+      const r = Responses.SAVE.INVALID_CORE_FIELDS;
+      res.status(r.status).json(r.body);
+      return;
+    }
+
+    // The current balance can never exceed everything ever earned — spending
+    // only ever decreases `tokens`, never `totalTokensEarned`. A small
+    // epsilon absorbs float round-tripping; a real forged excess is still
+    // caught here as anyone actually inflating tokens without inflating
+    // totalTokensEarned to match is exactly the "granted free tokens" attack.
+    if (tokens > totalTokensEarned + CORE_FIELD_EPSILON) {
+      const r = Responses.SAVE.TOKENS_EXCEED_EARNED;
+      res.status(r.status).json(r.body);
+      return;
+    }
+
+    if (!isValidUnits(units)) {
+      const r = Responses.SAVE.INVALID_UNITS;
       res.status(r.status).json(r.body);
       return;
     }
@@ -234,13 +310,123 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       return;
     }
 
+    // Everything below is the save plausibility envelope (see
+    // services/saveValidator.ts) — the request body has passed every
+    // stateless shape/bounds check above, but hasn't yet been checked
+    // against what this account could actually have achieved since its last
+    // save. `effective*` starts as the validated request value and is only
+    // ever adjusted DOWN by a clamp-tier verdict; ANTICHEAT_MODE=off skips
+    // this block entirely (a raw local API client), "monitor" evaluates and
+    // logs but never adjusts or rejects, and "enforce" (the only mode
+    // production can run in) does both.
+    let effectiveTokens = tokens;
+    let effectiveTotalTokensEarned = totalTokensEarned;
+    let effectiveTotalClicks = totalClicks;
+    let effectiveElapsedSeconds = elapsedSeconds;
+    let effectivePhdCount = phdCount;
+    let effectivePrestigeCount = prestigeCount;
+
+    if (ANTICHEAT_MODE !== "off") {
+      const previous = await getSave(userId);
+      // The same "omitted means preserve the stored value" resolution
+      // upsertSave itself applies below — the envelope needs the REAL
+      // after-state a write would produce, not the raw (possibly absent)
+      // request fields.
+      const resolvedPhdCount = phdCount ?? previous?.phdCount ?? 0;
+      const resolvedPrestigeCount = prestigeCount ?? previous?.prestigeCount ?? 0;
+      const resolvedUpgrades = upgrades ?? previous?.upgrades.map((u) => u.upgradeId) ?? [];
+
+      const prevSnapshot: PrevSaveSnapshot | null = previous
+        ? {
+            tokens: previous.tokens,
+            totalTokensEarned: previous.totalTokensEarned,
+            totalClicks: previous.totalClicks,
+            elapsedSeconds: previous.elapsedSeconds,
+            phdCount: previous.phdCount,
+            prestigeCount: previous.prestigeCount,
+            savedAt: previous.savedAt,
+            units: previous.units.map((u) => ({ unitId: u.unitId, owned: u.owned })),
+            upgrades: previous.upgrades.map((u) => u.upgradeId)
+          }
+        : null;
+
+      const incomingSnapshot: IncomingSave = {
+        tokens,
+        totalTokensEarned,
+        totalClicks,
+        elapsedSeconds,
+        phdCount: resolvedPhdCount,
+        prestigeCount: resolvedPrestigeCount,
+        units,
+        upgrades: resolvedUpgrades
+      };
+
+      // identity.createdAt anchors a first-ever save's dt, closing "register
+      // then immediately PUT a maxed save".
+      const verdict = evaluateSaveEnvelope(
+        prevSnapshot,
+        identity.createdAt,
+        new Date(),
+        incomingSnapshot
+      );
+
+      const enforced = ANTICHEAT_MODE === "enforce";
+      if (verdict.outcome === "reject") {
+        // A rejection is already >REJECT_MULTIPLIER times what's achievable
+        // or a monotonicity break — certain enough to strike immediately,
+        // unlike a soft clamp (see recordSoftClamp) which needs a pattern.
+        await applyStrike(userId, "envelope_reject", ANTICHEAT_MODE, enforced, {
+          reason: verdict.reason,
+          ...verdict.detail
+        }).catch((e: unknown) => console.error("Failed to record anti-cheat strike:", e));
+      } else if (verdict.outcome === "clamp") {
+        await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, {
+          reasons: verdict.reasons,
+          ...verdict.detail
+        }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));
+      }
+
+      if (enforced) {
+        if (verdict.outcome === "reject") {
+          const r = Responses.SAVE.IMPLAUSIBLE;
+          res.status(r.status).json(r.body);
+          return;
+        }
+        if (verdict.outcome === "clamp") {
+          if (verdict.clamped.tokens !== undefined) effectiveTokens = verdict.clamped.tokens;
+          if (verdict.clamped.totalTokensEarned !== undefined) {
+            effectiveTotalTokensEarned = verdict.clamped.totalTokensEarned;
+          }
+          if (verdict.clamped.totalClicks !== undefined) {
+            effectiveTotalClicks = verdict.clamped.totalClicks;
+          }
+          if (verdict.clamped.elapsedSeconds !== undefined) {
+            effectiveElapsedSeconds = verdict.clamped.elapsedSeconds;
+          }
+          // Only applied when the field was actually present in this
+          // request — an omitted phdCount/prestigeCount means "preserve
+          // whatever is already stored" (see upsertSave's own contract),
+          // and the envelope's resolved-for-evaluation value already
+          // folded in the stored one for bound-checking purposes; clamping
+          // that resolved value must not newly assert a field the client
+          // never sent.
+          if (verdict.clamped.prestigeCount !== undefined && prestigeCount !== undefined) {
+            effectivePrestigeCount = verdict.clamped.prestigeCount;
+          }
+          if (verdict.clamped.phdCount !== undefined && phdCount !== undefined) {
+            effectivePhdCount = verdict.clamped.phdCount;
+          }
+        }
+      }
+    }
+
     const save = await upsertSave(userId, {
-      tokens,
-      totalTokensEarned,
-      totalClicks,
-      elapsedSeconds,
-      phdCount,
-      prestigeCount,
+      tokens: effectiveTokens,
+      totalTokensEarned: effectiveTotalTokensEarned,
+      totalClicks: effectiveTotalClicks,
+      elapsedSeconds: effectiveElapsedSeconds,
+      phdCount: effectivePhdCount,
+      prestigeCount: effectivePrestigeCount,
       runTokensEarned,
       runClicks,
       runSeconds,

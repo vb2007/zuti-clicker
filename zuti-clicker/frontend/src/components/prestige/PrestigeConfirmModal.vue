@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { getPrestigeOutcome } from "@/utils/prestige";
 import { formatPercent } from "@/utils/formatters";
@@ -11,6 +12,7 @@ import BaseModal from "@/components/modals/BaseModal.vue";
 const { t } = useI18n();
 const game = useGameStore();
 const auth = useAuthStore();
+const antiCheat = useAntiCheatStore();
 const { cancelPrestige, confirmPrestige } = usePrestige();
 
 // Reuse the same formulas gameStore uses for the "before" values, and the
@@ -57,7 +59,11 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
     <template #actions>
       <div class="modal-actions">
         <button class="btn-cancel" @click="cancelPrestige">{{ t("confirm.cancelBtn") }}</button>
-        <button class="btn-confirm" @click="confirmPrestige">
+        <button
+          class="btn-confirm"
+          :disabled="antiCheat.isRestricted"
+          @click="confirmPrestige($event)"
+        >
           {{ t("confirm.prestigeConfirmBtn") }}
         </button>
       </div>
@@ -145,5 +151,10 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
   font-weight: 700;
   transition: filter var(--transition-fast);
 }
-.btn-confirm:hover { filter: brightness(1.1); }
+.btn-confirm:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-confirm:disabled {
+  background: var(--btn-dis-bg);
+  color: var(--btn-dis-text);
+  cursor: not-allowed;
+}
 </style>

@@ -303,6 +303,43 @@ ablakon kívülre kattintás nem zárja be az ablakot, csak ez a két gomb.
 
 ---
 
+## Tisztességes játék
+
+A játék a háttérben figyeli, hogy a kattintásaid és a vásárlásaid emberi
+tempóban, valódi böngésző-interakcióval történnek-e — ez automatikus
+kattintó-programok (auto-clicker), böngésző-automatizálás (pl. Tampermonkey-
+szkript) és a mentési adatok közvetlen, a játékon kívüli meghamisítása ellen
+véd. A rendszer szándékosan **nagyvonalú**: két kéz egyszerre használata
+(egér + szóköz + enter), egy gyors kattintás-sorozat vagy egy szerencsés
+menet önmagában sosem elég a beavatkozáshoz — csak egyértelmű,
+automatizálásra utaló minta.
+
+Ha a rendszer ilyen mintát észlel:
+
+- Egy felugró ablak jelzi, hogy a fiókodon szokatlan aktivitást találtunk.
+- A kattintás, a vásárlás és a fokozatszerzés az ablakban jelzett
+  visszaszámlálás lejártáig szünetel — az idle (automatikus) termelés is,
+  tehát a haladásod ezalatt nem nő.
+- A visszaszámlálás rövid (néhány perc) első alkalommal, de minden
+  ismétlődő esetben jelentősen hosszabb lesz.
+- Öt egymást követő eset után a mentésed nullázódik — ez a rendszer
+  legszigorúbb lépése, de a fiókod sosem kerül végleges kitiltásra, és a
+  visszaszámlálás lejárta után a játék azonnal folytatható.
+
+A visszaszámlálás közben a „Got it" / „Értem" gombbal bezárhatod az ablakot
+anélkül, hogy ez feloldaná a korlátozást — a gombok addig tiltva maradnak,
+amíg az idő le nem jár. Amíg egy fiók korlátozás alatt áll, ideiglenesen nem
+jelenik meg mások ranglistáin (a saját nézeted továbbra is mutatja a
+helyezésedet); a korlátozás lejárta után ez automatikusan visszaáll, nincs
+tartós következmény.
+
+Ha úgy gondolod, hogy a rendszer tévesen jelzett — pl. mert egy szokatlan
+egér vagy kisegítő eszköz (assistive technology) használatával játszol —,
+a visszaszámlálás lejárta után a játék normálisan folytatódik, és a
+korlátozások idővel (hosszabb, tisztán eltöltött idő után) enyhülnek.
+
+---
+
 ## Bezárás előtt
 
 Ha az oldalon van bármi haladásod (legalább egy kattintás történt, vagy az egységeid már termeltek valamennyi tokent, vagy van legalább egy PhD-d), a böngésző figyelmeztet, ha megpróbálod bezárni vagy frissíteni az oldalt:

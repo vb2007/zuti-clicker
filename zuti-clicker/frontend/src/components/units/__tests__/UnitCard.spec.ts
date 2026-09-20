@@ -3,6 +3,8 @@ import { setActivePinia, createPinia } from "pinia";
 import { mount, DOMWrapper } from "@vue/test-utils";
 import UnitCard from "@/components/units/UnitCard.vue";
 import { useGameStore } from "@/stores/gameStore";
+import { useAntiCheatStore } from "@/stores/antiCheatStore";
+import { dispatchTrusted } from "@/__tests__/testEvents";
 
 const body = () => new DOMWrapper(document.body);
 
@@ -129,6 +131,34 @@ describe("UnitCard", () => {
       window.dispatchEvent(new Event("resize"));
       await wrapper.vm.$nextTick();
       expect(body().find(".tooltip").exists()).toBe(false);
+    });
+  });
+
+  describe("anti-cheat gate", () => {
+    it("a trusted click buys, deducting tokens and granting ownership", async () => {
+      const game = useGameStore();
+      game.tokens = 100;
+      const wrapper = mount(UnitCard, { props: { unitId: "alpha", multiplier: 1 } });
+      await dispatchTrusted(wrapper.find(".buy-btn").element, "click");
+      expect(game.tokens).toBe(90);
+      expect(game.unitStates.find((u) => u.id === "alpha")?.owned).toBe(1);
+    });
+
+    it("an untrusted (synthetic) click does not buy, even though affordable", async () => {
+      const game = useGameStore();
+      game.tokens = 100;
+      const wrapper = mount(UnitCard, { props: { unitId: "alpha", multiplier: 1 } });
+      await wrapper.find(".buy-btn").trigger("click"); // untrusted by default
+      expect(game.tokens).toBe(100);
+      expect(game.unitStates.find((u) => u.id === "alpha")?.owned).toBe(0);
+    });
+
+    it("the buy button is disabled while restricted, even though affordable", () => {
+      const game = useGameStore();
+      game.tokens = 100;
+      useAntiCheatStore().isRestricted = true;
+      const wrapper = mount(UnitCard, { props: { unitId: "alpha", multiplier: 1 } });
+      expect(wrapper.find(".buy-btn").attributes("disabled")).toBeDefined();
     });
   });
 
