@@ -220,6 +220,11 @@ A felhasználónevedre kattintva legördülő menü jelenik meg:
 - **„Delete save"** / **„Mentés törlése"**: Megerősítés után a mentési fájl véglegesen törlődik az adatbázisból. **Ez nem vonható vissza.**
 - **„Log out"** / **„Kijelentkezés"**: Kijelentkezés a fiókból. A munkamenet megszűnik, de a játék helyben fut tovább (vendég módban).
 
+Néhány telepítésen (csak ha az üzemeltető kifejezetten bekapcsolta) az **Alt+X**
+billentyűkombináció megerősítés nélkül azonnal végrehajtja a fenti két
+műveletet egyszerre — mentés törlése és kijelentkezés. Alapból ez a
+gyorsbillentyű ki van kapcsolva, és a hivatalos játékban sem érhető el.
+
 ---
 
 ## Téma és nyelv
