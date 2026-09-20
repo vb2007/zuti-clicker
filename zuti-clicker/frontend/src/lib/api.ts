@@ -1,4 +1,5 @@
 import type { LeaderboardMetric } from "@/types";
+import type { AntiCheatDigest } from "@/utils/clickTelemetry";
 
 export class ApiError extends Error {
   constructor(
@@ -150,6 +151,18 @@ export interface LeaderboardResponse {
   viewer: LeaderboardViewer | null;
 }
 
+export interface AntiCheatReportResponse {
+  message: string;
+  status: "clean" | "restricted";
+  restrictedUntil: string | null;
+  strikeCount: number;
+}
+export interface AntiCheatStatusResponse {
+  isRestricted: boolean;
+  restrictedUntil: string | null;
+  strikeCount: number;
+}
+
 export const api = {
   auth: {
     register: (username: string, email: string, password: string) =>
@@ -181,5 +194,12 @@ export const api = {
     // not yet elapsed) still carries nextAvailableInMs on the thrown
     // ApiError's `body`.
     claim: () => request<ClaimBoosterResponse>("POST", "/boosters/claim")
+  },
+  anticheat: {
+    // Fixed heartbeat + immediate-on-local-detection — see
+    // stores/antiCheatStore.ts. Never touches game save data.
+    report: (digest: AntiCheatDigest) =>
+      request<AntiCheatReportResponse>("POST", "/anticheat/report", digest),
+    status: () => request<AntiCheatStatusResponse>("GET", "/anticheat/status")
   }
 };

@@ -16,3 +16,13 @@ export const HEARTBEAT_INTERVAL_MS = 60_000;
 // threshold, which lives server-side only.
 export const BURST_CPS_CAP = 45;
 export const BURST_WINDOW_MS = 1000;
+
+// The penalty ladder itself is not sensitive (durations, not thresholds —
+// knowing "wait 1 minute" doesn't help evade detection), unlike the
+// statistical thresholds, which never ship to the client. Keep in sync with
+// api/src/constants/antiCheat.ts's RESTRICTION_MINUTES_BY_STRIKE/
+// SAVE_RESET_STRIKE. Used ONLY for guest-mode's local-only detection (see
+// stores/antiCheatStore.ts) — a logged-in account's restriction always comes
+// from the server.
+export const GUEST_RESTRICTION_MINUTES_BY_STRIKE = [1, 15, 120, 1440] as const;
+export const GUEST_SAVE_RESET_STRIKE = 5;
