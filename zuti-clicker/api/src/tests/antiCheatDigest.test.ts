@@ -229,7 +229,9 @@ describe("evaluateDigest — single-input-method signal", () => {
 
   it("flags singleMethodExceedsHumanLimit when effectively all clicks come from one method", () => {
     const verdict = evaluateDigest(
-      narrowDigest({ methodCounts: { primary: 0, secondary: 1400, enter: 0, space: 0 } })
+      narrowDigest({
+        methodCounts: { primary: 0, secondary: 1400, enter: 0, space: 0, touch: 0, other: 0 }
+      })
     );
     expect(verdict.consistent).toBe(true);
     expect(verdict.signals).toContain("singleMethodExceedsHumanLimit");
@@ -237,7 +239,38 @@ describe("evaluateDigest — single-input-method signal", () => {
 
   it("does not flag it when the same aggregate rate is split across multiple methods", () => {
     const verdict = evaluateDigest(
-      narrowDigest({ methodCounts: { primary: 700, secondary: 700, enter: 0, space: 0 } })
+      narrowDigest({
+        methodCounts: { primary: 700, secondary: 700, enter: 0, space: 0, touch: 0, other: 0 }
+      })
+    );
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+  });
+
+  // touch has no researched human-rate ceiling the way mouse/keyboard do
+  // (SINGLE_METHOD_MAX_CPS's own comment cites mouse-clicking records), and
+  // the client has no pointerType check that would let a mobile player be
+  // anything BUT ~100% touch concentration — applying this cap to touch
+  // would flag ordinary two-thumb tapping. `dominant` is computed over
+  // primary/secondary/enter/space only, so touch never becomes it.
+  it("never flags a touch-dominant window, however high the touch-only rate", () => {
+    const verdict = evaluateDigest(
+      narrowDigest({
+        methodCounts: { primary: 0, secondary: 0, enter: 0, space: 0, touch: 1400, other: 0 }
+      })
+    );
+    expect(verdict.consistent).toBe(true);
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+  });
+
+  // touch still counts toward methodTotal (the denominator) even though it
+  // can never itself be `dominant` — a real mixed mouse+touch session must
+  // still dilute concentration correctly rather than touch clicks simply
+  // vanishing from the count.
+  it("touch clicks still dilute concentration for a genuinely mixed session", () => {
+    const verdict = evaluateDigest(
+      narrowDigest({
+        methodCounts: { primary: 700, secondary: 0, enter: 0, space: 0, touch: 700, other: 0 }
+      })
     );
     expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
   });
@@ -253,17 +286,34 @@ describe("evaluateDigest — single-input-method signal", () => {
   // keyboard} shape from before enter/space were split out) used to make
   // the WHOLE digest inconsistent (malformed_digest) — not just skip this
   // one signal, reject everything, including signals that have nothing to
-  // do with methodCounts at all. The cast below simulates exactly what a
-  // real stale client's JSON produces, which TypeScript would otherwise
-  // never let this file construct as a valid AntiCheatDigest.
+  // do with methodCounts at all. sanitizeMethodCounts is now KEY-WISE
+  // tolerant (see its own comment) rather than all-or-nothing, so this
+  // stale shape's recognized keys (primary/secondary) now correctly
+  // contribute to the signal too — only the unrecognized "keyboard" key is
+  // dropped (enter/space default to 0, an undercount, never an overcount).
+  // The cast below simulates exactly what a real stale client's JSON
+  // produces, which TypeScript would otherwise never let this file
+  // construct as a valid AntiCheatDigest.
   it("regression: a malformed (not just absent) methodCounts never invalidates the whole digest", () => {
     const staleShape = { primary: 0, secondary: 1400, keyboard: 0 } as unknown as NonNullable<
       AntiCheatDigest["methodCounts"]
     >;
     const verdict = evaluateDigest(narrowDigest({ methodCounts: staleShape }));
     expect(verdict.consistent).toBe(true); // NOT "malformed_digest"
-    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit"); // the one signal that IS skipped
+    expect(verdict.signals).toContain("singleMethodExceedsHumanLimit"); // recognized keys still score
     expect(verdict.signals).toContain("metronome"); // every OTHER signal still evaluates normally
+  });
+
+  // A value that isn't even an object at all (not just a differently-shaped
+  // one) is the one case sanitizeMethodCounts truly can't do anything
+  // with — still only skips this one signal, never rejects the digest.
+  it("a methodCounts value that isn't even an object is ignored, not rejected", () => {
+    const verdict = evaluateDigest(
+      narrowDigest({ methodCounts: "not-an-object" as unknown as NonNullable<AntiCheatDigest["methodCounts"]> })
+    );
+    expect(verdict.consistent).toBe(true);
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+    expect(verdict.signals).toContain("metronome");
   });
 
   it("does not flag a single method held under the human ceiling", () => {
@@ -276,7 +326,7 @@ describe("evaluateDigest — single-input-method signal", () => {
         windowMs: 60_000,
         buckets,
         maxRunLength: 599,
-        methodCounts: { primary: 0, secondary: 600, enter: 0, space: 0 }
+        methodCounts: { primary: 0, secondary: 600, enter: 0, space: 0, touch: 0, other: 0 }
       })
     );
     expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");

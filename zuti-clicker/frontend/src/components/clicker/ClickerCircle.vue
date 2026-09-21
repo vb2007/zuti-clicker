@@ -111,6 +111,16 @@ function attemptClick(trusted: boolean, method: ClickMethod, x: number, y: numbe
 // (a stable, spec-backed distinction — the browser sets it directly on the
 // event, nothing here has to race or track it), so no timer or flag at all.
 function handlePointerDown(e: PointerEvent) {
+  if (e.pointerType === "touch" || e.pointerType === "pen") {
+    // Touch/pen always report button 0 for a normal contact — there is no
+    // left/right distinction to make the way there is for a mouse.
+    // Tracked as its own method (never "primary") so the server never
+    // applies a mouse-researched human-rate ceiling to it — see
+    // clickTelemetry.ts's own comment on why touch is exempt.
+    if (e.button !== 0) return;
+    attemptClick(e.isTrusted, "touch", e.clientX, e.clientY);
+    return;
+  }
   // Only the primary (left) and secondary (right) buttons earn a token;
   // middle/back/forward are ignored so autoscroll and browser navigation
   // gestures still work when they happen to land on the circle.
@@ -129,8 +139,14 @@ function handlePointerDown(e: PointerEvent) {
 // A native <button>'s own activation fires the synthesized `click` on
 // Enter's keydown and Space's keyup, always strictly after this handler
 // — see MDN's HTMLElement click-event-activation-behavior notes — so
-// `lastKeyMethod` is always current by the time handleClick reads it.
-let lastKeyMethod: "enter" | "space" = "enter";
+// `lastKeyMethod` is current by the time handleClick reads it WHEN a
+// keydown actually preceded the click. Starts `null`, not defaulted to
+// "enter": a detail-0 click with no recorded keydown (VoiceOver
+// double-tap, AssistiveTouch, other form-activation chains) is a real
+// activation this file simply can't attribute to a specific key — see
+// clickTelemetry.ts's "other" method. Reporting it as a phantom "enter"
+// the player never pressed was the actual bug this replaces.
+let lastKeyMethod: "enter" | "space" | null = null;
 function handleKeyDown(e: KeyboardEvent) {
   if (e.code === "Enter") lastKeyMethod = "enter";
   else if (e.code === "Space") lastKeyMethod = "space";
@@ -144,7 +160,8 @@ function handleClick(e: MouseEvent) {
   const rect = wrapperRef.value?.getBoundingClientRect();
   const x = rect ? rect.left + rect.width / 2 : e.clientX;
   const y = rect ? rect.top + rect.height / 2 : e.clientY;
-  attemptClick(e.isTrusted, lastKeyMethod, x, y);
+  attemptClick(e.isTrusted, lastKeyMethod ?? "other", x, y);
+  lastKeyMethod = null; // consumed — the NEXT click needs its own keydown to claim enter/space again
 }
 </script>
 

@@ -83,13 +83,26 @@ export function computeMaxRunLength(intervalsMs: number[], tolerance = 0.05): nu
 // ClickerCircle.vue's own button/detail/keydown split, which already
 // computes this distinction and previously discarded it before it ever
 // reached telemetry.
-export type ClickMethod = "primary" | "secondary" | "enter" | "space";
+//
+// touch = a tap (pointerType "touch" or "pen") — tracked separately from
+// mouse buttons because it has none of their researched human-rate
+// ceiling (see the server's SINGLE_METHOD_MAX_CPS comment) and, absent a
+// pointerType check, would otherwise be misreported as "primary" and
+// permanently sit at ~100% single-method concentration for any mobile
+// player. other = a click-event activation this file can't attribute to
+// a specific method — MouseEvent.detail === 0 (synthetic-shaped) with no
+// preceding keydown recorded (VoiceOver double-tap, AssistiveTouch,
+// form-activation chains) — reported honestly as unknown rather than
+// guessed as a keyboard press that never happened.
+export type ClickMethod = "primary" | "secondary" | "enter" | "space" | "touch" | "other";
 
 export interface MethodCounts {
   primary: number;
   secondary: number;
   enter: number;
   space: number;
+  touch: number;
+  other: number;
 }
 
 export interface AntiCheatDigest {

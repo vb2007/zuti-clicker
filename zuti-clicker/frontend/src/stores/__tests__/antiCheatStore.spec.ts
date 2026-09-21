@@ -144,11 +144,11 @@ describe("antiCheatStore", () => {
       await store.sendHeartbeat();
 
       const digest = vi.mocked(api.anticheat.report).mock.calls[0]![0];
-      expect(digest.methodCounts).toEqual({ primary: 2, secondary: 1, enter: 1, space: 1 });
+      expect(digest.methodCounts).toEqual({ primary: 2, secondary: 1, enter: 1, space: 1, touch: 0, other: 0 });
 
       await store.sendHeartbeat();
       const secondDigest = vi.mocked(api.anticheat.report).mock.calls[1]![0];
-      expect(secondDigest.methodCounts).toEqual({ primary: 0, secondary: 0, enter: 0, space: 0 });
+      expect(secondDigest.methodCounts).toEqual({ primary: 0, secondary: 0, enter: 0, space: 0, touch: 0, other: 0 });
     });
 
     it("applies a restricted result from the server", async () => {

@@ -105,7 +105,15 @@ export interface AntiCheatDigest {
   // the same way alternating left/right mouse buttons can. Combining them
   // would make that entirely normal two-key alternation look like 100%
   // concentration in a single method below.
-  methodCounts?: { primary: number; secondary: number; enter: number; space: number };
+  //
+  // touch/other are tracked too, but never contribute to the
+  // singleMethodExceedsHumanLimit signal's own "dominant method" — see
+  // that signal's own comment for why. touch is what a tap on a
+  // touchscreen reports as (see the frontend's ClickerCircle.vue); other
+  // is a keyboard/assistive-tech activation event with no preceding
+  // keydown this file can classify (VoiceOver double-tap, form-activation
+  // chains) rather than a phantom guess.
+  methodCounts?: MethodCounts;
 }
 
 export interface DigestVerdict {
@@ -130,7 +138,18 @@ export interface DigestVerdict {
   flagged: boolean; // score/signal thresholds met, independent of consistency
 }
 
-export type MethodCounts = { primary: number; secondary: number; enter: number; space: number };
+export type MethodCounts = {
+  primary: number;
+  secondary: number;
+  enter: number;
+  space: number;
+  touch: number;
+  other: number;
+};
+
+function sanitizeCount(value: unknown): number {
+  return Number.isInteger(value) && (value as number) >= 0 ? (value as number) : 0;
+}
 
 // Absent, OR present but not matching the expected shape, are both treated
 // as "no method data" for the singleMethodExceedsHumanLimit signal ONLY —
@@ -141,6 +160,16 @@ export type MethodCounts = { primary: number; secondary: number; enter: number; 
 // not just skipping this one signal, skipping every signal — reproducing
 // the exact class of bug the windowMs incident already taught this project
 // to avoid for an optional field.
+//
+// KEY-WISE tolerant, not all-or-nothing: each known key is coerced
+// independently (present and a valid non-negative integer -> that value;
+// absent, or present but malformed -> 0), and only a value that isn't even
+// an object at all returns undefined. This is the direct generalization of
+// the fix above — adding touch/other here (this commit) must not need a
+// second methodCounts-shape incident of its own the next time a key is
+// added or an older client omits one; a client that only ever sends
+// {primary, secondary, enter, space} still gets a fully valid object back
+// with touch/other at 0, not a rejection of the whole thing.
 //
 // `value` is typed `unknown`, not AntiCheatDigest["methodCounts"], and
 // exported: this is the ONE shared implementation for both the controller
@@ -154,25 +183,14 @@ export type MethodCounts = { primary: number; secondary: number; enter: number; 
 export function sanitizeMethodCounts(value: unknown): MethodCounts | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const v = value as Record<string, unknown>;
-  const { primary, secondary, enter, space } = v;
-  if (
-    Number.isInteger(primary) &&
-    (primary as number) >= 0 &&
-    Number.isInteger(secondary) &&
-    (secondary as number) >= 0 &&
-    Number.isInteger(enter) &&
-    (enter as number) >= 0 &&
-    Number.isInteger(space) &&
-    (space as number) >= 0
-  ) {
-    return {
-      primary: primary as number,
-      secondary: secondary as number,
-      enter: enter as number,
-      space: space as number
-    };
-  }
-  return undefined;
+  return {
+    primary: sanitizeCount(v.primary),
+    secondary: sanitizeCount(v.secondary),
+    enter: sanitizeCount(v.enter),
+    space: sanitizeCount(v.space),
+    touch: sanitizeCount(v.touch),
+    other: sanitizeCount(v.other)
+  };
 }
 
 // Genuinely structural problems only — a non-integer count, a missing/
@@ -338,14 +356,30 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   // research this threshold is based on. Absent, or present but malformed
   // (e.g. a stale client's old shape), for an older client — never a
   // rejection, see sanitizeMethodCounts's own comment.
+  //
+  // `dominant` is taken over primary/secondary/enter/space ONLY — touch is
+  // deliberately excluded. SINGLE_METHOD_MAX_CPS was researched from
+  // ordinary MOUSE clicking (see the constant's own comment); a touchscreen
+  // has no such research behind it, and there is no `pointerType` check in
+  // the client at all before this fix, so a mobile player is permanently at
+  // ~100% single-method concentration by construction — applying this cap
+  // to touch verbatim would flag ordinary two-thumb tapping as a bot. `other`
+  // (an activation with no classifiable input, e.g. VoiceOver) is excluded
+  // for the same reason: it's not attributable to any specific rate-limited
+  // technique. `methodTotal` still includes every method (so a genuinely
+  // touch-dominant window correctly dilutes concentration below the
+  // threshold instead of the excluded methods vanishing from the
+  // denominator), and the RATE check uses `dominant`'s own count, not the
+  // combined total — measuring the rate of the specific method being
+  // judged, not inflating it with methods that aren't.
   const sanitizedMethodCounts = sanitizeMethodCounts(digest.methodCounts);
   if (sanitizedMethodCounts) {
-    const { primary, secondary, enter, space } = sanitizedMethodCounts;
-    const methodTotal = primary + secondary + enter + space;
+    const { primary, secondary, enter, space, touch, other } = sanitizedMethodCounts;
+    const methodTotal = primary + secondary + enter + space + touch + other;
     if (methodTotal >= MIN_CLICKS_FOR_VARIANCE_SIGNAL) {
       const dominant = Math.max(primary, secondary, enter, space);
       if (dominant / methodTotal >= SINGLE_METHOD_CONCENTRATION) {
-        const methodCps = methodTotal / (digest.windowMs / 1000);
+        const methodCps = dominant / (digest.windowMs / 1000);
         if (methodCps > SINGLE_METHOD_MAX_CPS) {
           signals.push("singleMethodExceedsHumanLimit");
           score += 2;
