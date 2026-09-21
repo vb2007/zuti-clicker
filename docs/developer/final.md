@@ -73,6 +73,13 @@ pnpm start    # nodemon + tsx – fejlesztői mód, automatikus újraindítás
 Az API elérhető: `http://localhost:2710`  
 Swagger docs: `http://localhost:2710/docs`
 
+A `GET /version` végpont (hitelesítés nélkül elérhető) a futó API pontos
+verzióját adja vissza (`{ "version": "1.4.3" }`), egyetlen forrásból,
+`api/package.json`-ból beolvasva a szerver indulásakor — ugyanez az érték
+kerül a Swagger `info.version` mezőjébe is (korábban egy elavult, kézzel
+beírt `"1.0.0"` volt ott). A frontend Settings modalja ezt hívja meg, hogy a
+deployolt API verzióját megjelenítse (lásd lent, "Frontend").
+
 ### Tesztek futtatása
 
 A tesztekhez az API-nak futnia kell (a tesztek élő szerver ellen dolgoznak):
@@ -123,6 +130,15 @@ párokon keresztül (lásd `frontend/Dockerfile`):
 |---|---|---|
 | `VITE_API_BASE_URL` | `https://zuticlicker-api.vb2007.hu` | Az API abszolút URL-je production build-ben; fejlesztésben a Vite proxy váltja ki, ürese esetén a kód `/api`-ra esik vissza. |
 | `VITE_ENABLE_QUICK_RESET` | `false` | Bekapcsolva engedélyezi az Alt+X gyorsbillentyűt, ami megerősítés nélkül azonnal törli a mentést és kijelentkeztet — szándékosan csak power-user/QA célra, alapból kikapcsolva (lásd `src/utils/featureFlags.ts`). Mivel build time-kor dől el, bekapcsolása image-újraépítést igényel, nem csak egy `.env` módosítást. |
+
+Egy harmadik build time-kor beépülő érték, `__APP_VERSION__`, nem Docker
+`ARG`/`ENV`, hanem közvetlenül `package.json`-ból olvasott Vite `define` —
+nincs hozzá kapcsoló, mindig a build pillanatában érvényes verziószámmal épül
+be. A `vite.config.ts`-ben definiált konstanst a `vitest.config.ts` is külön
+definiálja (lásd a fájlok egymásra mutató „keep in sync" kommentjeit) —
+enélkül a teszt-futáskor `__APP_VERSION__` egy definiálatlan globális lenne.
+A Settings modal ezt a frontend-verziót jeleníti meg, az API `GET /version`
+végpontjának eredménye mellett (lásd fent, "API szerver").
 
 ### Tesztek futtatása
 

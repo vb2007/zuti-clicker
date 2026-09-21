@@ -207,21 +207,28 @@ nulláról építi fel újra.
 Amint összesen (élete során, nem csak az aktuális menetben) legalább 100 000 tokent szereztél, a bal oldali oszlop alján megjelenik a **„Fokozat"** panel — ugyanaz a fokozatos feltárási logika, mint az egységeknél: a panel egyszer megjelenve mindig látható marad, akkor is, ha egy új menetet éppen csak elkezdtél. A tényleges fokozatszerzéshez (a „Defend Thesis" gomb aktiválódásához) az **aktuális menetben** kell legalább 1 000 000 tokent szerezned:
 
 - **PHDS OWNED**: Az eddig megszerzett PhD-k száma.
-- **+X% Production / -X% Unit cost**: A PhD-id által adott állandó bónuszok — minden PhD +2% termelést és -0,5% egységárat ad, a kedvezmény legfeljebb -50%-ig.
 - **Progress to next PhD**: Egy folyamatjelző, ami mutatja, mennyire vagy közel a következő PhD-hoz, alatta pedig egy sor mutatja, pontosan mennyi token hiányzik még hozzá.
 - **„Defend Thesis" (Disszertáció megvédése) gomb**: Aktívvá válik, amint legalább 1 PhD-t érsz el az aktuális menetben.
 
-Amint legalább 1 PhD-t elértél az aktuális menetben, a panel megváltozik:
-egy kiemelt sor megmutatja, **pontosan hány PhD-t kapnál most** (pl. „+2 PhD
-ready to defend"), a folyamatjelző pedig átvált „Progress to +3 PhD"-ra —
-vagyis onnantól már a *következő* PhD-hoz méri a haladást, nem az aktuálisan
-már megszerezhetőhöz (ezért nulláz vissza 0%-ra, amint elérsz egy új
-PhD-t — ez nem veszteség, hanem egy új sáv eleje). Egy rövid sor azt is
-mutatja, mennyivel nőne a termelésed és csökkenne az egységáraid, ha most
-azonnal fokozatot szereznél — így ez a pontos szám a „Defend Thesis" gomb
-megnyomása **előtt**, a megerősítő ablak megnyitása nélkül is látható.
+Amint legalább 1 PhD-t elértél az aktuális menetben, a panel megváltozik: a
+gomb felirata kiegészül a pontos megszerezhető PhD-számmal (pl. „Defend
+Thesis ×2"), a folyamatjelző pedig átvált „Progress to +3 PhD"-ra — vagyis
+onnantól már a *következő* PhD-hoz méri a haladást, nem az aktuálisan már
+megszerezhetőhöz (ezért nulláz vissza 0%-ra, amint elérsz egy új PhD-t —
+ez nem veszteség, hanem egy új sáv eleje).
 
-A gombra kattintva egy megerősítő ablak jelenik meg, amely megmutatja, pontosan hány PhD-t kapnál, és hogyan változna a termelésed/egységáraid. **Fontos**: a fokozatszerzés véglegesen **visszaállítja a jelenlegi tokenjeidet, az összes megvásárolt egységet és fejlesztést, valamint a menet statisztikáit (Run Earned/Clicks/Time)**, cserébe a PhD-id és az ebből adódó bónuszok **véglegesen megmaradnak**, és minden jövőbeli menetedben érvényesülnek. Egy éppen aktív booster viszont túléli a fokozatszerzést — az egy időzített esemény, nem a menethez kötött haladás.
+A PhD-id állandó bónuszait (+2% termelés / -0,5% egységár PhD-nként, a
+kedvezmény legfeljebb -50%-ig) és a fokozatszerzés utáni pontos „előtte →
+utána" hatást a panel már nem mutatja — ezek kizárólag a gombra kattintva
+megnyíló megerősítő ablakban jelennek meg, hogy a bal oldali oszlop ne
+duplikálja ugyanazt a két számot. A megerősítő ablak azt is megmutatja,
+pontosan hány PhD-t kapnál. **Fontos**: a fokozatszerzés véglegesen
+**visszaállítja a jelenlegi tokenjeidet, az összes megvásárolt egységet és
+fejlesztést, valamint a menet statisztikáit (Run Earned/Clicks/Time)**,
+cserébe a PhD-id és az ebből adódó bónuszok **véglegesen megmaradnak**, és
+minden jövőbeli menetedben érvényesülnek. Egy éppen aktív booster viszont
+túléli a fokozatszerzést — az egy időzített esemény, nem a menethez kötött
+haladás.
 
 Vendégként is fokozatot szerezhetsz — ilyenkor a megerősítő ablak egy külön figyelmeztetést mutat, hogy a PhD-id (a többi haladásoddal együtt) elvesznek, ha bezárod a lapot bejelentkezés nélkül.
 
@@ -300,6 +307,12 @@ ablakot — ekkor egy rövid értesítés (toast) jelzi, hogy a mentés sikerül
 (Mégse)** gombbal, vagy az Esc billentyűvel az ablak úgy zárható be, hogy
 minden módosítás visszaáll arra, ami az ablak megnyitásakor érvényben volt — az
 ablakon kívülre kattintás nem zárja be az ablakot, csak ez a két gomb.
+
+Az ablak alján, a gombok felett egy halvány sor mutatja, pontosan melyik
+verzió fut éppen: „Frontend vX.Y.Z · API vX.Y.Z". A frontend verziója a
+build-be van égetve, az API verziója pedig egy gyors lekérdezéssel érkezik,
+amint az ablak először megnyílik — ha ez a lekérdezés bármiért nem sikerül, a
+frontend verziója akkor is látszik, az API helyén egy „—" jelenik meg.
 
 ---
 
