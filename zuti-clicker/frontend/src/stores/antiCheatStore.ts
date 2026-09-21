@@ -9,7 +9,8 @@ import {
   BURST_CPS_CAP,
   BURST_WINDOW_MS,
   GUEST_RESTRICTION_MINUTES_BY_STRIKE,
-  GUEST_SAVE_RESET_STRIKE
+  GUEST_SAVE_RESET_STRIKE,
+  MAX_DIGEST_WINDOW_MS
 } from "@/utils/antiCheatConstants";
 
 const GUEST_STRIKES_KEY = "zuti-clicker:guestAntiCheatStrikes";
@@ -247,6 +248,23 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     // precision, and the server accepts any non-negative finite duration
     // here regardless, but there's no reason to ship the extra digits.
     const windowMs = Math.max(1, Math.round(performance.now() - windowStartedAt));
+
+    // A window this large means the browser's own timer was suspended
+    // through some of it — a backgrounded tab, a locked screen, a laptop
+    // lid close (iOS/WebKit suspends setInterval outright while
+    // backgrounded; this is the exact root cause of a real production
+    // incident: "banned for opening the prestige modal for a few
+    // seconds"). windowMs then carries no real timing information — clicks
+    // is typically 0 anyway — so there is nothing worth reporting. Re-
+    // baseline and skip this cycle entirely rather than sending it; the
+    // server would only treat it as unscoreable regardless (see
+    // api/src/services/antiCheat.ts), but there's no reason to make that
+    // round trip.
+    if (windowMs > MAX_DIGEST_WINDOW_MS) {
+      resetWindow();
+      return false;
+    }
+
     const digest = buildDigest({
       windowMs,
       clickTimestamps,
@@ -318,6 +336,14 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     recordPurchase,
     sendHeartbeat,
     fetchStatus,
+    // Exposed for useAntiCheat.ts's visibilitychange listener — re-baselines
+    // the moment the page becomes foreground again, rather than waiting for
+    // the next heartbeat tick to notice the window ran long through a
+    // background period (sendHeartbeat's own oversized-window check above
+    // is the backstop if this never fires). Discarding a partial window's
+    // telemetry here costs nothing real — it's diagnostic data, not
+    // gameplay — and only ever favors the player.
+    resetWindow,
     // Exposed for lib/api.ts's shared request() interceptor — a restricted
     // account gets a 403 from ANY write endpoint (PUT /save, boosters/claim,
     // not just the report/status ones this store otherwise calls), and that

@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from "pinia";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { useAuthStore } from "@/stores/authStore";
 import { api } from "@/lib/api";
-import { BURST_CPS_CAP } from "@/utils/antiCheatConstants";
+import { BURST_CPS_CAP, MAX_DIGEST_WINDOW_MS } from "@/utils/antiCheatConstants";
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -171,6 +171,51 @@ describe("antiCheatStore", () => {
       const store = useAntiCheatStore();
       await expect(store.sendHeartbeat()).resolves.toBe(false);
       expect(store.isRestricted).toBe(false);
+    });
+
+    // Regression, real production incident: a backgrounded tab / locked
+    // screen (iOS/WebKit suspends setInterval outright while backgrounded)
+    // means the next heartbeat measures a window spanning the ENTIRE
+    // suspension — no real timing information, and the old behavior sent
+    // it anyway, which the server treated as malformed/inconsistent and
+    // struck immediately. The client must skip sending it at all.
+    it("regression: skips and re-baselines a window that ran longer than MAX_DIGEST_WINDOW_MS, never sending it", async () => {
+      loginAs();
+      const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
+      const store = useAntiCheatStore(); // windowStartedAt = 0
+      store.recordClick(true, "primary"); // recorded while "foreground", at t=0
+
+      // The browser suspends the timer for the rest of the window — by the
+      // time the heartbeat actually runs, real elapsed time is well past
+      // the ceiling.
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS + 1);
+      const guestSaveReset = await store.sendHeartbeat();
+
+      expect(guestSaveReset).toBe(false);
+      expect(api.anticheat.report).not.toHaveBeenCalled();
+
+      // The window must have been re-baselined, not merely left oversized —
+      // a normal window measured right after must start fresh, not still
+      // carry the discarded click or the stale start time.
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS + 1 + 5_000);
+      store.recordClick(true, "primary");
+      await store.sendHeartbeat();
+      expect(api.anticheat.report).toHaveBeenCalledTimes(1);
+      const digest = vi.mocked(api.anticheat.report).mock.calls[0]![0];
+      expect(digest.clicks).toBe(1);
+      expect(digest.windowMs).toBeLessThanOrEqual(MAX_DIGEST_WINDOW_MS);
+
+      nowSpy.mockRestore();
+    });
+
+    it("a window right at the ceiling is still sent normally", async () => {
+      loginAs();
+      const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
+      const store = useAntiCheatStore();
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS);
+      await store.sendHeartbeat();
+      expect(api.anticheat.report).toHaveBeenCalledTimes(1);
+      nowSpy.mockRestore();
     });
   });
 
