@@ -373,6 +373,48 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
     // against the stale pre-prestige owned count.
     expect(cheating.outcome).not.toBe("accept");
   });
+
+  // Regression, literal production incident: a real logged-in player's
+  // autosave was repeatedly soft-clamped (5 times, escalating to a strike)
+  // because checkBound's fixed FLOOR (1e-6) is an ABSOLUTE epsilon — once a
+  // balance grows past ~1e6, ordinary float64 accumulation across many
+  // tick() additions drifts well past a fixed absolute floor while staying
+  // utterly negligible in RELATIVE terms. These are the exact tokens/bound
+  // pair from that incident's AntiCheatEvent row (kind: envelope_clamp,
+  // reason: tokens_exceed_after_required_spend) — an overshoot of 8.4e-6 on
+  // a ~4.77e6 balance, i.e. ~1.8e-12 relative.
+  it("regression: does not clamp a relative float residue on a large balance (real production incident)", () => {
+    const deltaEarned = 667231.2599972486;
+    const reportedTokens = 4765932.981958574; // the incident's actual `tokens`
+    const bound = 4765932.981950127; // the incident's actual `maxTokensAfter` — 8.447e-6 below `tokens`
+    const prevTokens = bound - deltaEarned; // => availableBudget === bound, reproducing the real overshoot
+    const prev: PrevSaveSnapshot = {
+      tokens: prevTokens,
+      totalTokensEarned: 10_000_000,
+      totalClicks: 1000,
+      elapsedSeconds: 1000,
+      phdCount: 0,
+      prestigeCount: 0,
+      savedAt: new Date(NOW.getTime() - 30_037), // dtSecs === 35.037, matching the incident
+      units: [{ unitId: "theta", owned: 1 }], // large baseProduction so the earn bound clears easily
+      upgrades: []
+    };
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: reportedTokens,
+        totalTokensEarned: prev.totalTokensEarned + deltaEarned,
+        totalClicks: prev.totalClicks, // deltaClicks: 0, matching the incident
+        elapsedSeconds: prev.elapsedSeconds + 28.85,
+        phdCount: 0,
+        prestigeCount: 0,
+        units: prev.units // unchanged — no purchase, minSpend stays 0
+      })
+    );
+    expect(verdict.outcome).toBe("accept");
+  });
 });
 
 describe("evaluateSaveEnvelope — prestige/PhD plausibility", () => {

@@ -186,3 +186,24 @@ export const MIN_DISTINCT_SIGNALS_TO_FLAG = 2;
 // flagged windows — a single borderline window is noise; a pattern is not.
 // Tracked via AntiCheatState.suspicionScore, reset to 0 by any clean window.
 export const SUSPICIOUS_WINDOWS_TO_STRIKE = 2;
+
+// ---- Floating-point tolerance ---------------------------------------------
+//
+// Server-side token accumulators drift from float64 rounding across
+// thousands of tick() additions — the drift scales with the value's own
+// magnitude, not with a fixed absolute amount. A fixed epsilon alone let
+// this slide as an account's numbers grew: a real production incident
+// clamped (then, after enough repeats, struck) a legitimate account for a
+// reported balance of 9,502,887.414624732 against a computed bound of
+// 9,502,887.414622314 — an absolute overshoot of only 2.4e-6, but that is
+// already 2x the old fixed 1e-6 floor. In RELATIVE terms it is ~2.5e-13,
+// i.e. noise. floatTolerance scales with the larger operand so a late-game
+// account gets the same effective precision headroom an early-game one
+// always had, instead of tightening as balances grow.
+export const FLOAT_ABS_EPSILON = 1e-6;
+export const FLOAT_RELATIVE_EPSILON = 1e-9;
+
+export function floatTolerance(...values: number[]): number {
+  const magnitude = Math.max(FLOAT_ABS_EPSILON, ...values.map((v) => Math.abs(v)));
+  return Math.max(FLOAT_ABS_EPSILON, magnitude * FLOAT_RELATIVE_EPSILON);
+}

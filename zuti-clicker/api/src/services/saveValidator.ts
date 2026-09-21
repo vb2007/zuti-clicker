@@ -35,7 +35,8 @@ import {
   REJECT_MULTIPLIER,
   EARNED_ACCEPT_MARGIN,
   PHD_BOUND_SLACK,
-  PRESTIGE_COUNT_SLACK
+  PRESTIGE_COUNT_SLACK,
+  floatTolerance
 } from "../constants/antiCheat";
 
 export interface UnitSnapshot {
@@ -105,16 +106,21 @@ function unitMap(units: UnitSnapshot[]): Map<string, number> {
 // hard-reject a legitimate "spent every last token" save over a sub-cent
 // float residue from many tick() accumulations, instead of silently
 // clamping it like every other boundary case.
-const FLOOR = 1e-6;
+//
+// The "ok"/"clamp" boundaries below use floatTolerance(actual, bound)
+// instead of a fixed epsilon — see its own comment in constants/antiCheat.ts
+// for the production incident that made a fixed floor insufficient once
+// balances grew large.
 const REJECT_ABS_SLACK = 1e-3;
 function checkBound(
   actual: number,
   rawBound: number
 ): { outcome: "ok" } | { outcome: "clamp"; to: number } | { outcome: "reject" } {
   const bound = Math.max(0, rawBound);
-  if (actual <= bound + FLOOR) return { outcome: "ok" };
+  const tolerance = floatTolerance(actual, bound);
+  if (actual <= bound + tolerance) return { outcome: "ok" };
   const rejectThreshold = Math.max(bound * REJECT_MULTIPLIER, bound + REJECT_ABS_SLACK);
-  if (actual <= rejectThreshold + FLOOR) return { outcome: "clamp", to: bound };
+  if (actual <= rejectThreshold + tolerance) return { outcome: "clamp", to: bound };
   return { outcome: "reject" };
 }
 
@@ -274,7 +280,7 @@ export function evaluateSaveEnvelope(
   // epsilon, not a two-tier checkBound.
   const availableBudget = prevTokens + effectiveDeltaEarned;
   detail["spendBudget"] = { minSpend, availableBudget };
-  if (minSpend > availableBudget + FLOOR) {
+  if (minSpend > availableBudget + floatTolerance(minSpend, availableBudget)) {
     return { outcome: "reject", reason: "spend_exceeds_available_budget", detail };
   }
 
