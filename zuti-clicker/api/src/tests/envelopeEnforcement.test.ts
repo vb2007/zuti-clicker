@@ -129,6 +129,48 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=enforce", () =
     // value strictly beyond it (1,000,000) is rejected.
     expect(REJECT_MULTIPLIER).toBeGreaterThan(1);
   });
+
+  // Regression, real production incident: a legitimate player prestiges and
+  // autosaves in the same interval. incoming.units is the POST-reset
+  // (empty) state, but the earnings being saved were produced by the
+  // PRE-reset economy — bounding the whole interval by the post-reset rate
+  // alone made this a guaranteed 409 (and an immediate strike) for doing
+  // nothing wrong.
+  it("accepts a save reporting earnings from the economy that existed before an in-interval prestige", async () => {
+    const cookie = await registerAndLogin();
+
+    // Establish a small pre-prestige economy: 1 owned alpha unit, paid for
+    // out of real earnings.
+    const seed = await api.put("/save").set("Cookie", cookie).send({
+      tokens: 0.5,
+      totalTokensEarned: 8,
+      totalClicks: 1,
+      elapsedSeconds: 1,
+      units: [{ unitId: "alpha", owned: 1 }]
+    });
+    expect(seed.status).toBe(200);
+
+    // Prestige: units reset to none, prestigeCount/phdCount both advance,
+    // no clicks were needed to press the button (deltaClicks: 0) — the
+    // exact shape of the real incident. The earnings below are bounded by
+    // the PRE-reset economy (1 alpha unit), which the fix must still credit
+    // even though `units` here reports none.
+    const res = await api.put("/save").set("Cookie", cookie).send({
+      tokens: 10,
+      totalTokensEarned: 18,
+      totalClicks: 1,
+      elapsedSeconds: 2,
+      phdCount: 1,
+      prestigeCount: 1,
+      units: []
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe(Responses.SAVE.SAVE_SUCCESS.body.message);
+
+    const getRes = await api.get("/save").set("Cookie", cookie);
+    expect(getRes.body.save.totalTokensEarned).toBe(18);
+    expect(getRes.body.save.prestigeCount).toBe(1);
+  });
 });
 
 describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=monitor", () => {

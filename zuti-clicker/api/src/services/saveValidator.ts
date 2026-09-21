@@ -124,6 +124,39 @@ function checkBound(
   return { outcome: "reject" };
 }
 
+// The strongest possible production rate AND click value a given
+// units/upgrades/phd state could produce, at the most generous booster/crit
+// rolls unconditionally assumed to have landed every time. Extracted so the
+// earnings bound can evaluate it against both a pre- and a post-prestige
+// state without two hand-copied blocks silently drifting apart.
+function maxEconomy(state: {
+  units: UnitSnapshot[];
+  upgrades: string[];
+  phdCount: number;
+}): { maxTps: number; maxClickValue: number } {
+  const maxBaseTps = state.units.reduce((sum, u) => {
+    const def = getUnitDefinition(u.unitId);
+    return def ? sum + u.owned * def.baseProduction : sum;
+  }, 0);
+  const maxProdMultiplier = getProductionMultiplier(state.phdCount) * MAX_PRODUCTION_BOOSTER_MULTIPLIER;
+  const maxTps = maxBaseTps * maxProdMultiplier;
+
+  const flatClickBonus = getFlatClickBonus(state.upgrades);
+  const clickMultiplier = getClickMultiplier(state.upgrades);
+  const clickSynergy = getClickSynergy(state.upgrades);
+  const maxClickValue =
+    getClickValue({
+      flatClickBonus,
+      clickMultiplier,
+      phdProductionMultiplier: maxProdMultiplier,
+      tokensPerSecond: maxTps,
+      clickSynergy,
+      boosterClickMultiplier: MAX_CLICK_BOOSTER_MULTIPLIER
+    }) * MAX_CRIT_MULTIPLIER;
+
+  return { maxTps, maxClickValue };
+}
+
 export function evaluateSaveEnvelope(
   prev: PrevSaveSnapshot | null,
   userCreatedAt: Date,
@@ -204,34 +237,52 @@ export function evaluateSaveEnvelope(
     reasons.push("clicks_exceed_human_rate");
   }
 
-  // --- earnings: bounded by the strongest possible production AND click
-  //     value this account's OWN after-state (units/upgrades/phd) could
-  //     produce, over the same interval, at the most generous booster/crit
-  //     rolls unconditionally assumed to have landed every time. ---------
-  const maxBaseTps = incoming.units.reduce((sum, u) => {
-    const def = getUnitDefinition(u.unitId);
-    return def ? sum + u.owned * def.baseProduction : sum;
-  }, 0);
-  const maxProdMultiplier = getProductionMultiplier(incoming.phdCount) * MAX_PRODUCTION_BOOSTER_MULTIPLIER;
-  const maxTps = maxBaseTps * maxProdMultiplier;
+  // A prestige within this interval resets owned units/upgrades to 0 partway
+  // through — computed here, before the earnings bound, because that bound
+  // needs to know whether it's looking at one economy or two spliced
+  // together (see below). Reused by the spend section further down.
+  const prestiged = incoming.prestigeCount > prevPrestigeCount;
 
-  const flatClickBonus = getFlatClickBonus(incoming.upgrades);
-  const clickMultiplier = getClickMultiplier(incoming.upgrades);
-  const clickSynergy = getClickSynergy(incoming.upgrades);
-  const maxClickValue =
-    getClickValue({
-      flatClickBonus,
-      clickMultiplier,
-      phdProductionMultiplier: maxProdMultiplier,
-      tokensPerSecond: maxTps,
-      clickSynergy,
-      boosterClickMultiplier: MAX_CLICK_BOOSTER_MULTIPLIER
-    }) * MAX_CRIT_MULTIPLIER;
+  // --- earnings: bounded by the strongest possible production AND click
+  //     value some account state could produce over this interval, at the
+  //     most generous booster/crit rolls unconditionally assumed to have
+  //     landed every time.
+  //
+  //     A prestige inside the interval splits it across TWO economies: any
+  //     tokens earned before the reset were produced by the PRE-prestige
+  //     unit/upgrade/phd state, but `incoming` only reports the POST-reset
+  //     (near-empty) one. Bounding the whole interval by the post-reset
+  //     rate alone makes every legitimate "prestige, then autosave" a
+  //     guaranteed reject — the bound collapses toward 0 exactly when
+  //     deltaClicks is also 0 (a real production incident: deltaEarned
+  //     242184.99 against a computed bound of exactly 0). Allowing the
+  //     full interval at EITHER economy's rate is a strictly valid upper
+  //     bound (the true earnings are produced by some split of the
+  //     interval between the two rates, and letting the whole interval run
+  //     at whichever rate is larger only ever loosens the bound, never
+  //     tightens it) and stays well inside what a genuine client could
+  //     have produced. ------------------------------------------------------
+  const postEconomy = maxEconomy({
+    units: incoming.units,
+    upgrades: incoming.upgrades,
+    phdCount: incoming.phdCount
+  });
+  const preEconomy = prestiged
+    ? maxEconomy({
+        units: prev?.units ?? [],
+        upgrades: prev?.upgrades ?? [],
+        phdCount: prevPhdCount
+      })
+    : null;
+  const maxTps = preEconomy ? Math.max(preEconomy.maxTps, postEconomy.maxTps) : postEconomy.maxTps;
+  const maxClickValue = preEconomy
+    ? Math.max(preEconomy.maxClickValue, postEconomy.maxClickValue)
+    : postEconomy.maxClickValue;
 
   const deltaEarned = incoming.totalTokensEarned - prevTotalTokensEarned;
   const earnedBound = (maxTps * dtSecs + effectiveDeltaClicks * maxClickValue) * EARNED_ACCEPT_MARGIN;
   const earnedCheck = checkBound(deltaEarned, earnedBound);
-  detail["earned"] = { deltaEarned, bound: earnedBound, outcome: earnedCheck.outcome };
+  detail["earned"] = { deltaEarned, bound: earnedBound, outcome: earnedCheck.outcome, prestiged };
   if (earnedCheck.outcome === "reject") {
     return { outcome: "reject", reason: "earnings_exceed_max_possible", detail };
   }
@@ -251,7 +302,6 @@ export function evaluateSaveEnvelope(
   //     resets owned units/upgrades to 0, so `before` is taken as 0 in that
   //     case — a strictly lower (still valid, more generous) bound on spend,
   //     since the true pre-reset owned counts are no longer relevant. ------
-  const prestiged = incoming.prestigeCount > prevPrestigeCount;
   const bestCostMultiplier = getCostMultiplier(incoming.phdCount) * MIN_COST_BOOSTER_MULTIPLIER;
   let minSpend = 0;
   for (const u of incoming.units) {

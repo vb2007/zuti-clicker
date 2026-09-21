@@ -202,6 +202,78 @@ describe("evaluateSaveEnvelope — monotonicity", () => {
   });
 });
 
+describe("evaluateSaveEnvelope — earnings bound across a prestige", () => {
+  // Regression, literal production incident: a real logged-in player was
+  // struck (envelope_reject / earnings_exceed_max_possible) for prestiging
+  // and then autosaving in the same interval. incoming.units is the
+  // POST-reset (empty) state, but the deltaEarned reported was produced by
+  // the PRE-reset economy during the run that led up to the prestige — the
+  // old bound used only the post-reset rate, which is exactly 0 when
+  // deltaClicks is also 0 (no clicks were needed to trigger the prestige
+  // button itself). Every field below matches the incident's actual
+  // AntiCheatEvent row (dtSecs 16.709, deltaClicks 0, deltaEarned
+  // 242184.99000047147, click bound 751.905, elapsed bound 16.709).
+  it("regression: does not reject a prestige-interval save bounded only by the pre-reset economy", () => {
+    const prev: PrevSaveSnapshot = {
+      tokens: 0,
+      totalTokensEarned: 50_000_000,
+      totalClicks: 10_000,
+      elapsedSeconds: 50_000,
+      phdCount: 3,
+      prestigeCount: 12,
+      savedAt: new Date(NOW.getTime() - 11_709), // dtSecs === 16.709, matching the incident
+      units: [{ unitId: "eta", owned: 50 }], // the pre-prestige economy — wiped in `incoming`
+      upgrades: []
+    };
+    const deltaEarned = 242184.99000047147;
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: deltaEarned,
+        totalTokensEarned: prev.totalTokensEarned + deltaEarned,
+        totalClicks: prev.totalClicks, // deltaClicks: 0, matching the incident
+        elapsedSeconds: prev.elapsedSeconds + 11.3,
+        phdCount: prev.phdCount + 1,
+        prestigeCount: prev.prestigeCount + 1, // the prestige itself
+        units: [] // post-reset — this is what made the OLD bound collapse to 0
+      })
+    );
+    expect(verdict.outcome).not.toBe("reject");
+  });
+
+  it("still rejects earnings no economy (pre- or post-prestige) could have produced", () => {
+    const prev: PrevSaveSnapshot = {
+      tokens: 0,
+      totalTokensEarned: 100,
+      totalClicks: 1,
+      elapsedSeconds: 1,
+      phdCount: 0,
+      prestigeCount: 0,
+      savedAt: new Date(NOW.getTime() - 1000),
+      units: [{ unitId: "alpha", owned: 1 }], // trivial pre-prestige economy
+      upgrades: []
+    };
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: 1e15,
+        totalTokensEarned: prev.totalTokensEarned + 1e15, // absurd, neither economy supports it
+        totalClicks: prev.totalClicks,
+        elapsedSeconds: prev.elapsedSeconds + 1,
+        phdCount: prev.phdCount,
+        prestigeCount: prev.prestigeCount + 1,
+        units: []
+      })
+    );
+    expect(verdict.outcome).toBe("reject");
+    if (verdict.outcome === "reject") expect(verdict.reason).toBe("earnings_exceed_max_possible");
+  });
+});
+
 describe("evaluateSaveEnvelope — spend / free units", () => {
   it("rejects units granted without a matching token deduction", () => {
     const prev: PrevSaveSnapshot = {
