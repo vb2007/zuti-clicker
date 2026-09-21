@@ -6,6 +6,7 @@ import settings from "./settings";
 import leaderboard from "./leaderboard";
 import boosters from "./boosters";
 import anticheat from "./anticheat";
+import meta from "./meta";
 
 const router = express.Router();
 
@@ -16,6 +17,7 @@ export default (): express.Router => {
   leaderboard(router);
   boosters(router);
   anticheat(router);
+  meta(router);
 
   return router;
 };
