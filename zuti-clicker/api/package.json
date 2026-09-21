@@ -10,7 +10,8 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config=jest.config.cjs",
     "build": "tsc",
     "prod": "node ./dist/index.js",
-    "cleanup:test-users": "tsx scripts/cleanup-test-users.ts"
+    "cleanup:test-users": "tsx scripts/cleanup-test-users.ts",
+    "reset:anticheat-state": "tsx scripts/reset-anticheat-state.ts"
   },
   "keywords": [
     "javascript",
