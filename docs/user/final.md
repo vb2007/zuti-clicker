@@ -351,6 +351,14 @@ egér vagy kisegítő eszköz (assistive technology) használatával játszol �
 a visszaszámlálás lejárta után a játék normálisan folytatódik, és a
 korlátozások idővel (hosszabb, tisztán eltöltött idő után) enyhülnek.
 
+A telefonod lezárása, egy alkalmazásváltás, vagy a böngészőlap háttérbe
+küldése közben eltöltött idő sosem okoz korlátozást — ha visszatérsz, a
+játék egyszerűen ott folytatja a méréseit, ahol tartott. Ugyanígy a fokozat
+(prestige) megszerzése és az azt követő mentés is biztonságos, még akkor is,
+ha ugyanabban a pillanatban történik. Mobilon vagy érintőképernyőn játszva
+az érintéseidet a rendszer külön kezeli az egérkattintásoktól, így egy
+gyors, kétujjas koppintási ütem önmagában sosem vált ki figyelmeztetést.
+
 ---
 
 ## Bezárás előtt
