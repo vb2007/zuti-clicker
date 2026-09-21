@@ -9,6 +9,17 @@ export const MIN_INTERVAL_MS = 15;
 export const MAX_INTERVAL_MS = 3000;
 export const HEARTBEAT_INTERVAL_MS = 60_000;
 
+// The ceiling on how large a reported window may be before it's skipped
+// client-side rather than sent at all — keep in sync with
+// api/src/constants/antiCheat.ts's own MAX_DIGEST_WINDOW_MS (the server
+// treats anything beyond this as "unscoreable", never a strike, but the
+// client should never bother sending one in the first place). A window
+// this large means the browser's own timer was suspended through some of
+// it — a backgrounded tab, a locked screen, a laptop lid close — so the
+// elapsed span carries no real timing information at all (see
+// stores/antiCheatStore.ts's sendHeartbeat).
+export const MAX_DIGEST_WINDOW_MS = HEARTBEAT_INTERVAL_MS * 2;
+
 // Client-side hard burst cap — a click beyond this rolling-1s rate is
 // dropped silently (no token, no flag, no telemetry entry at all). Keep in
 // sync with api/src/constants/antiCheat.ts's ENVELOPE_MAX_CPS; this is the

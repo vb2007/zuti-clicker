@@ -9,7 +9,8 @@ import {
   BURST_CPS_CAP,
   BURST_WINDOW_MS,
   GUEST_RESTRICTION_MINUTES_BY_STRIKE,
-  GUEST_SAVE_RESET_STRIKE
+  GUEST_SAVE_RESET_STRIKE,
+  MAX_DIGEST_WINDOW_MS
 } from "@/utils/antiCheatConstants";
 
 const GUEST_STRIKES_KEY = "zuti-clicker:guestAntiCheatStrikes";
@@ -108,7 +109,7 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
   let untrustedClicks = 0;
   let hiddenClicks = 0;
   let droppedClicks = 0;
-  let methodCounts: MethodCounts = { primary: 0, secondary: 0, enter: 0, space: 0 };
+  let methodCounts: MethodCounts = { primary: 0, secondary: 0, enter: 0, space: 0, touch: 0, other: 0 };
   let windowStartedAt = performance.now();
 
   const honeypot = createHoneypotTracker();
@@ -132,7 +133,7 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     untrustedClicks = 0;
     hiddenClicks = 0;
     droppedClicks = 0;
-    methodCounts = { primary: 0, secondary: 0, enter: 0, space: 0 };
+    methodCounts = { primary: 0, secondary: 0, enter: 0, space: 0, touch: 0, other: 0 };
     windowStartedAt = performance.now();
   }
 
@@ -228,11 +229,10 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
    * that's the caller's responsibility, not this store's).
    */
   async function sendHeartbeat(): Promise<boolean> {
-    const integrityFlags = [...new Set([...honeypot.drainFlags(), ...checkNativeIntegrity()])];
-
     if (!auth.isLoggedIn) {
       // No server digest to send, but a guest's honeypot/integrity trip is
       // still a zero-false-positive local detection and must still strike.
+      const integrityFlags = [...new Set([...honeypot.drainFlags(), ...checkNativeIntegrity()])];
       const guestSaveReset = integrityFlags.length > 0 && applyGuestStrike();
       resetWindow();
       // A logged-in account gets a fresh isRestricted every heartbeat (the
@@ -247,6 +247,30 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     // precision, and the server accepts any non-negative finite duration
     // here regardless, but there's no reason to ship the extra digits.
     const windowMs = Math.max(1, Math.round(performance.now() - windowStartedAt));
+
+    // A window this large means the browser's own timer was suspended
+    // through some of it — a backgrounded tab, a locked screen, a laptop
+    // lid close (iOS/WebKit suspends setInterval outright while
+    // backgrounded; this is the exact root cause of a real production
+    // incident: "banned for opening the prestige modal for a few
+    // seconds"). windowMs then carries no real timing information — clicks
+    // is typically 0 anyway — so there is nothing worth reporting. Re-
+    // baseline and skip this cycle entirely rather than sending it; the
+    // server would only treat it as unscoreable regardless (see
+    // api/src/services/antiCheat.ts), but there's no reason to make that
+    // round trip.
+    //
+    // Checked BEFORE draining the honeypot/integrity trackers, not after:
+    // drainFlags() clears its internal state as a side effect, so draining
+    // it here and then discarding the digest below would silently and
+    // permanently lose a real tamper flag for this cycle instead of
+    // leaving it to be picked up by the next (hopefully usable) window.
+    if (windowMs > MAX_DIGEST_WINDOW_MS) {
+      resetWindow();
+      return false;
+    }
+
+    const integrityFlags = [...new Set([...honeypot.drainFlags(), ...checkNativeIntegrity()])];
     const digest = buildDigest({
       windowMs,
       clickTimestamps,
@@ -318,6 +342,14 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     recordPurchase,
     sendHeartbeat,
     fetchStatus,
+    // Exposed for useAntiCheat.ts's visibilitychange listener — re-baselines
+    // the moment the page becomes foreground again, rather than waiting for
+    // the next heartbeat tick to notice the window ran long through a
+    // background period (sendHeartbeat's own oversized-window check above
+    // is the backstop if this never fires). Discarding a partial window's
+    // telemetry here costs nothing real — it's diagnostic data, not
+    // gameplay — and only ever favors the player.
+    resetWindow,
     // Exposed for lib/api.ts's shared request() interceptor — a restricted
     // account gets a 403 from ANY write endpoint (PUT /save, boosters/claim,
     // not just the report/status ones this store otherwise calls), and that

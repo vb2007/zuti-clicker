@@ -130,6 +130,78 @@ describe("ClickerCircle", () => {
     expect(spy).toHaveBeenLastCalledWith(true, "secondary");
   });
 
+  // Regression: there was no pointerType check at all — every touch tap
+  // (pointerdown with button 0, same as a real left click) was reported as
+  // "primary", indistinguishable from a mouse, and permanently sat a
+  // mobile player at ~100% single-method concentration server-side.
+  it("regression: a touch tap is reported as its own 'touch' method, never 'primary'", async () => {
+    const antiCheat = useAntiCheatStore();
+    const spy = vi.spyOn(antiCheat, "recordClick");
+    const wrapper = mount(ClickerCircle);
+
+    await dispatchTrusted(wrapper.element, "pointerdown", {
+      button: 0,
+      clientX: 1,
+      clientY: 1,
+      pointerType: "touch"
+    });
+    expect(spy).toHaveBeenLastCalledWith(true, "touch");
+    expect(wrapper.emitted("click")).toHaveLength(1); // still earns normally
+  });
+
+  it("a pen tap is also reported as 'touch', not 'primary'", async () => {
+    const antiCheat = useAntiCheatStore();
+    const spy = vi.spyOn(antiCheat, "recordClick");
+    const wrapper = mount(ClickerCircle);
+
+    await dispatchTrusted(wrapper.element, "pointerdown", {
+      button: 0,
+      clientX: 1,
+      clientY: 1,
+      pointerType: "pen"
+    });
+    expect(spy).toHaveBeenLastCalledWith(true, "touch");
+  });
+
+  it("a non-primary-button touch/pen event (e.g. a pen side button) earns nothing", async () => {
+    const wrapper = mount(ClickerCircle);
+    await dispatchTrusted(wrapper.element, "pointerdown", {
+      button: 1,
+      clientX: 1,
+      clientY: 1,
+      pointerType: "pen"
+    });
+    expect(wrapper.emitted("click")).toBeUndefined();
+  });
+
+  // Regression: a detail-0 click with no preceding keydown — VoiceOver
+  // double-tap, AssistiveTouch, other form-activation chains — used to be
+  // silently attributed to "enter" (the old default), a phantom key press
+  // that never happened. It must be reported honestly as "other".
+  it("regression: a detail-0 click with no preceding keydown is reported as 'other', not a phantom 'enter'", async () => {
+    const antiCheat = useAntiCheatStore();
+    const spy = vi.spyOn(antiCheat, "recordClick");
+    const wrapper = mount(ClickerCircle);
+
+    await dispatchTrusted(wrapper.element, "click"); // detail 0, no preceding keydown
+    expect(spy).toHaveBeenLastCalledWith(true, "other");
+  });
+
+  it("a keydown's method attribution is consumed by its click, not reused by a later unrelated one", async () => {
+    const antiCheat = useAntiCheatStore();
+    const spy = vi.spyOn(antiCheat, "recordClick");
+    const wrapper = mount(ClickerCircle);
+
+    wrapper.element.dispatchEvent(new KeyboardEvent("keydown", { code: "Enter", bubbles: true }));
+    await dispatchTrusted(wrapper.element, "click");
+    expect(spy).toHaveBeenLastCalledWith(true, "enter");
+
+    // A second detail-0 click with no keydown of its own must not still
+    // carry the first click's "enter" attribution forward.
+    await dispatchTrusted(wrapper.element, "click");
+    expect(spy).toHaveBeenLastCalledWith(true, "other");
+  });
+
   // Regression: Enter and Space used to be reported as one shared "keyboard"
   // method — a human alternating both keys can legitimately sustain nearly
   // double the rate either key alone could, which the server's

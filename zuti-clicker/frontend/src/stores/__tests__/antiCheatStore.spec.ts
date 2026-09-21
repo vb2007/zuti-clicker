@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from "pinia";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { useAuthStore } from "@/stores/authStore";
 import { api } from "@/lib/api";
-import { BURST_CPS_CAP } from "@/utils/antiCheatConstants";
+import { BURST_CPS_CAP, MAX_DIGEST_WINDOW_MS } from "@/utils/antiCheatConstants";
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -144,11 +144,11 @@ describe("antiCheatStore", () => {
       await store.sendHeartbeat();
 
       const digest = vi.mocked(api.anticheat.report).mock.calls[0]![0];
-      expect(digest.methodCounts).toEqual({ primary: 2, secondary: 1, enter: 1, space: 1 });
+      expect(digest.methodCounts).toEqual({ primary: 2, secondary: 1, enter: 1, space: 1, touch: 0, other: 0 });
 
       await store.sendHeartbeat();
       const secondDigest = vi.mocked(api.anticheat.report).mock.calls[1]![0];
-      expect(secondDigest.methodCounts).toEqual({ primary: 0, secondary: 0, enter: 0, space: 0 });
+      expect(secondDigest.methodCounts).toEqual({ primary: 0, secondary: 0, enter: 0, space: 0, touch: 0, other: 0 });
     });
 
     it("applies a restricted result from the server", async () => {
@@ -171,6 +171,77 @@ describe("antiCheatStore", () => {
       const store = useAntiCheatStore();
       await expect(store.sendHeartbeat()).resolves.toBe(false);
       expect(store.isRestricted).toBe(false);
+    });
+
+    // Regression, real production incident: a backgrounded tab / locked
+    // screen (iOS/WebKit suspends setInterval outright while backgrounded)
+    // means the next heartbeat measures a window spanning the ENTIRE
+    // suspension — no real timing information, and the old behavior sent
+    // it anyway, which the server treated as malformed/inconsistent and
+    // struck immediately. The client must skip sending it at all.
+    it("regression: skips and re-baselines a window that ran longer than MAX_DIGEST_WINDOW_MS, never sending it", async () => {
+      loginAs();
+      const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
+      const store = useAntiCheatStore(); // windowStartedAt = 0
+      store.recordClick(true, "primary"); // recorded while "foreground", at t=0
+
+      // The browser suspends the timer for the rest of the window — by the
+      // time the heartbeat actually runs, real elapsed time is well past
+      // the ceiling.
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS + 1);
+      const guestSaveReset = await store.sendHeartbeat();
+
+      expect(guestSaveReset).toBe(false);
+      expect(api.anticheat.report).not.toHaveBeenCalled();
+
+      // The window must have been re-baselined, not merely left oversized —
+      // a normal window measured right after must start fresh, not still
+      // carry the discarded click or the stale start time.
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS + 1 + 5_000);
+      store.recordClick(true, "primary");
+      await store.sendHeartbeat();
+      expect(api.anticheat.report).toHaveBeenCalledTimes(1);
+      const digest = vi.mocked(api.anticheat.report).mock.calls[0]![0];
+      expect(digest.clicks).toBe(1);
+      expect(digest.windowMs).toBeLessThanOrEqual(MAX_DIGEST_WINDOW_MS);
+
+      nowSpy.mockRestore();
+    });
+
+    it("a window right at the ceiling is still sent normally", async () => {
+      loginAs();
+      const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
+      const store = useAntiCheatStore();
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS);
+      await store.sendHeartbeat();
+      expect(api.anticheat.report).toHaveBeenCalledTimes(1);
+      nowSpy.mockRestore();
+    });
+
+    // Regression: honeypot.drainFlags() clears its internal state as a side
+    // effect. It used to run unconditionally BEFORE the oversized-window
+    // check, so a honeypot trip during a window that then got discarded was
+    // drained (cleared) but never actually sent anywhere — permanently lost
+    // instead of surviving to the next, usable window.
+    it("regression: a honeypot trip during a discarded oversized window is not lost — it survives to the next usable window", async () => {
+      loginAs();
+      const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
+      const store = useAntiCheatStore();
+      store.initialize(); // installs the honeypot trap/global
+
+      (window as unknown as { __zutiGame: { addTokens: () => void } }).__zutiGame.addTokens();
+
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS + 1);
+      await store.sendHeartbeat();
+      expect(api.anticheat.report).not.toHaveBeenCalled();
+
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS + 1 + 5_000);
+      await store.sendHeartbeat();
+      expect(api.anticheat.report).toHaveBeenCalledTimes(1);
+      const digest = vi.mocked(api.anticheat.report).mock.calls[0]![0];
+      expect(digest.integrityFlags).toContain("honeypot:addTokens");
+
+      nowSpy.mockRestore();
     });
   });
 

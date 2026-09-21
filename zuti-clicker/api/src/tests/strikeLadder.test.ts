@@ -3,8 +3,15 @@ import request from "supertest";
 import type { ChildProcess } from "child_process";
 import { TestData } from "../constants/test-data.js";
 import { Responses } from "../constants/responses.js";
-import { HISTOGRAM_BUCKET_COUNT, SAVE_RESET_STRIKE, STRIKE_DECAY_DAYS } from "../constants/antiCheat.js";
+import {
+  HISTOGRAM_BUCKET_COUNT,
+  SAVE_RESET_STRIKE,
+  STRIKE_DECAY_DAYS,
+  SOFT_CLAMP_STRIKE_THRESHOLD,
+  ANTICHEAT_STATE_WINDOW_HOURS
+} from "../constants/antiCheat.js";
 import { prisma } from "../database/prisma.js";
+import { recordSoftClamp } from "../database/models/antiCheat.js";
 import { startTestServer, stopTestServer } from "./testServerHelper.js";
 
 // A dedicated ANTICHEAT_MODE=enforce server (own port — see
@@ -253,13 +260,17 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     expect(res.body.strikeCount).toBe(1);
   });
 
-  // Regression: `flagged` used to short-circuit on `verdict.consistent`
-  // itself, so an inconsistent digest could never reach the `flagged` branch
-  // at all — `decisiveNow` was computed but never actually consulted, making
-  // a client that lies about its own histogram completely unpunishable. A
-  // well-SHAPED but internally-inconsistent digest (bucket sum contradicts
-  // the claimed click count) must strike on the very first report, exactly
-  // like an untrusted click does — no second window needed.
+  // A well-SHAPED but internally-inconsistent digest (bucket sum contradicts
+  // the claimed click count) is decisive immediately, exactly like an
+  // untrusted click — a self-review during this same round of fixes briefly
+  // folded this into the ordinary "2 consecutive flagged windows" rule
+  // instead (on the theory it deserved the same leniency as a statistical
+  // signal), but that opened a real evasion: alternating one inconsistent
+  // digest with one clean digest resets suspicionScore on every clean
+  // window, so the pattern would never reach 2 consecutive and never
+  // strike at all. Unlike an unscoreable digest (malformed shape, or a
+  // window the browser suspended through — genuinely no information), a
+  // digest that contradicts its own numbers has no innocent explanation.
   it("an immediate strike on a well-shaped but internally-inconsistent digest, with no repetition needed", async () => {
     const cookie = await registerAndLogin();
     const res = await api
@@ -268,6 +279,61 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
       .send({ ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }); // sum(buckets)=0, claims 50 clicks
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("restricted");
+    expect(res.body.strikeCount).toBe(1);
+  });
+
+  // Regression: alternating an inconsistent digest with a clean one must
+  // not let the pattern evade the strike ladder — this is exactly the
+  // evasion the above test's history warns about, verified end to end.
+  it("regression: alternating inconsistent and clean digests does not evade the strike (inconsistency stays decisive)", async () => {
+    const cookie = await registerAndLogin();
+    const inconsistentDigest = { ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() };
+
+    await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistentDigest);
+    // If decisiveness were ever lost again, this alternation would reset
+    // suspicionScore to 0 every other report and never strike.
+    await api.post("/anticheat/report").set("Cookie", cookie).send(CLEAN_DIGEST);
+
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(true);
+    expect(status.body.strikeCount).toBe(1);
+  });
+
+  // Regression, the literal production incident ("banned for opening the
+  // prestige modal for a few seconds" on iOS/WebKit): a window the
+  // browser's own timer was suspended through — backgrounded tab, locked
+  // screen — reports an oversized windowMs with 0 clicks. This must be
+  // completely inert: no strike, not even after repetition, and it must
+  // not reset a genuinely flagged streak either (see the next test).
+  it("regression: an oversized windowMs (a backgrounded/suspended window) is never a strike, however many times it repeats", async () => {
+    const cookie = await registerAndLogin();
+    const suspendedDigest = { ...CLEAN_DIGEST, windowMs: 300_000, clicks: 0 };
+
+    for (let i = 0; i < 5; i++) {
+      const res = await api.post("/anticheat/report").set("Cookie", cookie).send(suspendedDigest);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("clean");
+    }
+
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(false);
+    expect(status.body.strikeCount).toBe(0);
+  });
+
+  // An unscoreable window must be NEUTRAL, not "clean" — laundering a
+  // flagged streak through a bogus/suspended digest would let a real
+  // cheater dodge the 2-consecutive-window rule by interleaving one.
+  it("an unscoreable window does not reset an in-progress suspicion streak", async () => {
+    const cookie = await registerAndLogin();
+    await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST); // suspicionScore -> 1
+    await api
+      .post("/anticheat/report")
+      .set("Cookie", cookie)
+      .send({ ...CLEAN_DIGEST, windowMs: 300_000, clicks: 0 }); // unscoreable, not a clean window
+
+    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("restricted"); // the streak survived the unscoreable window
     expect(res.body.strikeCount).toBe(1);
   });
 
@@ -342,6 +408,131 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
 
     const saveRes = await api.get("/save").set("Cookie", cookie);
     expect(saveRes.body.save).toBeNull(); // strike 5 deleted it
+  });
+});
+
+// recordSoftClamp itself (materiality gating + the rolling window) has no
+// realistic HTTP reconstruction that stays both precise and readable — the
+// exact overshoot magnitude needed to land a clamp just above/below the
+// materiality ratio depends on the full economy formula. Called directly
+// instead, exactly as controllers/save.ts calls it, against a real user
+// created through the same dedicated enforce-mode server as every other
+// test in this file.
+describe("Anti-cheat soft-clamp pattern — materiality and window", () => {
+  let server: ChildProcess;
+
+  beforeAll(async () => {
+    server = await startTestServer(PORT, "enforce");
+  }, 25_000);
+
+  afterAll(async () => {
+    await stopTestServer(server);
+  });
+
+  async function registerAndGetUserId(): Promise<{ cookie: string; userId: number }> {
+    const cookie = await registerAndLogin();
+    const me = await api.get("/auth/me").set("Cookie", cookie);
+    return { cookie, userId: me.body.user.id as number };
+  }
+
+  // Regression, real production incident: 5 consecutive clamps (the OLD
+  // threshold), every one pure float64 residue, escalated to an actual
+  // strike against a completely legitimate account. An immaterial clamp
+  // must never count toward the pattern, however many of them pile up.
+  it("regression: immaterial clamps never strike, however many accumulate", async () => {
+    const { cookie, userId } = await registerAndGetUserId();
+    for (let i = 0; i < SOFT_CLAMP_STRIKE_THRESHOLD + 5; i++) {
+      const outcome = await recordSoftClamp(userId, "enforce", true, false, { i });
+      expect(outcome).toBeNull();
+    }
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(false);
+    expect(status.body.strikeCount).toBe(0);
+    const state = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(state?.softClampCount).toBe(0);
+  });
+
+  it("SOFT_CLAMP_STRIKE_THRESHOLD material clamps within the window escalate to a real strike", async () => {
+    const { cookie, userId } = await registerAndGetUserId();
+    let lastOutcome = null;
+    for (let i = 0; i < SOFT_CLAMP_STRIKE_THRESHOLD; i++) {
+      lastOutcome = await recordSoftClamp(userId, "enforce", true, true, { i });
+    }
+    expect(lastOutcome).not.toBeNull();
+    expect(lastOutcome!.strikeCount).toBe(1);
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(true);
+  });
+
+  // Regression: the window this counter lives in previously didn't exist at
+  // all — any SOFT_CLAMP_STRIKE_THRESHOLD material clamps, however far
+  // apart in time, escalated. A clamp older than ANTICHEAT_STATE_WINDOW_HOURS
+  // must no longer contribute to a fresh pattern.
+  it("regression: material clamps older than ANTICHEAT_STATE_WINDOW_HOURS don't combine with new ones", async () => {
+    const { userId } = await registerAndGetUserId();
+    for (let i = 0; i < SOFT_CLAMP_STRIKE_THRESHOLD - 1; i++) {
+      await recordSoftClamp(userId, "enforce", true, true, { i });
+    }
+    let state = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(state?.softClampCount).toBe(SOFT_CLAMP_STRIKE_THRESHOLD - 1);
+
+    // Age the window past its expiry directly — real time can't be waited
+    // out in a test.
+    await prisma.antiCheatState.update({
+      where: { userId },
+      data: {
+        softClampWindowStartedAt: new Date(
+          Date.now() - (ANTICHEAT_STATE_WINDOW_HOURS * 60 * 60 * 1000 + 60_000)
+        )
+      }
+    });
+
+    // One more material clamp must restart the window at 1, not reach the
+    // threshold the way it would if the earlier ones still counted.
+    const outcome = await recordSoftClamp(userId, "enforce", true, true, {});
+    expect(outcome).toBeNull();
+    state = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(state?.softClampCount).toBe(1);
+  });
+
+  // Regression: recordSoftClamp used to write lastCleanAt: now() on every
+  // clamp, which blocked the 30-day strike-decay clock from ever running
+  // for an account that clamped at all — even a materially-over-bound but
+  // still-far-from-a-strike one.
+  it("a material clamp does not reset lastCleanAt (the strike-decay anchor)", async () => {
+    const { userId } = await registerAndGetUserId();
+    // AntiCheatState is created lazily on the first clamp — an immaterial
+    // one first, itself asserted above to never touch lastCleanAt, just to
+    // get a row to read a baseline from.
+    await recordSoftClamp(userId, "enforce", true, false, {});
+    const before = await prisma.antiCheatState.findUnique({ where: { userId } });
+    await recordSoftClamp(userId, "enforce", true, true, {});
+    const after = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(after?.lastCleanAt.getTime()).toBe(before?.lastCleanAt.getTime());
+  });
+
+  // Regression: decayIfDue (triggered by any anti-cheat read/write once
+  // lastCleanAt is stale enough) already reset softClampCount as part of
+  // wiping accumulated minor suspicion after a long clean stretch, but
+  // never cleared the paired softClampWindowStartedAt introduced alongside
+  // it — leaving a stale non-null timestamp next to a freshly-zeroed
+  // counter, an inconsistency every OTHER writer of this pair
+  // (recordSoftClamp, applyStrike) avoids.
+  it("regression: strike decay also clears softClampWindowStartedAt, not just softClampCount", async () => {
+    const { cookie, userId } = await registerAndGetUserId();
+    const staleLastCleanAt = new Date(Date.now() - (STRIKE_DECAY_DAYS + 1) * 24 * 60 * 60 * 1000);
+    const seed = { softClampCount: 3, softClampWindowStartedAt: new Date(), lastCleanAt: staleLastCleanAt };
+    await prisma.antiCheatState.upsert({
+      where: { userId },
+      update: seed,
+      create: { userId, ...seed }
+    });
+
+    await api.get("/anticheat/status").set("Cookie", cookie); // enforced — triggers and persists the decay
+
+    const row = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(row?.softClampCount).toBe(0);
+    expect(row?.softClampWindowStartedAt).toBeNull();
   });
 });
 

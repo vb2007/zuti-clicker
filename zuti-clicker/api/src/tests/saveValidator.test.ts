@@ -202,6 +202,132 @@ describe("evaluateSaveEnvelope — monotonicity", () => {
   });
 });
 
+describe("evaluateSaveEnvelope — earnings bound across a prestige", () => {
+  // Regression, literal production incident: a real logged-in player was
+  // struck (envelope_reject / earnings_exceed_max_possible) for prestiging
+  // and then autosaving in the same interval. incoming.units is the
+  // POST-reset (empty) state, but the deltaEarned reported was produced by
+  // the PRE-reset economy during the run that led up to the prestige — the
+  // old bound used only the post-reset rate, which is exactly 0 when
+  // deltaClicks is also 0 (no clicks were needed to trigger the prestige
+  // button itself). Every field below matches the incident's actual
+  // AntiCheatEvent row (dtSecs 16.709, deltaClicks 0, deltaEarned
+  // 242184.99000047147, click bound 751.905, elapsed bound 16.709).
+  it("regression: does not reject a prestige-interval save bounded only by the pre-reset economy", () => {
+    const prev: PrevSaveSnapshot = {
+      tokens: 0,
+      totalTokensEarned: 50_000_000,
+      totalClicks: 10_000,
+      elapsedSeconds: 50_000,
+      phdCount: 3,
+      prestigeCount: 12,
+      savedAt: new Date(NOW.getTime() - 11_709), // dtSecs === 16.709, matching the incident
+      units: [{ unitId: "eta", owned: 50 }], // the pre-prestige economy — wiped in `incoming`
+      upgrades: []
+    };
+    const deltaEarned = 242184.99000047147;
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: deltaEarned,
+        totalTokensEarned: prev.totalTokensEarned + deltaEarned,
+        totalClicks: prev.totalClicks, // deltaClicks: 0, matching the incident
+        elapsedSeconds: prev.elapsedSeconds + 11.3,
+        phdCount: prev.phdCount + 1,
+        prestigeCount: prev.prestigeCount + 1, // the prestige itself
+        units: [] // post-reset — this is what made the OLD bound collapse to 0
+      })
+    );
+    expect(verdict.outcome).not.toBe("reject");
+  });
+
+  it("still rejects earnings no economy (pre- or post-prestige) could have produced", () => {
+    const prev: PrevSaveSnapshot = {
+      tokens: 0,
+      totalTokensEarned: 100,
+      totalClicks: 1,
+      elapsedSeconds: 1,
+      phdCount: 0,
+      prestigeCount: 0,
+      savedAt: new Date(NOW.getTime() - 1000),
+      units: [{ unitId: "alpha", owned: 1 }], // trivial pre-prestige economy
+      upgrades: []
+    };
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: 1e15,
+        totalTokensEarned: prev.totalTokensEarned + 1e15, // absurd, neither economy supports it
+        totalClicks: prev.totalClicks,
+        elapsedSeconds: prev.elapsedSeconds + 1,
+        phdCount: prev.phdCount,
+        prestigeCount: prev.prestigeCount + 1,
+        units: []
+      })
+    );
+    expect(verdict.outcome).toBe("reject");
+    if (verdict.outcome === "reject") expect(verdict.reason).toBe("earnings_exceed_max_possible");
+  });
+});
+
+// A clamp already neutralizes the gain (the server writes the bounded
+// value); whether it's worth counting toward recordSoftClamp's strike
+// pattern is a separate question from whether it clamps at all — see
+// SOFT_CLAMP_MATERIAL_RATIO's own comment for the production incident
+// (pure float64 residue clamping 5 times) that made this distinction
+// necessary.
+describe("evaluateSaveEnvelope — clamp materiality", () => {
+  const BOUND = 1_000_000;
+
+  // Isolates the leftover-tokens clamp specifically: minSpend stays 0 (no
+  // purchase), and the unit/earn setup gives the earn bound enough
+  // headroom that only the tokens check itself ever clamps.
+  function clampScenario(overshoot: number): ReturnType<typeof evaluateSaveEnvelope> {
+    const prev: PrevSaveSnapshot = {
+      tokens: 0,
+      totalTokensEarned: 10_000_000,
+      totalClicks: 1000,
+      elapsedSeconds: 1000,
+      phdCount: 0,
+      prestigeCount: 0,
+      savedAt: new Date(NOW.getTime() - 1000),
+      units: [{ unitId: "theta", owned: 1 }],
+      upgrades: []
+    };
+    const deltaEarned = BOUND; // minSpend 0 => availableBudget === BOUND exactly
+    return evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: BOUND + overshoot,
+        totalTokensEarned: prev.totalTokensEarned + deltaEarned,
+        totalClicks: prev.totalClicks,
+        elapsedSeconds: prev.elapsedSeconds + 1,
+        phdCount: 0,
+        prestigeCount: 0,
+        units: prev.units
+      })
+    );
+  }
+
+  it("an overshoot under the material ratio clamps but is not material", () => {
+    const verdict = clampScenario(10); // 10 / 1e6 = 1e-5, well under 0.1%
+    expect(verdict.outcome).toBe("clamp");
+    if (verdict.outcome === "clamp") expect(verdict.material).toBe(false);
+  });
+
+  it("an overshoot over the material ratio clamps and IS material", () => {
+    const verdict = clampScenario(2000); // 2000 / 1e6 = 0.2%, over 0.1%
+    expect(verdict.outcome).toBe("clamp");
+    if (verdict.outcome === "clamp") expect(verdict.material).toBe(true);
+  });
+});
+
 describe("evaluateSaveEnvelope — spend / free units", () => {
   it("rejects units granted without a matching token deduction", () => {
     const prev: PrevSaveSnapshot = {
@@ -297,6 +423,20 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       })
     );
     expect(verdict.outcome).not.toBe("reject");
+    // Regression: at bound === 0, `bound * SOFT_CLAMP_MATERIAL_RATIO` is
+    // ALSO 0, so the materiality check would otherwise call ANY overshoot
+    // material however tiny — exactly the false-positive class this whole
+    // materiality mechanism exists to prevent, just at the zero-bound
+    // boundary instead of a large one.
+    if (verdict.outcome === "clamp") expect(verdict.material).toBe(false);
+    // Not a coincidence: at bound === 0, checkBound's own reject threshold
+    // is exactly `bound + REJECT_ABS_SLACK`, the SAME value now used as the
+    // materiality floor — so the entire zero-bound clamp band is, by
+    // construction, always at or below that floor. Anything genuinely
+    // bigger already hard-rejects (and strikes immediately) through a
+    // different path entirely, never reaching recordSoftClamp/materiality
+    // at all — there is no reachable "large but still just a clamp" case
+    // at a zero bound to test separately from this one.
   });
 
   it("accepts a purchase paid for out of earnings within the envelope", () => {
@@ -372,6 +512,48 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
     // baseline really was reset to 0 rather than silently allowed for free
     // against the stale pre-prestige owned count.
     expect(cheating.outcome).not.toBe("accept");
+  });
+
+  // Regression, literal production incident: a real logged-in player's
+  // autosave was repeatedly soft-clamped (5 times, escalating to a strike)
+  // because checkBound's fixed FLOOR (1e-6) is an ABSOLUTE epsilon — once a
+  // balance grows past ~1e6, ordinary float64 accumulation across many
+  // tick() additions drifts well past a fixed absolute floor while staying
+  // utterly negligible in RELATIVE terms. These are the exact tokens/bound
+  // pair from that incident's AntiCheatEvent row (kind: envelope_clamp,
+  // reason: tokens_exceed_after_required_spend) — an overshoot of 8.4e-6 on
+  // a ~4.77e6 balance, i.e. ~1.8e-12 relative.
+  it("regression: does not clamp a relative float residue on a large balance (real production incident)", () => {
+    const deltaEarned = 667231.2599972486;
+    const reportedTokens = 4765932.981958574; // the incident's actual `tokens`
+    const bound = 4765932.981950127; // the incident's actual `maxTokensAfter` — 8.447e-6 below `tokens`
+    const prevTokens = bound - deltaEarned; // => availableBudget === bound, reproducing the real overshoot
+    const prev: PrevSaveSnapshot = {
+      tokens: prevTokens,
+      totalTokensEarned: 10_000_000,
+      totalClicks: 1000,
+      elapsedSeconds: 1000,
+      phdCount: 0,
+      prestigeCount: 0,
+      savedAt: new Date(NOW.getTime() - 30_037), // dtSecs === 35.037, matching the incident
+      units: [{ unitId: "theta", owned: 1 }], // large baseProduction so the earn bound clears easily
+      upgrades: []
+    };
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: reportedTokens,
+        totalTokensEarned: prev.totalTokensEarned + deltaEarned,
+        totalClicks: prev.totalClicks, // deltaClicks: 0, matching the incident
+        elapsedSeconds: prev.elapsedSeconds + 28.85,
+        phdCount: 0,
+        prestigeCount: 0,
+        units: prev.units // unchanged — no purchase, minSpend stays 0
+      })
+    );
+    expect(verdict.outcome).toBe("accept");
   });
 });
 

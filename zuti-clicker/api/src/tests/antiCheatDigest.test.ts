@@ -4,7 +4,7 @@ import {
   bucketIndexForIntervalMs,
   type AntiCheatDigest
 } from "../services/antiCheat.js";
-import { HISTOGRAM_BUCKET_COUNT, ENVELOPE_MAX_CPS } from "../constants/antiCheat.js";
+import { HISTOGRAM_BUCKET_COUNT, ENVELOPE_MAX_CPS, MAX_DIGEST_WINDOW_MS } from "../constants/antiCheat.js";
 
 // Pure unit tests — no live server or database. This is where the
 // statistical scoring itself is proved; the stateful "2 consecutive
@@ -44,6 +44,10 @@ describe("evaluateDigest — consistency", () => {
     const verdict = evaluateDigest(baseDigest({ clicks: 3, buckets }));
     expect(verdict.consistent).toBe(false);
     expect(verdict.inconsistencyReason).toBe("bucket_sum_mismatch");
+    // Unlike a structurally malformed body, this IS real evidence (a
+    // well-formed digest lying about its own numbers) — scoreable, just
+    // never decisive on the first report (see strikeLadder.test.ts).
+    expect(verdict.scoreable).toBe(true);
   });
 
   it("rejects a rate beyond the envelope's own hard ceiling", () => {
@@ -58,10 +62,36 @@ describe("evaluateDigest — consistency", () => {
     expect(verdict.inconsistencyReason).toBe("rate_exceeds_envelope");
   });
 
-  it("rejects a malformed digest (wrong bucket count) without throwing", () => {
+  it("treats a malformed digest (wrong bucket count) as unscoreable, not evidence of tampering", () => {
+    // Regression: this used to be `consistent: false` (the same bucket as
+    // bucket_sum_mismatch/rate_exceeds_envelope, real evidence), which made
+    // it decisive on the very first report — but a structurally malformed
+    // body is far more likely to be a client bug or a stale build (this
+    // project has hit exactly that four times in production) than a real
+    // forgery, which would send a well-formed shape.
     const verdict = evaluateDigest(baseDigest({ buckets: [1, 2, 3] }));
-    expect(verdict.consistent).toBe(false);
-    expect(verdict.inconsistencyReason).toBe("malformed_digest");
+    expect(verdict.scoreable).toBe(false);
+    expect(verdict.unscoreableReason).toBe("malformed_digest");
+    expect(verdict.flagged).toBe(false);
+  });
+
+  // Regression, real production incident ("banned for opening the prestige
+  // modal for a few seconds" on iOS/WebKit): a window the browser's own
+  // timer was suspended through — backgrounded tab, locked screen, laptop
+  // lid close — reports however long the suspension lasted as windowMs,
+  // which carries no real timing information (clicks is typically 0). This
+  // must never be treated as tampering evidence, only as unscoreable.
+  it("treats an oversized windowMs (a browser-suspended window) as unscoreable, not malformed or inconsistent", () => {
+    const verdict = evaluateDigest(baseDigest({ windowMs: MAX_DIGEST_WINDOW_MS + 1, clicks: 0 }));
+    expect(verdict.scoreable).toBe(false);
+    expect(verdict.unscoreableReason).toBe("window_out_of_range");
+    expect(verdict.flagged).toBe(false);
+  });
+
+  it("still scores a within-range windowMs normally", () => {
+    const verdict = evaluateDigest(baseDigest({ windowMs: MAX_DIGEST_WINDOW_MS }));
+    expect(verdict.scoreable).toBe(true);
+    expect(verdict.consistent).toBe(true);
   });
 });
 
@@ -74,6 +104,21 @@ describe("evaluateDigest — zero-false-positive signals", () => {
   it("flags immediately on any integrity flag, regardless of everything else", () => {
     const verdict = evaluateDigest(baseDigest({ integrityFlags: ["honeypotTouched"] }));
     expect(verdict.flagged).toBe(true);
+  });
+
+  // Regression: the unscoreable-window check (added alongside this signal
+  // in the same round of fixes) must never run BEFORE this one — an
+  // oversized windowMs costs an attacker nothing to fake (a single scalar,
+  // no side effects), so if it were checked first, pairing it with real
+  // tamper evidence would silently launder the evidence away as
+  // "unscoreable" instead of striking.
+  it("stays decisive even when the SAME digest also has an oversized windowMs", () => {
+    const verdict = evaluateDigest(
+      baseDigest({ windowMs: MAX_DIGEST_WINDOW_MS + 1, untrustedClicks: 1 })
+    );
+    expect(verdict.scoreable).toBe(true);
+    expect(verdict.flagged).toBe(true);
+    expect(verdict.signals).toContain("untrustedInput");
   });
 });
 
@@ -199,7 +244,9 @@ describe("evaluateDigest — single-input-method signal", () => {
 
   it("flags singleMethodExceedsHumanLimit when effectively all clicks come from one method", () => {
     const verdict = evaluateDigest(
-      narrowDigest({ methodCounts: { primary: 0, secondary: 1400, enter: 0, space: 0 } })
+      narrowDigest({
+        methodCounts: { primary: 0, secondary: 1400, enter: 0, space: 0, touch: 0, other: 0 }
+      })
     );
     expect(verdict.consistent).toBe(true);
     expect(verdict.signals).toContain("singleMethodExceedsHumanLimit");
@@ -207,7 +254,38 @@ describe("evaluateDigest — single-input-method signal", () => {
 
   it("does not flag it when the same aggregate rate is split across multiple methods", () => {
     const verdict = evaluateDigest(
-      narrowDigest({ methodCounts: { primary: 700, secondary: 700, enter: 0, space: 0 } })
+      narrowDigest({
+        methodCounts: { primary: 700, secondary: 700, enter: 0, space: 0, touch: 0, other: 0 }
+      })
+    );
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+  });
+
+  // touch has no researched human-rate ceiling the way mouse/keyboard do
+  // (SINGLE_METHOD_MAX_CPS's own comment cites mouse-clicking records), and
+  // the client has no pointerType check that would let a mobile player be
+  // anything BUT ~100% touch concentration — applying this cap to touch
+  // would flag ordinary two-thumb tapping. `dominant` is computed over
+  // primary/secondary/enter/space only, so touch never becomes it.
+  it("never flags a touch-dominant window, however high the touch-only rate", () => {
+    const verdict = evaluateDigest(
+      narrowDigest({
+        methodCounts: { primary: 0, secondary: 0, enter: 0, space: 0, touch: 1400, other: 0 }
+      })
+    );
+    expect(verdict.consistent).toBe(true);
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+  });
+
+  // touch still counts toward methodTotal (the denominator) even though it
+  // can never itself be `dominant` — a real mixed mouse+touch session must
+  // still dilute concentration correctly rather than touch clicks simply
+  // vanishing from the count.
+  it("touch clicks still dilute concentration for a genuinely mixed session", () => {
+    const verdict = evaluateDigest(
+      narrowDigest({
+        methodCounts: { primary: 700, secondary: 0, enter: 0, space: 0, touch: 700, other: 0 }
+      })
     );
     expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
   });
@@ -223,17 +301,34 @@ describe("evaluateDigest — single-input-method signal", () => {
   // keyboard} shape from before enter/space were split out) used to make
   // the WHOLE digest inconsistent (malformed_digest) — not just skip this
   // one signal, reject everything, including signals that have nothing to
-  // do with methodCounts at all. The cast below simulates exactly what a
-  // real stale client's JSON produces, which TypeScript would otherwise
-  // never let this file construct as a valid AntiCheatDigest.
+  // do with methodCounts at all. sanitizeMethodCounts is now KEY-WISE
+  // tolerant (see its own comment) rather than all-or-nothing, so this
+  // stale shape's recognized keys (primary/secondary) now correctly
+  // contribute to the signal too — only the unrecognized "keyboard" key is
+  // dropped (enter/space default to 0, an undercount, never an overcount).
+  // The cast below simulates exactly what a real stale client's JSON
+  // produces, which TypeScript would otherwise never let this file
+  // construct as a valid AntiCheatDigest.
   it("regression: a malformed (not just absent) methodCounts never invalidates the whole digest", () => {
     const staleShape = { primary: 0, secondary: 1400, keyboard: 0 } as unknown as NonNullable<
       AntiCheatDigest["methodCounts"]
     >;
     const verdict = evaluateDigest(narrowDigest({ methodCounts: staleShape }));
     expect(verdict.consistent).toBe(true); // NOT "malformed_digest"
-    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit"); // the one signal that IS skipped
+    expect(verdict.signals).toContain("singleMethodExceedsHumanLimit"); // recognized keys still score
     expect(verdict.signals).toContain("metronome"); // every OTHER signal still evaluates normally
+  });
+
+  // A value that isn't even an object at all (not just a differently-shaped
+  // one) is the one case sanitizeMethodCounts truly can't do anything
+  // with — still only skips this one signal, never rejects the digest.
+  it("a methodCounts value that isn't even an object is ignored, not rejected", () => {
+    const verdict = evaluateDigest(
+      narrowDigest({ methodCounts: "not-an-object" as unknown as NonNullable<AntiCheatDigest["methodCounts"]> })
+    );
+    expect(verdict.consistent).toBe(true);
+    expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");
+    expect(verdict.signals).toContain("metronome");
   });
 
   it("does not flag a single method held under the human ceiling", () => {
@@ -246,7 +341,7 @@ describe("evaluateDigest — single-input-method signal", () => {
         windowMs: 60_000,
         buckets,
         maxRunLength: 599,
-        methodCounts: { primary: 0, secondary: 600, enter: 0, space: 0 }
+        methodCounts: { primary: 0, secondary: 600, enter: 0, space: 0, touch: 0, other: 0 }
       })
     );
     expect(verdict.signals).not.toContain("singleMethodExceedsHumanLimit");

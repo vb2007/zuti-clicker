@@ -77,7 +77,8 @@ erDiagram
         String   lastStrikeReason      "Az utolsó strike-ot kiváltó jelzés (max 64 karakter)"
         DateTime lastCleanAt           "A tiszta-nap-számláló horgonya"
         Int      suspicionScore        "Egymást követő gyanús ablakok száma"
-        Int      softClampCount        "Csendes korrekciók száma a legutóbbi strike/tisztulás óta"
+        Int      softClampCount        "LÉNYEGES csendes korrekciók száma a jelenlegi ablakban"
+        DateTime softClampWindowStartedAt "A gördülő csendes-korrekció-ablak kezdete (NULL, ha még sosem volt lényeges korrekció)"
         Int      highRateWindows       "Egymást követő magas-ráta ablakok száma"
         DateTime updatedAt             "Automatikus frissítés"
     }
@@ -135,7 +136,9 @@ Felhasználónként legfeljebb egy beállítás-rekord létezik (1:1 kapcsolat a
 A `hideFromLeaderboards` mező (alapértéke `false`) zárja ki a felhasználót mások `GET /leaderboard` rangsorából — a `GameSave`-hez hasonlóan ez a mező is opcionális 1:1 kapcsolaton keresztül érhető el, így egy olyan felhasználó, akinek még nincs `UserSettings` sora, láthatónak számít (nem kizártnak).
 
 ### `AntiCheatState`
-Fiókonkénti strike-/korlátozás-állapot (lásd a fejlesztői dokumentáció "Anti-cheat modell" szakaszát), 1:1 kapcsolatban a `User` táblával. **Lustán** jön létre — az első csendes korrekciónál vagy strike-nál —, így a legtöbb fiókhoz sosem tartozik sor. A `restrictedUntil` az egyetlen kapu, amit minden írási végpont ellenőriz (`requireNotRestricted` middleware); `NULL` (nem "a múltban") jelenti, hogy nincs aktív korlátozás, így egy tiszta fiók ellenőrzése egy olcsó `NULL`-teszt, nem időbélyeg-összehasonlítás. A `lastCleanAt` a 30 egymást követő tiszta napos strike-csökkenési ablak horgonya — minden új strike vagy csendes korrekció `most()`-ra állítja vissza, egy tiszta lejárat pedig `STRIKE_DECAY_DAYS` egész többszörösével tolja előre (sosem veszik el egy részleges tiszta időszak). Ha a szülő `User` törlésre kerül, a sor is automatikusan törlődik (`ON DELETE CASCADE`).
+Fiókonkénti strike-/korlátozás-állapot (lásd a fejlesztői dokumentáció "Anti-cheat modell" szakaszát), 1:1 kapcsolatban a `User` táblával. **Lustán** jön létre — az első csendes korrekciónál vagy strike-nál —, így a legtöbb fiókhoz sosem tartozik sor. A `restrictedUntil` az egyetlen kapu, amit minden írási végpont ellenőriz (`requireNotRestricted` middleware); `NULL` (nem "a múltban") jelenti, hogy nincs aktív korlátozás, így egy tiszta fiók ellenőrzése egy olcsó `NULL`-teszt, nem időbélyeg-összehasonlítás. A `lastCleanAt` a 30 egymást követő tiszta napos strike-csökkenési ablak horgonya — minden új strike `most()`-ra állítja vissza (egy csendes korrekció, lényeges vagy sem, **nem** — lásd lent), egy tiszta lejárat pedig `STRIKE_DECAY_DAYS` egész többszörösével tolja előre (sosem veszik el egy részleges tiszta időszak). Ha a szülő `User` törlésre kerül, a sor is automatikusan törlődik (`ON DELETE CASCADE`).
+
+A `softClampCount`/`softClampWindowStartedAt` pár egy gördülő, `ANTICHEAT_STATE_WINDOW_HOURS` (24 órás) ablakban számolja a **lényeges** (a határt `SOFT_CLAMP_MATERIAL_RATIO`-nál nagyobb hányaddal meghaladó) csendes korrekciókat — egy nem lényeges korrekció (pl. lebegőpontos kerekítési zaj) sosem növeli, egy az ablaknál régebbi lényeges korrekció pedig nem kombinálódik egy újjal. `softClampWindowStartedAt` `NULL`, amíg a fiókon még sosem történt lényeges korrekció.
 
 ### `AntiCheatEvent`
 Csak-hozzáfűzős napló minden anti-cheat verdiktről — beleértve a `monitor` módban elfojtottakat is (`enforced: false`) —, ez teszi lehetővé a küszöbök éles forgalom elleni hangolását anélkül, hogy bárkit ténylegesen korlátozni kellene előtte. **Sosem** tárol mentési adatot, csak azt, mely jelzések aktiválódtak és a burok által számolt határértékeket (`detail`, szabad-formátumú JSON). A `severity` "info", amíg a `services/antiCheat.ts` strike-létrája ténylegesen büntetést nem alkalmaz egy eseményre, ekkor válik "strike"-ká. Ha a szülő `User` törlésre kerül, a kapcsolódó sorok is automatikusan törlődnek (`ON DELETE CASCADE`).

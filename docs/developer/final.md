@@ -357,6 +357,33 @@ with" kommentekkel) segítségével:
 - **Elköltés**: az újonnan megszerzett egységek/fejlesztések legolcsóbb lehetséges ára (legjobb PhD-kedvezmény × legjobb booster-kedvezmény) — ez fogja meg az "ingyen egység" hamisítást.
 - **Prestige/PhD**: a prestige-szám felülről korlátos az életút-bevétel alapján (minden prestige-hez legalább `PHD_TOKEN_SCALE` token kell, ami tartósan beépül az életút-bevételbe), a PhD-szám pedig ezen *már korlátozott* prestige-szám és az életút-bevétel alapján (Cauchy–Schwarz-egyenlőtlenség) — ez a sorrend zárja be azt a rést, hogy egy korlátlan prestige-szám önmagában tetszőlegesen felfújhatná a PhD-korlátot.
 
+**Éles incidens — a bevétel-korlát prestige alatt** (2026-09-21): egy valódi
+fiók kétszer is azonnali strike-ot kapott simán azért, mert prestige-elt,
+majd ugyanabban az intervallumban mentés történt. A bevétel-korlát kizárólag
+a **prestige UTÁNI** (nullázott) egység-állapotból számolt termelési rátát
+használta — ha az intervallumban 0 kattintás történt (a prestige gombhoz nem
+kell kattintani), a korlát pontosan 0-ra esett, miközben a `totalTokensEarned`
+jogosan nőtt a prestige ELŐTTI futás alatt. A javítás (`maxEconomy()`,
+`services/saveValidator.ts`) a bevétel-korlátot most a prestige előtti ÉS
+utáni gazdaság közül a nagyobbikkal engedi — ez matematikailag még mindig
+érvényes felső korlát (a valódi bevétel a kettő közti valamilyen felosztásból
+származik, a nagyobbik teljes intervallumra engedése csak lazítja, sosem
+szigorítja a határt), miközben egy valódi "prestige, majd mentés" sosem esik
+alatta.
+
+**Éles incidens — lebegőpontos tolerancia** (2026-09-21): a `checkBound`
+függvény korábban egy fix, **abszolút** (`1e-6`) toleranciát használt az
+"elfogadva"/"korrigálva" határon. Mivel a token-egyenlegek ezres `tick()`
+összeadásokból épülnek fel, a float64-kerekítési eltérés a mérettel arányosan
+(**relatívan**), nem fixen nő — egy valódi fiókot 5 egymást követő csendes
+korrekció ért, mindegyik 2,4×10⁻⁶–8,4×10⁻⁶ abszolút túllépéssel egy ~10⁷
+nagyságrendű egyenlegen (~10⁻¹³ relatívan) — ami az 5 korrekciós mintát
+(a korábbi `SOFT_CLAMP_STRIKE_THRESHOLD`) elérve tényleges strike-hoz
+vezetett. A `floatTolerance()` (`constants/antiCheat.ts`) mostantól a nagyobb
+operandushoz relatívan (`1e-9`) skálázódik — a hat valódi, éles korrekciós
+esetet visszajátszva mindegyik 1000×-es ráhagyással belefér az új
+toleranciába.
+
 Minden határ a **legkedvezőbb** feltételezéssel számol (max booster/kritikus
 találat, legjobb kedvezmény), hogy egy szerencsés vagy erősen kedvezményezett
 valódi játékos sose szoruljon korlátozásba. Kimenet:
@@ -400,7 +427,7 @@ Utána a statisztikai jeleket súlyozza:
 | `unimodalSpike` | egyetlen mező a minták >90%-át adja | 1 |
 | `uniformShape` | ferdeség < 0.15, tartomány ≤4 | 1 |
 | `sustainedRate` | átlag >22 cps az egész ablakban | 1 |
-| `singleMethodExceedsHumanLimit` | egyetlen bemeneti mód (`primary`/`secondary`/`enter`/`space` négy közül) adja a kattintások ≥95%-át, ÉS annak saját rátája >20 cps | 2 |
+| `singleMethodExceedsHumanLimit` | egyetlen mód (`primary`/`secondary`/`enter`/`space` — `touch`/`other` kizárva, lásd lent) adja a kattintások ≥95%-át, ÉS annak saját rátája >20 cps | 2 |
 | `weak:*` (pointer-fizika) | lásd 2. réteg | 1/jel |
 | `untrustedInput` / integritás-jel | bármelyik jelenléte | döntő, azonnali |
 
@@ -435,17 +462,91 @@ tartalmazó `performance.now()`-időtartam — emiatt minden valós heartbeat
 új, opcionális mezőt úgy bevezetni, hogy a hiánya elutasítást okozzon, ugyanezt
 a hibaosztályt reprodukálná egy fokozatos kiadás közben.)
 
-**Második, éles környezetben talált incidens ugyanebből a mezőből**: a
+**Harmadik, éles környezetben talált incidens, ugyanennek a mezőnek a FELSŐ
+korlátjából** (2026-09-21): egy háttérbe került fül vagy lezárt képernyő
+(iOS/WebKit teljesen felfüggeszti a `setInterval`-t háttérben) miatt a
+`windowMs` a felfüggesztés teljes hosszát hordozza, `clicks: 0` mellett — ez
+"banned for opening the prestige modal for a few seconds" tünetként jelent
+meg egy teljesen tétlen játékosnál. A `windowMs > MAX_DIGEST_WINDOW_MS` eset
+korábban ugyanabba a `malformed_digest` (`consistent: false`) kategóriába
+esett, mint egy valóban rossz alakú body, és a `processDigest`
+(`database/models/antiCheat.ts`) minden ilyen inkonzisztenciát **azonnal**
+büntetett, két egymást követő ablak nélkül. A `DigestVerdict` mostantól
+külön mezőt is hordoz: `scoreable: false` jelenti, hogy a digest NEM
+bizonyíték semmire (sem a hiányos/rossz alakú body, sem egy felfüggesztett
+ablak) — ez sosem strike-ol, de egy valódi jelzett sorozatot sem "mos"
+tisztára (a `suspicionScore` érintetlen marad). Egy `consistent: false`
+(hisztogram-összeg vagy ráta önellentmondás) **továbbra is azonnal döntő**,
+pontosan úgy, mint korábban — ez a rész maga nem volt hibás, csak a
+"strukturálisan rossz alakú" (`malformed_digest`) esettel volt egy közös
+kategóriában a `windowMs` felső korlátjával együtt. (Egy önellenőrző
+kódátvizsgálás ezt a fixet menet közben ideiglenesen a szokásos
+két-ablakos szabály alá helyezte volna át, azzal az indokkal, hogy
+ugyanaz az "adj egy esélyt felépülni" elbánás jár neki, mint egy
+statisztikai jelnek — de ez valódi kikerülési rést nyitott volna: egy
+inkonzisztens és egy tiszta digest felváltva küldve minden második
+ablakban nullázta volna a gyanú-számlálót, így a minta sosem érte volna
+el a kettőt, és sosem strike-olt volna. A javítás előtt ez ki lett
+zárva.) A zéró-hamis-pozitív jelek (`untrustedClicks`, `integrityFlags`)
+kiértékelése emellett most szándékosan a `windowMs`-felső-korlát ellenőrzés
+ELŐTT fut — egy hamisított kérés, ami MINDKETTŐT egyszerre állítja be
+(valódi hamisítás bizonyítékát ÉS egy túl nagy `windowMs`-t), a régi
+sorrendben a felső-korlát ágon "unscoreable"-ként tűnt volna el, mielőtt a
+döntő jel egyáltalán kiértékelődött volna — egy `windowMs` értéket viszont
+egy valódi kliens szemben egy `integrityFlags`/`untrustedClicks` jellel
+semmilyen költséggel nem tud hamisítani, úgyhogy ez egy valós, bár szűk,
+kikerülési rés lett volna. A kliens (`stores/antiCheatStore.ts`) emellett
+most már egyáltalán el sem küldi az ilyen ablakot — a
+`MAX_DIGEST_WINDOW_MS`-nél hosszabb ablakot csendben újraindítja —, és egy
+`visibilitychange` figyelő (`composables/useAntiCheat.ts`) az előtérbe
+kerülés pillanatában is újraindítja, hogy a következő ablak valódi,
+folytonos méréssel induljon.
+
+**Negyedik, éles környezetben talált incidens ugyanebből a mezőből**: a
 "hiánya sosem utasít el" szabály önmagában nem volt elég — egy **jelen lévő,
 de elavult alakú** `methodCounts` (pl. egy gyorsítótárazott régi kliens, ami
 még a `keyboard` mezőt küldi az `enter`/`space` szétválasztása előttről) a
 teljes digestet érvénytelenítette, nem csak ezt az egy jelet hagyta ki —
 pontosan ugyanaz a hibaosztály, csak a "hiányzik" eset helyett a "jelen van,
-de rossz alakú" esetre. A `sanitizeMethodCounts` (`controllers/anticheat.ts`
-és `services/antiCheat.ts`, mindkét helyen külön, védelmi rétegenként) ezért
-sosem dob el semmit emiatt — egy fel nem ismerhető alakot egyszerűen
-hiányzóként kezel, csak ez az egy jel marad kiértékeletlen, minden más jel
-(beleértve a `metronome`-ot, `sustainedRate`-et stb.) továbbra is lefut.
+de rossz alakú" esetre. A `sanitizeMethodCounts` (`services/antiCheat.ts`,
+az EGYETLEN közös implementáció, amit a `controllers/anticheat.ts` importál)
+ezért sosem dob el semmit emiatt. Mostantól **mezőnként** is toleráns, nem
+csak alak-szinten: minden ismert mezőt (`primary`/`secondary`/`enter`/
+`space`/`touch`/`other`) egyenként fogad el (jelen van és érvényes egész
+szám → érték; hiányzik vagy hibás → 0), és csak egy teljesen nem-objektum
+érték esetén ad vissza `undefined`-et (ekkor ez az egy jel marad
+kiértékeletlen, minden más jel lefut). Ez az eredeti javítás általánosítása:
+egy jövőbeli új bemeneti mód hozzáadása nem igényel újabb, saját
+`methodCounts`-alak-incidenst.
+
+`touch`/`other` bemeneti mód (2026-09-21): a kliensben korábban nem volt
+`pointerType`-ellenőrzés — minden érintés (`pointerdown`, `button: 0`) úgy
+került a szerverre, mintha bal egérgomb lenne (`primary`), ami egy mobil
+játékost örökre ~100%-os egyetlen-mód-koncentrációba kényszerített, miközben
+a `SINGLE_METHOD_MAX_CPS` (20 cps) EGÉR-kattintási kutatásból származik,
+nem érintőképernyőből. A `ClickerCircle.vue` mostantól `pointerType`
+alapján `"touch"` módként jelöli az érintést/tollat, ami a
+`singleMethodExceedsHumanLimit` jel `dominant` (a kapott-módszám) számításából
+KI van zárva — a `methodTotal` viszont továbbra is tartalmazza, hogy egy
+valódi vegyes (egér+érintés) munkamenet helyesen hígítsa a koncentrációt.
+`other` mód egy olyan aktivációt jelöl, amit a kliens nem tud konkrét
+billentyűhöz kötni (`MouseEvent.detail === 0`, nincs megelőző `keydown` —
+pl. VoiceOver dupla-koppintás) — korábban ez tévesen egy fantom `"enter"`-ként
+íródott (a `lastKeyMethod` régi alapértéke), ami olyan billentyűlenyomást
+jelentett, ami sosem történt meg.
+
+**Tudatosan vállalt kockázat**: mivel `methodCounts` a kliens saját, nem
+ellenőrizhető állítása, egy módosított kliens vagy közvetlen API-hívás
+tetszőleges kattintást bejelenthet `touch`/`other` módként, hogy elkerülje
+a `singleMethodExceedsHumanLimit` jelet — ez nem új típusú gyengeség (a
+`primary`/`secondary`/`enter`/`space` szétosztása ugyanígy kijátszható
+volt már korábban is, lásd a "több módra szétosztva" tesztet), de a
+kizárás miatt egyetlen címke elég hozzá, nem kell szétosztani a
+kattintásokat több hamis mód között. Ez a döntés a tervezés során
+tudatosan, a felhasználó explicit jóváhagyásával született (a
+"legfeljebb saját, kutatás nélküli plafon" és a "maradjon `primary`-ként"
+alternatívák helyett) — az aggregált 45 cps burok és a többi statisztikai
+jel (nem csak `methodCounts`-ra épülő) továbbra is fedezi ezt az esetet.
 
 Egy verdikt csak **legalább 3 pontnál és legalább 2 különböző jelcsoportnál**
 számít jelzettnek — a nyers kattintás-ráta önmagában (súly 1) sosem érheti el
@@ -476,6 +577,26 @@ Nincs végleges kitiltás. A strike-szám 30 egymást követő tiszta nap után
 szintenként csökken (`AntiCheatState.lastCleanAt`), ami egyben a felhalmozott
 csendes-korrekció/gyanú-számlálókat is nullázza — egy hosszú tiszta időszak a
 kisebb gyanújeleket is eltörli, nem csak a formális strike-okat.
+
+**Csendes-korrekció minta — ablak és lényegesség** (`recordSoftClamp`,
+`database/models/antiCheat.ts`, 2026-09-21): `SOFT_CLAMP_STRIKE_THRESHOLD`
+(korábban 5, mostantól 10) csendes korrekció eszkalál strike-ká — de ennek a
+számlálónak korábban SEM időablaka nem volt (bármely 5 korrekció valaha,
+akármilyen távol egymástól, eszkalált), SEM lényegességi szűrője (minden
+korrekció számított, akkor is, ha az eltérés puszta float64-kerekítési zaj
+volt). Egy valódi fiókot pontosan ez a hiány ért: 5 egymást követő
+korrekció, mindegyik 10⁻¹³ nagyságrendű relatív eltéréssel, strike-ká
+eszkalált. A `checkBound` (`services/saveValidator.ts`) mostantól minden
+korrekciónál jelzi, hogy az eltérés **lényeges** volt-e (a határ
+`SOFT_CLAMP_MATERIAL_RATIO`-nál, 0,1%-nál, nagyobb hányadával haladta-e meg)
+— egy nem lényeges korrekció sosem számít a mintába, akárhányszor
+ismétlődik. A számláló emellett egy valódi, `ANTICHEAT_STATE_WINDOW_HOURS`
+(24 óra) hosszú, gördülő ablakban él (`AntiCheatState.softClampWindowStartedAt`
+— ez a konstans már korábban is létezett, de sosem volt bekötve) — egy
+lényeges korrekció az ablakon túlról már nem adódik hozzá egy új mintához.
+A `lastCleanAt` mezőt egy korrekció mostantól **nem** írja felül (korábban
+minden korrekció `now()`-ra állította) — ez blokkolta a 30 napos
+strike-lecsökkenési órát bármely, valaha korrigáló fiók esetén.
 
 A `requireNotRestricted` middleware (`middlewares/index.ts`) a `PUT /save`-t
 és a `POST /boosters/claim`-et zárja le aktív korlátozás alatt — a

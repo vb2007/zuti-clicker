@@ -3,7 +3,7 @@ import { getSave, upsertSave, deleteSave, type UnitInput } from "../database/mod
 import { Responses } from "../constants/responses";
 import { isKnownUpgradeId } from "../constants/upgrades";
 import { isKnownUnitId, MAX_UNIT_OWNED } from "../constants/gameBalance";
-import { ANTICHEAT_MODE } from "../constants/antiCheat";
+import { ANTICHEAT_MODE, floatTolerance } from "../constants/antiCheat";
 import {
   evaluateSaveEnvelope,
   type PrevSaveSnapshot,
@@ -94,11 +94,13 @@ function isOptionalAmount(value: unknown): value is number | undefined {
 }
 
 // tokens and totalTokensEarned can legitimately differ by a sliver at the
-// last representable float bit — this is slack for that, not an invitation
-// to overshoot: a real forged excess is caught by the plausibility envelope
-// (services/saveValidator.ts), which compares against the previous save
-// rather than trusting a single request in isolation.
-const CORE_FIELD_EPSILON = 1e-6;
+// last representable float bit — floatTolerance (constants/antiCheat.ts)
+// scales that slack with the values' own magnitude, not a fixed absolute
+// amount, per the production incident documented there. This is slack for
+// float drift, not an invitation to overshoot: a real forged excess is
+// caught by the plausibility envelope (services/saveValidator.ts), which
+// compares against the previous save rather than trusting a single request
+// in isolation.
 
 /**
  * @openapi
@@ -280,7 +282,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     // epsilon absorbs float round-tripping; a real forged excess is still
     // caught here as anyone actually inflating tokens without inflating
     // totalTokensEarned to match is exactly the "granted free tokens" attack.
-    if (tokens > totalTokensEarned + CORE_FIELD_EPSILON) {
+    if (tokens > totalTokensEarned + floatTolerance(tokens, totalTokensEarned)) {
       const r = Responses.SAVE.TOKENS_EXCEED_EARNED;
       res.status(r.status).json(r.body);
       return;
@@ -380,7 +382,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
           ...verdict.detail
         }).catch((e: unknown) => console.error("Failed to record anti-cheat strike:", e));
       } else if (verdict.outcome === "clamp") {
-        await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, {
+        await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, verdict.material, {
           reasons: verdict.reasons,
           ...verdict.detail
         }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));

@@ -35,7 +35,9 @@ import {
   REJECT_MULTIPLIER,
   EARNED_ACCEPT_MARGIN,
   PHD_BOUND_SLACK,
-  PRESTIGE_COUNT_SLACK
+  PRESTIGE_COUNT_SLACK,
+  floatTolerance,
+  SOFT_CLAMP_MATERIAL_RATIO
 } from "../constants/antiCheat";
 
 export interface UnitSnapshot {
@@ -85,6 +87,11 @@ export type EnvelopeVerdict =
       clamped: EnvelopeClamped;
       reasons: string[];
       detail: Record<string, unknown>;
+      // True if ANY clamped dimension's overshoot was material (see
+      // SOFT_CLAMP_MATERIAL_RATIO's own comment) — the one thing
+      // database/models/antiCheat.ts's recordSoftClamp needs to decide
+      // whether this clamp counts toward the strike pattern at all.
+      material: boolean;
     }
   | { outcome: "reject"; reason: string; detail: Record<string, unknown> };
 
@@ -105,17 +112,67 @@ function unitMap(units: UnitSnapshot[]): Map<string, number> {
 // hard-reject a legitimate "spent every last token" save over a sub-cent
 // float residue from many tick() accumulations, instead of silently
 // clamping it like every other boundary case.
-const FLOOR = 1e-6;
+//
+// The "ok"/"clamp" boundaries below use floatTolerance(actual, bound)
+// instead of a fixed epsilon — see its own comment in constants/antiCheat.ts
+// for the production incident that made a fixed floor insufficient once
+// balances grew large.
 const REJECT_ABS_SLACK = 1e-3;
 function checkBound(
   actual: number,
   rawBound: number
-): { outcome: "ok" } | { outcome: "clamp"; to: number } | { outcome: "reject" } {
+): { outcome: "ok" } | { outcome: "clamp"; to: number; material: boolean } | { outcome: "reject" } {
   const bound = Math.max(0, rawBound);
-  if (actual <= bound + FLOOR) return { outcome: "ok" };
+  const tolerance = floatTolerance(actual, bound);
+  if (actual <= bound + tolerance) return { outcome: "ok" };
   const rejectThreshold = Math.max(bound * REJECT_MULTIPLIER, bound + REJECT_ABS_SLACK);
-  if (actual <= rejectThreshold + FLOOR) return { outcome: "clamp", to: bound };
+  if (actual <= rejectThreshold + tolerance) {
+    // Material = genuinely over bound, not just past this check's own
+    // (much tighter) float tolerance — see SOFT_CLAMP_MATERIAL_RATIO's own
+    // comment for the production incident this distinguishes from a real
+    // pattern of forged/implausible saves. `bound * SOFT_CLAMP_MATERIAL_RATIO`
+    // is itself 0 whenever bound is exactly 0 (e.g. a player who spent
+    // every last token) — the same zero-width-band problem REJECT_ABS_SLACK
+    // exists to solve for the reject threshold above, so it doubles as the
+    // absolute floor here too: below it is noise even with no relative
+    // reference point to compare against.
+    const material = actual - bound > Math.max(bound * SOFT_CLAMP_MATERIAL_RATIO, REJECT_ABS_SLACK);
+    return { outcome: "clamp", to: bound, material };
+  }
   return { outcome: "reject" };
+}
+
+// The strongest possible production rate AND click value a given
+// units/upgrades/phd state could produce, at the most generous booster/crit
+// rolls unconditionally assumed to have landed every time. Extracted so the
+// earnings bound can evaluate it against both a pre- and a post-prestige
+// state without two hand-copied blocks silently drifting apart.
+function maxEconomy(state: {
+  units: UnitSnapshot[];
+  upgrades: string[];
+  phdCount: number;
+}): { maxTps: number; maxClickValue: number } {
+  const maxBaseTps = state.units.reduce((sum, u) => {
+    const def = getUnitDefinition(u.unitId);
+    return def ? sum + u.owned * def.baseProduction : sum;
+  }, 0);
+  const maxProdMultiplier = getProductionMultiplier(state.phdCount) * MAX_PRODUCTION_BOOSTER_MULTIPLIER;
+  const maxTps = maxBaseTps * maxProdMultiplier;
+
+  const flatClickBonus = getFlatClickBonus(state.upgrades);
+  const clickMultiplier = getClickMultiplier(state.upgrades);
+  const clickSynergy = getClickSynergy(state.upgrades);
+  const maxClickValue =
+    getClickValue({
+      flatClickBonus,
+      clickMultiplier,
+      phdProductionMultiplier: maxProdMultiplier,
+      tokensPerSecond: maxTps,
+      clickSynergy,
+      boosterClickMultiplier: MAX_CLICK_BOOSTER_MULTIPLIER
+    }) * MAX_CRIT_MULTIPLIER;
+
+  return { maxTps, maxClickValue };
 }
 
 export function evaluateSaveEnvelope(
@@ -168,6 +225,11 @@ export function evaluateSaveEnvelope(
   const clamped: EnvelopeClamped = {};
   const reasons: string[] = [];
   const detail: Record<string, unknown> = { dtSecs };
+  // True once ANY clamped dimension below was materially over its bound —
+  // see SOFT_CLAMP_MATERIAL_RATIO's own comment. Determines whether the
+  // overall verdict's clamp counts toward recordSoftClamp's strike pattern
+  // at all.
+  let clampIsMaterial = false;
 
   // --- elapsed time: no offline progress exists (the tick loop only runs
   //     while the tab is mounted), so Δelapsed can never exceed real
@@ -181,6 +243,7 @@ export function evaluateSaveEnvelope(
   if (elapsedCheck.outcome === "clamp") {
     clamped.elapsedSeconds = prevElapsedSeconds + elapsedCheck.to;
     reasons.push("elapsed_exceeds_wallclock");
+    clampIsMaterial = clampIsMaterial || elapsedCheck.material;
   }
 
   // --- clicks: bounded by a generous burst CPS over the same wall-clock dt. ---
@@ -196,36 +259,55 @@ export function evaluateSaveEnvelope(
     effectiveDeltaClicks = clickCheck.to;
     clamped.totalClicks = prevTotalClicks + effectiveDeltaClicks;
     reasons.push("clicks_exceed_human_rate");
+    clampIsMaterial = clampIsMaterial || clickCheck.material;
   }
 
-  // --- earnings: bounded by the strongest possible production AND click
-  //     value this account's OWN after-state (units/upgrades/phd) could
-  //     produce, over the same interval, at the most generous booster/crit
-  //     rolls unconditionally assumed to have landed every time. ---------
-  const maxBaseTps = incoming.units.reduce((sum, u) => {
-    const def = getUnitDefinition(u.unitId);
-    return def ? sum + u.owned * def.baseProduction : sum;
-  }, 0);
-  const maxProdMultiplier = getProductionMultiplier(incoming.phdCount) * MAX_PRODUCTION_BOOSTER_MULTIPLIER;
-  const maxTps = maxBaseTps * maxProdMultiplier;
+  // A prestige within this interval resets owned units/upgrades to 0 partway
+  // through — computed here, before the earnings bound, because that bound
+  // needs to know whether it's looking at one economy or two spliced
+  // together (see below). Reused by the spend section further down.
+  const prestiged = incoming.prestigeCount > prevPrestigeCount;
 
-  const flatClickBonus = getFlatClickBonus(incoming.upgrades);
-  const clickMultiplier = getClickMultiplier(incoming.upgrades);
-  const clickSynergy = getClickSynergy(incoming.upgrades);
-  const maxClickValue =
-    getClickValue({
-      flatClickBonus,
-      clickMultiplier,
-      phdProductionMultiplier: maxProdMultiplier,
-      tokensPerSecond: maxTps,
-      clickSynergy,
-      boosterClickMultiplier: MAX_CLICK_BOOSTER_MULTIPLIER
-    }) * MAX_CRIT_MULTIPLIER;
+  // --- earnings: bounded by the strongest possible production AND click
+  //     value some account state could produce over this interval, at the
+  //     most generous booster/crit rolls unconditionally assumed to have
+  //     landed every time.
+  //
+  //     A prestige inside the interval splits it across TWO economies: any
+  //     tokens earned before the reset were produced by the PRE-prestige
+  //     unit/upgrade/phd state, but `incoming` only reports the POST-reset
+  //     (near-empty) one. Bounding the whole interval by the post-reset
+  //     rate alone makes every legitimate "prestige, then autosave" a
+  //     guaranteed reject — the bound collapses toward 0 exactly when
+  //     deltaClicks is also 0 (a real production incident: deltaEarned
+  //     242184.99 against a computed bound of exactly 0). Allowing the
+  //     full interval at EITHER economy's rate is a strictly valid upper
+  //     bound (the true earnings are produced by some split of the
+  //     interval between the two rates, and letting the whole interval run
+  //     at whichever rate is larger only ever loosens the bound, never
+  //     tightens it) and stays well inside what a genuine client could
+  //     have produced. ------------------------------------------------------
+  const postEconomy = maxEconomy({
+    units: incoming.units,
+    upgrades: incoming.upgrades,
+    phdCount: incoming.phdCount
+  });
+  const preEconomy = prestiged
+    ? maxEconomy({
+        units: prev?.units ?? [],
+        upgrades: prev?.upgrades ?? [],
+        phdCount: prevPhdCount
+      })
+    : null;
+  const maxTps = preEconomy ? Math.max(preEconomy.maxTps, postEconomy.maxTps) : postEconomy.maxTps;
+  const maxClickValue = preEconomy
+    ? Math.max(preEconomy.maxClickValue, postEconomy.maxClickValue)
+    : postEconomy.maxClickValue;
 
   const deltaEarned = incoming.totalTokensEarned - prevTotalTokensEarned;
   const earnedBound = (maxTps * dtSecs + effectiveDeltaClicks * maxClickValue) * EARNED_ACCEPT_MARGIN;
   const earnedCheck = checkBound(deltaEarned, earnedBound);
-  detail["earned"] = { deltaEarned, bound: earnedBound, outcome: earnedCheck.outcome };
+  detail["earned"] = { deltaEarned, bound: earnedBound, outcome: earnedCheck.outcome, prestiged };
   if (earnedCheck.outcome === "reject") {
     return { outcome: "reject", reason: "earnings_exceed_max_possible", detail };
   }
@@ -236,6 +318,7 @@ export function evaluateSaveEnvelope(
     effectiveTotalTokensEarned = prevTotalTokensEarned + effectiveDeltaEarned;
     clamped.totalTokensEarned = effectiveTotalTokensEarned;
     reasons.push("earnings_exceed_max_possible");
+    clampIsMaterial = clampIsMaterial || earnedCheck.material;
   }
 
   // --- spend: leftover tokens can't exceed what remains after paying at
@@ -245,7 +328,6 @@ export function evaluateSaveEnvelope(
   //     resets owned units/upgrades to 0, so `before` is taken as 0 in that
   //     case — a strictly lower (still valid, more generous) bound on spend,
   //     since the true pre-reset owned counts are no longer relevant. ------
-  const prestiged = incoming.prestigeCount > prevPrestigeCount;
   const bestCostMultiplier = getCostMultiplier(incoming.phdCount) * MIN_COST_BOOSTER_MULTIPLIER;
   let minSpend = 0;
   for (const u of incoming.units) {
@@ -274,7 +356,7 @@ export function evaluateSaveEnvelope(
   // epsilon, not a two-tier checkBound.
   const availableBudget = prevTokens + effectiveDeltaEarned;
   detail["spendBudget"] = { minSpend, availableBudget };
-  if (minSpend > availableBudget + FLOOR) {
+  if (minSpend > availableBudget + floatTolerance(minSpend, availableBudget)) {
     return { outcome: "reject", reason: "spend_exceeds_available_budget", detail };
   }
 
@@ -292,6 +374,7 @@ export function evaluateSaveEnvelope(
   if (tokensCheck.outcome === "clamp") {
     clamped.tokens = tokensCheck.to;
     reasons.push("tokens_exceed_after_required_spend");
+    clampIsMaterial = clampIsMaterial || tokensCheck.material;
   }
 
   // --- prestige count: each prestige requires a run of at least
@@ -317,6 +400,7 @@ export function evaluateSaveEnvelope(
     effectivePrestigeCount = Math.floor(prestigeCheck.to);
     clamped.prestigeCount = effectivePrestigeCount;
     reasons.push("prestige_count_exceeds_max_possible");
+    clampIsMaterial = clampIsMaterial || prestigeCheck.material;
   }
 
   // --- PhD count: splitting a fixed token budget across many minimal-sized
@@ -338,10 +422,11 @@ export function evaluateSaveEnvelope(
   if (phdCheck.outcome === "clamp") {
     clamped.phdCount = Math.floor(phdCheck.to);
     reasons.push("phd_exceeds_max_possible");
+    clampIsMaterial = clampIsMaterial || phdCheck.material;
   }
 
   if (reasons.length > 0) {
-    return { outcome: "clamp", clamped, reasons, detail };
+    return { outcome: "clamp", clamped, reasons, detail, material: clampIsMaterial };
   }
   return { outcome: "accept" };
 }

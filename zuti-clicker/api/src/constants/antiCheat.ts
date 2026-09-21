@@ -85,9 +85,35 @@ export const EARNED_ACCEPT_MARGIN = 1.5;
 export const PHD_BOUND_SLACK = 1;
 export const PRESTIGE_COUNT_SLACK = 2;
 
-// How many soft clamps within ANTICHEAT_STATE_WINDOW_HOURS escalate to a real
-// strike — a single clamp is invisible noise; a pattern of them is not.
-export const SOFT_CLAMP_STRIKE_THRESHOLD = 5;
+// How many MATERIAL soft clamps within ANTICHEAT_STATE_WINDOW_HOURS escalate
+// to a real strike — a single clamp is invisible noise; a pattern of them is
+// not. Raised from 5 (this system's original value): a clamp already
+// neutralizes the gain (the server writes the bounded value, nothing is
+// ever lost to the attacker), so this is now a genuinely rare pattern signal
+// rather than something ordinary float noise could ever reach — see
+// SOFT_CLAMP_MATERIAL_RATIO below for why noise can't count at all anymore.
+export const SOFT_CLAMP_STRIKE_THRESHOLD = 10;
+
+// A clamp only counts toward the pattern above if the overshoot is at
+// least this fraction of the bound — i.e. genuinely material, not float64
+// accumulation noise. A real production incident clamped a legitimate
+// account 5 times (exactly the old SOFT_CLAMP_STRIKE_THRESHOLD) purely on
+// residue: overshoots of 2.4e-6 to 8.4e-6 on ~1e7 balances, ~1e-13
+// relative — comfortably under this ratio, so noise like that now never
+// increments the counter at all, however many times it repeats (the
+// relative float-tolerance fix in checkBound already stops it from
+// clamping in the first place, going forward; this is the second,
+// independent layer of defense against the same incident, for whatever a
+// future float-precision edge case this project hasn't hit yet manages to
+// still slip through).
+export const SOFT_CLAMP_MATERIAL_RATIO = 0.001; // 0.1% over bound
+
+// The rolling window recordSoftClamp's pattern counter lives in — was
+// already declared here as documentation-only (never actually read
+// anywhere) until this fix wired it up. Previously the counter had NO time
+// window at all: any 5 clamps ever, however far apart, escalated, and
+// every clamp reset AntiCheatState.lastCleanAt, which also blocked the
+// 30-day strike-decay clock from ever running for an account that clamped.
 export const ANTICHEAT_STATE_WINDOW_HOURS = 24;
 
 // ---- Penalty ladder (services/antiCheat.ts) -------------------------------
@@ -186,3 +212,24 @@ export const MIN_DISTINCT_SIGNALS_TO_FLAG = 2;
 // flagged windows — a single borderline window is noise; a pattern is not.
 // Tracked via AntiCheatState.suspicionScore, reset to 0 by any clean window.
 export const SUSPICIOUS_WINDOWS_TO_STRIKE = 2;
+
+// ---- Floating-point tolerance ---------------------------------------------
+//
+// Server-side token accumulators drift from float64 rounding across
+// thousands of tick() additions — the drift scales with the value's own
+// magnitude, not with a fixed absolute amount. A fixed epsilon alone let
+// this slide as an account's numbers grew: a real production incident
+// clamped (then, after enough repeats, struck) a legitimate account for a
+// reported balance of 9,502,887.414624732 against a computed bound of
+// 9,502,887.414622314 — an absolute overshoot of only 2.4e-6, but that is
+// already 2x the old fixed 1e-6 floor. In RELATIVE terms it is ~2.5e-13,
+// i.e. noise. floatTolerance scales with the larger operand so a late-game
+// account gets the same effective precision headroom an early-game one
+// always had, instead of tightening as balances grow.
+export const FLOAT_ABS_EPSILON = 1e-6;
+export const FLOAT_RELATIVE_EPSILON = 1e-9;
+
+export function floatTolerance(...values: number[]): number {
+  const magnitude = Math.max(FLOAT_ABS_EPSILON, ...values.map((v) => Math.abs(v)));
+  return Math.max(FLOAT_ABS_EPSILON, magnitude * FLOAT_RELATIVE_EPSILON);
+}

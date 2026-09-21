@@ -6,6 +6,7 @@ import {
   SAVE_RESET_STRIKE,
   STRIKE_DECAY_DAYS,
   SOFT_CLAMP_STRIKE_THRESHOLD,
+  ANTICHEAT_STATE_WINDOW_HOURS,
   NO_FATIGUE_STREAK,
   SUSPICIOUS_WINDOWS_TO_STRIKE,
   MIN_SCORE_TO_FLAG,
@@ -77,6 +78,7 @@ async function decayIfDue<
     strikeCount: number;
     lastCleanAt: Date;
     softClampCount: number;
+    softClampWindowStartedAt: Date | null;
     suspicionScore: number;
     highRateWindows: number;
   }
@@ -94,6 +96,11 @@ async function decayIfDue<
       strikeCount: newStrikeCount,
       lastCleanAt: newLastCleanAt,
       softClampCount: 0,
+      // Paired with softClampCount everywhere else it's written
+      // (recordSoftClamp, applyStrike) — a decay that wipes the counter
+      // but leaves this stale would let a future recordSoftClamp call
+      // wrongly treat a long-dead window as still current.
+      softClampWindowStartedAt: null,
       suspicionScore: 0,
       highRateWindows: 0
     };
@@ -104,6 +111,7 @@ async function decayIfDue<
       strikeCount: newStrikeCount,
       lastCleanAt: newLastCleanAt,
       softClampCount: 0,
+      softClampWindowStartedAt: null,
       suspicionScore: 0,
       highRateWindows: 0
     }
@@ -175,6 +183,7 @@ export async function applyStrike(
         lastStrikeAt: now,
         lastCleanAt: now,
         softClampCount: 0,
+        softClampWindowStartedAt: null,
         suspicionScore: 0,
         highRateWindows: 0,
         lastStrikeReason: kind.slice(0, 64)
@@ -198,13 +207,44 @@ export async function recordSoftClamp(
   userId: number,
   mode: AntiCheatMode,
   enforced: boolean,
+  material: boolean,
   detail: unknown
 ): Promise<StrikeOutcome | null> {
   const now = new Date();
   const current = await decayIfDue(await getOrCreateState(userId), now, enforced);
-  const softClampCount = current.softClampCount + 1;
 
-  await logAntiCheatEvent({ userId, kind: "envelope_clamp", severity: "info", mode, detail, enforced });
+  // Always logged — the audit trail is unchanged regardless of materiality
+  // or enforcement; only the STRIKE-worthiness of the pattern below changes.
+  await logAntiCheatEvent({
+    userId,
+    kind: "envelope_clamp",
+    severity: "info",
+    mode,
+    detail: { ...((detail as object) ?? {}), material },
+    enforced
+  });
+
+  // An immaterial clamp (pure float64 residue — see
+  // SOFT_CLAMP_MATERIAL_RATIO's own comment) never counts toward the
+  // pattern, however many times it repeats. A clamp already neutralizes
+  // the gain (the server writes the bounded value; nothing survives to
+  // the attacker either way), so noise here isn't even weak evidence —
+  // this is what a real production incident hit: 5 consecutive clamps
+  // (the OLD threshold), all pure rounding residue, escalated to an actual
+  // strike against a completely legitimate account.
+  if (!material) return null;
+
+  // Roll the window: a material clamp from more than
+  // ANTICHEAT_STATE_WINDOW_HOURS ago no longer contributes to the pattern.
+  // This counter previously had NO time window at all — any
+  // SOFT_CLAMP_STRIKE_THRESHOLD material clamps ever, however far apart,
+  // would have escalated.
+  const windowStart = current.softClampWindowStartedAt;
+  const windowExpired =
+    windowStart === null ||
+    now.getTime() - windowStart.getTime() > ANTICHEAT_STATE_WINDOW_HOURS * 60 * 60 * 1000;
+  const softClampCount = windowExpired ? 1 : current.softClampCount + 1;
+  const softClampWindowStartedAt = windowExpired ? now : windowStart;
 
   if (softClampCount >= SOFT_CLAMP_STRIKE_THRESHOLD) {
     return applyStrike(userId, "envelope_clamp_pattern", mode, enforced, {
@@ -216,7 +256,11 @@ export async function recordSoftClamp(
   if (enforced) {
     await prisma.antiCheatState.update({
       where: { id: current.id },
-      data: { softClampCount, lastCleanAt: now }
+      data: { softClampCount, softClampWindowStartedAt }
+      // lastCleanAt is deliberately NOT touched here (unlike the previous
+      // version of this function) — a clamp already neutralizes the gain
+      // and must not also block the 30-day strike-decay clock the way it
+      // used to for any account that clamps at all.
     });
   }
   return null;
@@ -245,17 +289,57 @@ export async function processDigest(
   const current = await decayIfDue(await getOrCreateState(userId), now, enforced);
   const verdict = evaluateDigest(digest);
 
-  // A digest that contradicts its own numbers, or trips a zero-false-positive
-  // signal, is decisive immediately — everything else needs a second
-  // consecutive flagged window (tracked via suspicionScore) before striking.
-  // Computed BEFORE `flagged` and folded into it directly below: an
-  // inconsistent digest is never `verdict.flagged` (evaluateDigest has no
-  // meaningful score for malformed input), so a `flagged` that required
-  // `verdict.consistent` would make inconsistency completely unpunishable —
-  // exactly the escape hatch this variable exists to close. A previous
-  // version of this function had exactly that bug: `flagged` short-circuited
-  // on `!verdict.consistent`, so the `!flagged` branch below always returned
-  // early and `decisiveNow` was computed but never actually consulted.
+  // A digest with no valid information at all — a structurally malformed
+  // body, or a window the browser's own timer was suspended through (see
+  // evaluateDigest's own comments; this is the direct fix for a real
+  // production incident where a backgrounded/locked phone's next heartbeat
+  // struck a completely idle player) — is NEUTRAL, not evidence of
+  // anything in EITHER direction. It must never move suspicionScore toward
+  // a strike, but it also must never reset a genuinely flagged streak the
+  // way a real clean window does (that would let a cheater launder a
+  // flagged streak by injecting a bogus digest between real ones).
+  // Logged separately (kind: "digest_unscoreable") so this is visible in
+  // the audit trail without being confused with either a clean window or
+  // an inconsistent one.
+  if (!verdict.scoreable) {
+    await logAntiCheatEvent({
+      userId,
+      kind: "digest_unscoreable",
+      severity: "info",
+      mode,
+      detail: { unscoreableReason: verdict.unscoreableReason },
+      enforced: false
+    });
+    // Built directly from `current` (already the decayed state from
+    // above) instead of calling getAntiCheatStatus, which would redo the
+    // exact same getOrCreateState+decayIfDue sequence with no write in
+    // between — worth avoiding specifically here, since an unscoreable
+    // window (a backgrounded/suspended browser tab) is expected to be a
+    // FREQUENT path on real devices, not a rare one.
+    const isRestricted = current.restrictedUntil !== null && current.restrictedUntil.getTime() > now.getTime();
+    const status: AntiCheatStatus = {
+      strikeCount: current.strikeCount,
+      restrictedUntil: current.restrictedUntil,
+      isRestricted
+    };
+    return { status, flagged: false, struck: false };
+  }
+
+  // A zero-false-positive signal (untrusted input, an integrity flag) is
+  // decisive immediately. A digest that contradicts its OWN numbers
+  // (`!verdict.consistent` — bucket_sum_mismatch, rate_exceeds_envelope) is
+  // ALSO decisive immediately, same as it always was: unlike the unscoreable
+  // case above (a structurally malformed body, or a window the browser
+  // suspended through — genuinely no information), a well-shaped digest
+  // whose own numbers contradict each other has no innocent production
+  // incident behind it and no legitimate client bug is known to produce it
+  // — there is nothing to give a "second window to recover" grace period
+  // for. (An earlier version of this fix folded !verdict.consistent into
+  // the ordinary 2-consecutive-window `flagged` path instead, on the theory
+  // that it deserved the same leniency as a statistical signal — but that
+  // opens a real evasion: alternating one inconsistent digest with one
+  // clean digest resets suspicionScore on every clean window, so the
+  // pattern never reaches 2 consecutive and never strikes at all.)
   const decisiveNow =
     !verdict.consistent || digest.untrustedClicks > 0 || digest.integrityFlags.length > 0;
 

@@ -30,18 +30,34 @@ export function useAntiCheat() {
     antiCheat.onPointerDown(e);
   }
 
+  // Re-baselines the telemetry window the moment the page comes back to the
+  // foreground — a backgrounded tab, a locked screen, a laptop lid close
+  // can suspend the heartbeat's own setInterval for an arbitrary stretch
+  // (iOS/WebKit does this outright), so whatever partial window was
+  // accumulating no longer reflects real, continuous timing. Discarding it
+  // costs nothing (diagnostic telemetry, not gameplay) and means the next
+  // reported window starts clean from actual resumed activity instead of
+  // carrying a background gap baked in — sendHeartbeat's own oversized-
+  // window check is the backstop if this never fires (browsers don't
+  // guarantee visibilitychange on every possible suspend/resume path).
+  function onVisibilityChange(): void {
+    if (document.visibilityState === "visible") antiCheat.resetWindow();
+  }
+
   onMounted(() => {
     antiCheat.initialize();
     void antiCheat.fetchStatus();
     timer = setInterval(() => void heartbeatTick(), HEARTBEAT_INTERVAL_MS);
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerdown", onPointerDown, { passive: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
   });
 
   onUnmounted(() => {
     if (timer !== null) clearInterval(timer);
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
   });
 
   // A page loaded as a guest and then logging in mid-session must pick up

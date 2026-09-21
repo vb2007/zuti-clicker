@@ -105,22 +105,52 @@ export interface AntiCheatDigest {
   // the same way alternating left/right mouse buttons can. Combining them
   // would make that entirely normal two-key alternation look like 100%
   // concentration in a single method below.
-  methodCounts?: { primary: number; secondary: number; enter: number; space: number };
+  //
+  // touch/other are tracked too, but never contribute to the
+  // singleMethodExceedsHumanLimit signal's own "dominant method" — see
+  // that signal's own comment for why. touch is what a tap on a
+  // touchscreen reports as (see the frontend's ClickerCircle.vue); other
+  // is a keyboard/assistive-tech activation event with no preceding
+  // keydown this file can classify (VoiceOver double-tap, form-activation
+  // chains) rather than a phantom guess.
+  methodCounts?: MethodCounts;
 }
 
 export interface DigestVerdict {
-  // A digest that contradicts its own numbers (bucket sum vs click count, or
-  // an impossible rate) is certain, not merely suspicious — see
-  // database/models/antiCheat.ts for how this short-circuits the
-  // "2 consecutive windows" requirement below.
+  // A digest that contradicts its OWN numbers (bucket sum vs click count, or
+  // a rate beyond the envelope's own ceiling) is EVIDENCE — a well-formed
+  // body that lies about itself has no innocent explanation. Still never
+  // decisive on the very first report though (see
+  // database/models/antiCheat.ts's processDigest): it goes through the
+  // normal "2 consecutive flagged windows" rule, same as every statistical
+  // signal, giving a false-triggering client every chance to recover
+  // before it costs the player anything.
   consistent: boolean;
   inconsistencyReason?: string;
+  // Whether this digest carried enough well-formed information to score at
+  // all. false means NO INFORMATION — never evidence of anything, in
+  // either direction (see scoreable's own comment on isValidShape and the
+  // MAX_DIGEST_WINDOW_MS check below for what lands here and why).
+  scoreable: boolean;
+  unscoreableReason?: string;
   score: number;
   signals: string[];
   flagged: boolean; // score/signal thresholds met, independent of consistency
 }
 
-export type MethodCounts = { primary: number; secondary: number; enter: number; space: number };
+// keep in sync with frontend/src/utils/clickTelemetry.ts's own MethodCounts
+export type MethodCounts = {
+  primary: number;
+  secondary: number;
+  enter: number;
+  space: number;
+  touch: number;
+  other: number;
+};
+
+function sanitizeCount(value: unknown): number {
+  return Number.isInteger(value) && (value as number) >= 0 ? (value as number) : 0;
+}
 
 // Absent, OR present but not matching the expected shape, are both treated
 // as "no method data" for the singleMethodExceedsHumanLimit signal ONLY —
@@ -131,6 +161,16 @@ export type MethodCounts = { primary: number; secondary: number; enter: number; 
 // not just skipping this one signal, skipping every signal — reproducing
 // the exact class of bug the windowMs incident already taught this project
 // to avoid for an optional field.
+//
+// KEY-WISE tolerant, not all-or-nothing: each known key is coerced
+// independently (present and a valid non-negative integer -> that value;
+// absent, or present but malformed -> 0), and only a value that isn't even
+// an object at all returns undefined. This is the direct generalization of
+// the fix above — adding touch/other here (this commit) must not need a
+// second methodCounts-shape incident of its own the next time a key is
+// added or an older client omits one; a client that only ever sends
+// {primary, secondary, enter, space} still gets a fully valid object back
+// with touch/other at 0, not a rejection of the whole thing.
 //
 // `value` is typed `unknown`, not AntiCheatDigest["methodCounts"], and
 // exported: this is the ONE shared implementation for both the controller
@@ -144,32 +184,29 @@ export type MethodCounts = { primary: number; secondary: number; enter: number; 
 export function sanitizeMethodCounts(value: unknown): MethodCounts | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const v = value as Record<string, unknown>;
-  const { primary, secondary, enter, space } = v;
-  if (
-    Number.isInteger(primary) &&
-    (primary as number) >= 0 &&
-    Number.isInteger(secondary) &&
-    (secondary as number) >= 0 &&
-    Number.isInteger(enter) &&
-    (enter as number) >= 0 &&
-    Number.isInteger(space) &&
-    (space as number) >= 0
-  ) {
-    return {
-      primary: primary as number,
-      secondary: secondary as number,
-      enter: enter as number,
-      space: space as number
-    };
-  }
-  return undefined;
+  return {
+    primary: sanitizeCount(v.primary),
+    secondary: sanitizeCount(v.secondary),
+    enter: sanitizeCount(v.enter),
+    space: sanitizeCount(v.space),
+    touch: sanitizeCount(v.touch),
+    other: sanitizeCount(v.other)
+  };
 }
 
+// Genuinely structural problems only — a non-integer count, a missing/
+// wrong-length bucket array, and so on. windowMs's UPPER bound is
+// deliberately NOT checked here (see evaluateDigest's own oversized-window
+// branch below): a client bug producing a structurally wrong body and a
+// browser suspending a timer through a whole backgrounded window are both
+// "no information", but the latter is expected to happen constantly on
+// real devices (locking a phone, switching apps) and must be visibly
+// distinguished (unscoreableReason) even though both are treated the same
+// way — neutral, never a strike.
 function isValidShape(digest: AntiCheatDigest): boolean {
   return (
     Number.isFinite(digest.windowMs) &&
     digest.windowMs > 0 &&
-    digest.windowMs <= MAX_DIGEST_WINDOW_MS &&
     Number.isInteger(digest.clicks) &&
     digest.clicks >= 0 &&
     Array.isArray(digest.buckets) &&
@@ -186,20 +223,20 @@ function isValidShape(digest: AntiCheatDigest): boolean {
 
 export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   if (!isValidShape(digest)) {
-    return { consistent: false, inconsistencyReason: "malformed_digest", score: 0, signals: [], flagged: false };
-  }
-
-  const bucketSum = digest.buckets.reduce((a, b) => a + b, 0);
-  // clicks-1 intervals per click run, but a report can span a restart (no
-  // "previous click" for the first one) — a small fixed tolerance absorbs
-  // that without weakening the check against real tampering.
-  if (Math.abs(bucketSum - Math.max(0, digest.clicks - 1)) > HISTOGRAM_SUM_TOLERANCE) {
-    return { consistent: false, inconsistencyReason: "bucket_sum_mismatch", score: 0, signals: [], flagged: false };
-  }
-
-  const cps = digest.clicks / (digest.windowMs / 1000);
-  if (cps > ENVELOPE_MAX_CPS) {
-    return { consistent: false, inconsistencyReason: "rate_exceeds_envelope", score: 0, signals: [], flagged: false };
+    // Structurally malformed — a client bug or a stale/differently-shaped
+    // build, not evidence of anything. This project has hit exactly this
+    // class of bug FOUR times in production (windowMs precision,
+    // methodCounts shape, ...); a real forger sends a well-formed body, so
+    // treating "can't be parsed" as "certainly cheating" only ever
+    // punishes legitimate quirks.
+    return {
+      consistent: true,
+      scoreable: false,
+      unscoreableReason: "malformed_digest",
+      score: 0,
+      signals: [],
+      flagged: false
+    };
   }
 
   // Zero-false-positive signals — a script dispatching synthetic events
@@ -208,10 +245,65 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   // explanation at all (see Layer 2's design), so either is immediately
   // decisive on its own — no need to wait for a second corroborating signal
   // or a second consecutive window the way the statistical signals below do.
+  // Checked BEFORE the unscoreable-window gate below on purpose: this is
+  // CERTAIN evidence, and must never be swallowed just because the same
+  // forged report also claims an oversized windowMs — an oversized windowMs
+  // costs a real client nothing to fake (a single scalar, no side effects),
+  // so a forger pairing it with real tamper evidence to launder past
+  // detection would otherwise be trivial.
   if (digest.untrustedClicks > 0 || digest.integrityFlags.length > 0) {
     const signals = digest.untrustedClicks > 0 ? ["untrustedInput"] : [];
     for (const flag of digest.integrityFlags) signals.push(`integrity:${flag}`);
-    return { consistent: true, score: 99, signals, flagged: true };
+    return { consistent: true, scoreable: true, score: 99, signals, flagged: true };
+  }
+
+  // A window the browser's own timer was suspended through — a backgrounded
+  // tab, a locked screen, a laptop lid close — carries no meaningful timing
+  // data at all: `clicks` is typically 0 and `windowMs` is however long the
+  // suspension lasted, not a real measurement of anything. This is the
+  // exact root cause of a real production incident ("banned for opening
+  // the prestige modal for a few seconds" on iOS/WebKit, which suspends
+  // setInterval while backgrounded). The client should skip sending these
+  // (see frontend antiCheatConstants.ts's own MAX_DIGEST_WINDOW_MS), but a
+  // client that ships one anyway — stale cache, a platform quirk this
+  // project hasn't seen yet — must never be punished for the browser's own
+  // scheduler; treated as unscoreable, exactly like an absent digest.
+  if (digest.windowMs > MAX_DIGEST_WINDOW_MS) {
+    return {
+      consistent: true,
+      scoreable: false,
+      unscoreableReason: "window_out_of_range",
+      score: 0,
+      signals: [],
+      flagged: false
+    };
+  }
+
+  const bucketSum = digest.buckets.reduce((a, b) => a + b, 0);
+  // clicks-1 intervals per click run, but a report can span a restart (no
+  // "previous click" for the first one) — a small fixed tolerance absorbs
+  // that without weakening the check against real tampering.
+  if (Math.abs(bucketSum - Math.max(0, digest.clicks - 1)) > HISTOGRAM_SUM_TOLERANCE) {
+    return {
+      consistent: false,
+      inconsistencyReason: "bucket_sum_mismatch",
+      scoreable: true,
+      score: 0,
+      signals: [],
+      flagged: false
+    };
+  }
+
+  const cps = digest.clicks / (digest.windowMs / 1000);
+  if (cps > ENVELOPE_MAX_CPS) {
+    return {
+      consistent: false,
+      inconsistencyReason: "rate_exceeds_envelope",
+      scoreable: true,
+      score: 0,
+      signals: [],
+      flagged: false
+    };
   }
 
   const signals: string[] = [];
@@ -271,14 +363,30 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   // research this threshold is based on. Absent, or present but malformed
   // (e.g. a stale client's old shape), for an older client — never a
   // rejection, see sanitizeMethodCounts's own comment.
+  //
+  // `dominant` is taken over primary/secondary/enter/space ONLY — touch is
+  // deliberately excluded. SINGLE_METHOD_MAX_CPS was researched from
+  // ordinary MOUSE clicking (see the constant's own comment); a touchscreen
+  // has no such research behind it, and there is no `pointerType` check in
+  // the client at all before this fix, so a mobile player is permanently at
+  // ~100% single-method concentration by construction — applying this cap
+  // to touch verbatim would flag ordinary two-thumb tapping as a bot. `other`
+  // (an activation with no classifiable input, e.g. VoiceOver) is excluded
+  // for the same reason: it's not attributable to any specific rate-limited
+  // technique. `methodTotal` still includes every method (so a genuinely
+  // touch-dominant window correctly dilutes concentration below the
+  // threshold instead of the excluded methods vanishing from the
+  // denominator), and the RATE check uses `dominant`'s own count, not the
+  // combined total — measuring the rate of the specific method being
+  // judged, not inflating it with methods that aren't.
   const sanitizedMethodCounts = sanitizeMethodCounts(digest.methodCounts);
   if (sanitizedMethodCounts) {
-    const { primary, secondary, enter, space } = sanitizedMethodCounts;
-    const methodTotal = primary + secondary + enter + space;
+    const { primary, secondary, enter, space, touch, other } = sanitizedMethodCounts;
+    const methodTotal = primary + secondary + enter + space + touch + other;
     if (methodTotal >= MIN_CLICKS_FOR_VARIANCE_SIGNAL) {
       const dominant = Math.max(primary, secondary, enter, space);
       if (dominant / methodTotal >= SINGLE_METHOD_CONCENTRATION) {
-        const methodCps = methodTotal / (digest.windowMs / 1000);
+        const methodCps = dominant / (digest.windowMs / 1000);
         if (methodCps > SINGLE_METHOD_MAX_CPS) {
           signals.push("singleMethodExceedsHumanLimit");
           score += 2;
@@ -295,5 +403,5 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   const distinctSignals = new Set(signals).size;
   const flagged = score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG;
 
-  return { consistent: true, score, signals, flagged };
+  return { consistent: true, scoreable: true, score, signals, flagged };
 }
