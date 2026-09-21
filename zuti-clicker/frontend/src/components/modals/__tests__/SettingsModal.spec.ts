@@ -240,5 +240,33 @@ describe("SettingsModal", () => {
       wrapper.unmount();
       activeWrapper = null;
     });
+
+    it("regression: a failed fetch retries on the next open instead of sticking on em-dash forever", async () => {
+      // Without the fix, versionFetched latched to true even on failure, so
+      // a transient API outage (mid-deploy, a network blip) permanently
+      // stuck the footer on "API v—" for the rest of the session even after
+      // the API recovered.
+      vi.mocked(api.meta.version).mockRejectedValueOnce(new Error("network down"));
+      const wrapper = openModal();
+      await nextTick();
+      await flushPromises();
+      const ui = useUiStore();
+
+      let body = new DOMWrapper(document.body);
+      expect(body.find(".version-line").text()).toContain("API v—");
+
+      ui.settingsModalOpen = false;
+      await nextTick();
+      ui.settingsModalOpen = true;
+      await nextTick();
+      await flushPromises();
+
+      expect(api.meta.version).toHaveBeenCalledTimes(2);
+      body = new DOMWrapper(document.body);
+      expect(body.find(".version-line").text()).toContain("9.9.9"); // the (now-default) successful mock
+
+      wrapper.unmount();
+      activeWrapper = null;
+    });
   });
 });

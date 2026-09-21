@@ -45,6 +45,8 @@ watch(
     if (!open) return;
     openSnapshot.value = settings.snapshot();
     if (versionFetched) return;
+    // Set immediately (not just on success) so a second open while the
+    // first request is still in flight doesn't fire a duplicate fetch.
     versionFetched = true;
     // Broad try/catch: request() calls res.json() unconditionally, so a
     // non-JSON response (e.g. a 404 HTML page if the API is unreachable)
@@ -56,7 +58,12 @@ watch(
         apiVersion.value = res.version;
       })
       .catch(() => {
-        // apiVersion stays null; rendered as "—".
+        // apiVersion stays null (rendered as "—"), and — unlike the success
+        // path — the fetch is allowed to retry on the next open: a failure
+        // here is plausibly transient (API mid-deploy, a network blip), and
+        // never retrying would permanently stick the modal on "—" for the
+        // rest of the session even after the API recovers.
+        versionFetched = false;
       });
   }
 );
