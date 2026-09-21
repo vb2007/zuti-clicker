@@ -120,6 +120,8 @@ export interface DigestVerdict {
   flagged: boolean; // score/signal thresholds met, independent of consistency
 }
 
+export type MethodCounts = { primary: number; secondary: number; enter: number; space: number };
+
 // Absent, OR present but not matching the expected shape, are both treated
 // as "no method data" for the singleMethodExceedsHumanLimit signal ONLY —
 // NEVER a reason to reject the whole digest. Regression: this used to be
@@ -129,22 +131,36 @@ export interface DigestVerdict {
 // not just skipping this one signal, skipping every signal — reproducing
 // the exact class of bug the windowMs incident already taught this project
 // to avoid for an optional field.
-function sanitizeMethodCounts(
-  value: AntiCheatDigest["methodCounts"]
-): { primary: number; secondary: number; enter: number; space: number } | undefined {
+//
+// `value` is typed `unknown`, not AntiCheatDigest["methodCounts"], and
+// exported: this is the ONE shared implementation for both the controller
+// (the untrusted request boundary, where the value really is arbitrary
+// JSON) and this file's own evaluateDigest (defense-in-depth, exercised
+// directly by unit tests). Two independently hand-maintained copies is
+// exactly the duplication shape that let the original bug exist in the
+// first place — a future change (e.g. a 5th input method) updating one
+// copy and not the other would silently reintroduce it in whichever layer
+// got missed.
+export function sanitizeMethodCounts(value: unknown): MethodCounts | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { primary, secondary, enter, space } = value;
+  const v = value as Record<string, unknown>;
+  const { primary, secondary, enter, space } = v;
   if (
     Number.isInteger(primary) &&
-    primary >= 0 &&
+    (primary as number) >= 0 &&
     Number.isInteger(secondary) &&
-    secondary >= 0 &&
+    (secondary as number) >= 0 &&
     Number.isInteger(enter) &&
-    enter >= 0 &&
+    (enter as number) >= 0 &&
     Number.isInteger(space) &&
-    space >= 0
+    (space as number) >= 0
   ) {
-    return { primary, secondary, enter, space };
+    return {
+      primary: primary as number,
+      secondary: secondary as number,
+      enter: enter as number,
+      space: space as number
+    };
   }
   return undefined;
 }

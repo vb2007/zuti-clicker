@@ -3,7 +3,7 @@ import { Responses } from "../constants/responses";
 import { ANTICHEAT_MODE } from "../constants/antiCheat";
 import { HISTOGRAM_BUCKET_COUNT } from "../constants/antiCheat";
 import { processDigest, getAntiCheatStatus } from "../database/models/antiCheat";
-import type { AntiCheatDigest } from "../services/antiCheat";
+import { sanitizeMethodCounts, type AntiCheatDigest } from "../services/antiCheat";
 
 interface ReportBody {
   windowMs?: unknown;
@@ -21,33 +21,6 @@ interface ReportBody {
 
 function isNonNegativeInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
-type MethodCounts = { primary: number; secondary: number; enter: number; space: number };
-
-// Absent, OR present but not matching the expected shape, are both treated
-// as "no method data" — NEVER a reason to reject the whole digest. This is
-// deliberately more lenient than a plain type guard: a stale cached client
-// (still shipping the old {primary, secondary, keyboard} shape from before
-// enter/space were split out, e.g. mid-rollout or a browser serving a
-// cached bundle) sends a well-formed but differently-shaped methodCounts
-// object, which must not poison an otherwise-valid report the same way the
-// windowMs incident did. Confirmed empirically: before this fix, the old
-// shape's mismatch made isValidMethodCounts return false, which fed
-// straight into parseDigest's overall condition and 400'd the ENTIRE
-// digest — not just skipping the new signal, skipping every signal.
-function sanitizeMethodCounts(value: unknown): MethodCounts | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const v = value as Record<string, unknown>;
-  if (
-    isNonNegativeInt(v["primary"]) &&
-    isNonNegativeInt(v["secondary"]) &&
-    isNonNegativeInt(v["enter"]) &&
-    isNonNegativeInt(v["space"])
-  ) {
-    return { primary: v["primary"], secondary: v["secondary"], enter: v["enter"], space: v["space"] };
-  }
-  return undefined;
 }
 
 // windowMs is a genuine millisecond DURATION (performance.now() delta), not
