@@ -36,7 +36,8 @@ import {
   EARNED_ACCEPT_MARGIN,
   PHD_BOUND_SLACK,
   PRESTIGE_COUNT_SLACK,
-  floatTolerance
+  floatTolerance,
+  SOFT_CLAMP_MATERIAL_RATIO
 } from "../constants/antiCheat";
 
 export interface UnitSnapshot {
@@ -86,6 +87,11 @@ export type EnvelopeVerdict =
       clamped: EnvelopeClamped;
       reasons: string[];
       detail: Record<string, unknown>;
+      // True if ANY clamped dimension's overshoot was material (see
+      // SOFT_CLAMP_MATERIAL_RATIO's own comment) — the one thing
+      // database/models/antiCheat.ts's recordSoftClamp needs to decide
+      // whether this clamp counts toward the strike pattern at all.
+      material: boolean;
     }
   | { outcome: "reject"; reason: string; detail: Record<string, unknown> };
 
@@ -115,12 +121,19 @@ const REJECT_ABS_SLACK = 1e-3;
 function checkBound(
   actual: number,
   rawBound: number
-): { outcome: "ok" } | { outcome: "clamp"; to: number } | { outcome: "reject" } {
+): { outcome: "ok" } | { outcome: "clamp"; to: number; material: boolean } | { outcome: "reject" } {
   const bound = Math.max(0, rawBound);
   const tolerance = floatTolerance(actual, bound);
   if (actual <= bound + tolerance) return { outcome: "ok" };
   const rejectThreshold = Math.max(bound * REJECT_MULTIPLIER, bound + REJECT_ABS_SLACK);
-  if (actual <= rejectThreshold + tolerance) return { outcome: "clamp", to: bound };
+  if (actual <= rejectThreshold + tolerance) {
+    // Material = genuinely over bound, not just past this check's own
+    // (much tighter) float tolerance — see SOFT_CLAMP_MATERIAL_RATIO's own
+    // comment for the production incident this distinguishes from a real
+    // pattern of forged/implausible saves.
+    const material = actual - bound > bound * SOFT_CLAMP_MATERIAL_RATIO;
+    return { outcome: "clamp", to: bound, material };
+  }
   return { outcome: "reject" };
 }
 
@@ -207,6 +220,11 @@ export function evaluateSaveEnvelope(
   const clamped: EnvelopeClamped = {};
   const reasons: string[] = [];
   const detail: Record<string, unknown> = { dtSecs };
+  // True once ANY clamped dimension below was materially over its bound —
+  // see SOFT_CLAMP_MATERIAL_RATIO's own comment. Determines whether the
+  // overall verdict's clamp counts toward recordSoftClamp's strike pattern
+  // at all.
+  let clampIsMaterial = false;
 
   // --- elapsed time: no offline progress exists (the tick loop only runs
   //     while the tab is mounted), so Δelapsed can never exceed real
@@ -220,6 +238,7 @@ export function evaluateSaveEnvelope(
   if (elapsedCheck.outcome === "clamp") {
     clamped.elapsedSeconds = prevElapsedSeconds + elapsedCheck.to;
     reasons.push("elapsed_exceeds_wallclock");
+    clampIsMaterial = clampIsMaterial || elapsedCheck.material;
   }
 
   // --- clicks: bounded by a generous burst CPS over the same wall-clock dt. ---
@@ -235,6 +254,7 @@ export function evaluateSaveEnvelope(
     effectiveDeltaClicks = clickCheck.to;
     clamped.totalClicks = prevTotalClicks + effectiveDeltaClicks;
     reasons.push("clicks_exceed_human_rate");
+    clampIsMaterial = clampIsMaterial || clickCheck.material;
   }
 
   // A prestige within this interval resets owned units/upgrades to 0 partway
@@ -293,6 +313,7 @@ export function evaluateSaveEnvelope(
     effectiveTotalTokensEarned = prevTotalTokensEarned + effectiveDeltaEarned;
     clamped.totalTokensEarned = effectiveTotalTokensEarned;
     reasons.push("earnings_exceed_max_possible");
+    clampIsMaterial = clampIsMaterial || earnedCheck.material;
   }
 
   // --- spend: leftover tokens can't exceed what remains after paying at
@@ -348,6 +369,7 @@ export function evaluateSaveEnvelope(
   if (tokensCheck.outcome === "clamp") {
     clamped.tokens = tokensCheck.to;
     reasons.push("tokens_exceed_after_required_spend");
+    clampIsMaterial = clampIsMaterial || tokensCheck.material;
   }
 
   // --- prestige count: each prestige requires a run of at least
@@ -373,6 +395,7 @@ export function evaluateSaveEnvelope(
     effectivePrestigeCount = Math.floor(prestigeCheck.to);
     clamped.prestigeCount = effectivePrestigeCount;
     reasons.push("prestige_count_exceeds_max_possible");
+    clampIsMaterial = clampIsMaterial || prestigeCheck.material;
   }
 
   // --- PhD count: splitting a fixed token budget across many minimal-sized
@@ -394,10 +417,11 @@ export function evaluateSaveEnvelope(
   if (phdCheck.outcome === "clamp") {
     clamped.phdCount = Math.floor(phdCheck.to);
     reasons.push("phd_exceeds_max_possible");
+    clampIsMaterial = clampIsMaterial || phdCheck.material;
   }
 
   if (reasons.length > 0) {
-    return { outcome: "clamp", clamped, reasons, detail };
+    return { outcome: "clamp", clamped, reasons, detail, material: clampIsMaterial };
   }
   return { outcome: "accept" };
 }

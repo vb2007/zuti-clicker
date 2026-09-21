@@ -3,8 +3,15 @@ import request from "supertest";
 import type { ChildProcess } from "child_process";
 import { TestData } from "../constants/test-data.js";
 import { Responses } from "../constants/responses.js";
-import { HISTOGRAM_BUCKET_COUNT, SAVE_RESET_STRIKE, STRIKE_DECAY_DAYS } from "../constants/antiCheat.js";
+import {
+  HISTOGRAM_BUCKET_COUNT,
+  SAVE_RESET_STRIKE,
+  STRIKE_DECAY_DAYS,
+  SOFT_CLAMP_STRIKE_THRESHOLD,
+  ANTICHEAT_STATE_WINDOW_HOURS
+} from "../constants/antiCheat.js";
 import { prisma } from "../database/prisma.js";
+import { recordSoftClamp } from "../database/models/antiCheat.js";
 import { startTestServer, stopTestServer } from "./testServerHelper.js";
 
 // A dedicated ANTICHEAT_MODE=enforce server (own port — see
@@ -384,6 +391,107 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
 
     const saveRes = await api.get("/save").set("Cookie", cookie);
     expect(saveRes.body.save).toBeNull(); // strike 5 deleted it
+  });
+});
+
+// recordSoftClamp itself (materiality gating + the rolling window) has no
+// realistic HTTP reconstruction that stays both precise and readable — the
+// exact overshoot magnitude needed to land a clamp just above/below the
+// materiality ratio depends on the full economy formula. Called directly
+// instead, exactly as controllers/save.ts calls it, against a real user
+// created through the same dedicated enforce-mode server as every other
+// test in this file.
+describe("Anti-cheat soft-clamp pattern — materiality and window", () => {
+  let server: ChildProcess;
+
+  beforeAll(async () => {
+    server = await startTestServer(PORT, "enforce");
+  }, 25_000);
+
+  afterAll(async () => {
+    await stopTestServer(server);
+  });
+
+  async function registerAndGetUserId(): Promise<{ cookie: string; userId: number }> {
+    const cookie = await registerAndLogin();
+    const me = await api.get("/auth/me").set("Cookie", cookie);
+    return { cookie, userId: me.body.user.id as number };
+  }
+
+  // Regression, real production incident: 5 consecutive clamps (the OLD
+  // threshold), every one pure float64 residue, escalated to an actual
+  // strike against a completely legitimate account. An immaterial clamp
+  // must never count toward the pattern, however many of them pile up.
+  it("regression: immaterial clamps never strike, however many accumulate", async () => {
+    const { cookie, userId } = await registerAndGetUserId();
+    for (let i = 0; i < SOFT_CLAMP_STRIKE_THRESHOLD + 5; i++) {
+      const outcome = await recordSoftClamp(userId, "enforce", true, false, { i });
+      expect(outcome).toBeNull();
+    }
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(false);
+    expect(status.body.strikeCount).toBe(0);
+    const state = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(state?.softClampCount).toBe(0);
+  });
+
+  it("SOFT_CLAMP_STRIKE_THRESHOLD material clamps within the window escalate to a real strike", async () => {
+    const { cookie, userId } = await registerAndGetUserId();
+    let lastOutcome = null;
+    for (let i = 0; i < SOFT_CLAMP_STRIKE_THRESHOLD; i++) {
+      lastOutcome = await recordSoftClamp(userId, "enforce", true, true, { i });
+    }
+    expect(lastOutcome).not.toBeNull();
+    expect(lastOutcome!.strikeCount).toBe(1);
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(true);
+  });
+
+  // Regression: the window this counter lives in previously didn't exist at
+  // all — any SOFT_CLAMP_STRIKE_THRESHOLD material clamps, however far
+  // apart in time, escalated. A clamp older than ANTICHEAT_STATE_WINDOW_HOURS
+  // must no longer contribute to a fresh pattern.
+  it("regression: material clamps older than ANTICHEAT_STATE_WINDOW_HOURS don't combine with new ones", async () => {
+    const { userId } = await registerAndGetUserId();
+    for (let i = 0; i < SOFT_CLAMP_STRIKE_THRESHOLD - 1; i++) {
+      await recordSoftClamp(userId, "enforce", true, true, { i });
+    }
+    let state = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(state?.softClampCount).toBe(SOFT_CLAMP_STRIKE_THRESHOLD - 1);
+
+    // Age the window past its expiry directly — real time can't be waited
+    // out in a test.
+    await prisma.antiCheatState.update({
+      where: { userId },
+      data: {
+        softClampWindowStartedAt: new Date(
+          Date.now() - (ANTICHEAT_STATE_WINDOW_HOURS * 60 * 60 * 1000 + 60_000)
+        )
+      }
+    });
+
+    // One more material clamp must restart the window at 1, not reach the
+    // threshold the way it would if the earlier ones still counted.
+    const outcome = await recordSoftClamp(userId, "enforce", true, true, {});
+    expect(outcome).toBeNull();
+    state = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(state?.softClampCount).toBe(1);
+  });
+
+  // Regression: recordSoftClamp used to write lastCleanAt: now() on every
+  // clamp, which blocked the 30-day strike-decay clock from ever running
+  // for an account that clamped at all — even a materially-over-bound but
+  // still-far-from-a-strike one.
+  it("a material clamp does not reset lastCleanAt (the strike-decay anchor)", async () => {
+    const { userId } = await registerAndGetUserId();
+    // AntiCheatState is created lazily on the first clamp — an immaterial
+    // one first, itself asserted above to never touch lastCleanAt, just to
+    // get a row to read a baseline from.
+    await recordSoftClamp(userId, "enforce", true, false, {});
+    const before = await prisma.antiCheatState.findUnique({ where: { userId } });
+    await recordSoftClamp(userId, "enforce", true, true, {});
+    const after = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(after?.lastCleanAt.getTime()).toBe(before?.lastCleanAt.getTime());
   });
 });
 

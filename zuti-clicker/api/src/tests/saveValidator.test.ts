@@ -274,6 +274,60 @@ describe("evaluateSaveEnvelope — earnings bound across a prestige", () => {
   });
 });
 
+// A clamp already neutralizes the gain (the server writes the bounded
+// value); whether it's worth counting toward recordSoftClamp's strike
+// pattern is a separate question from whether it clamps at all — see
+// SOFT_CLAMP_MATERIAL_RATIO's own comment for the production incident
+// (pure float64 residue clamping 5 times) that made this distinction
+// necessary.
+describe("evaluateSaveEnvelope — clamp materiality", () => {
+  const BOUND = 1_000_000;
+
+  // Isolates the leftover-tokens clamp specifically: minSpend stays 0 (no
+  // purchase), and the unit/earn setup gives the earn bound enough
+  // headroom that only the tokens check itself ever clamps.
+  function clampScenario(overshoot: number): ReturnType<typeof evaluateSaveEnvelope> {
+    const prev: PrevSaveSnapshot = {
+      tokens: 0,
+      totalTokensEarned: 10_000_000,
+      totalClicks: 1000,
+      elapsedSeconds: 1000,
+      phdCount: 0,
+      prestigeCount: 0,
+      savedAt: new Date(NOW.getTime() - 1000),
+      units: [{ unitId: "theta", owned: 1 }],
+      upgrades: []
+    };
+    const deltaEarned = BOUND; // minSpend 0 => availableBudget === BOUND exactly
+    return evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({
+        tokens: BOUND + overshoot,
+        totalTokensEarned: prev.totalTokensEarned + deltaEarned,
+        totalClicks: prev.totalClicks,
+        elapsedSeconds: prev.elapsedSeconds + 1,
+        phdCount: 0,
+        prestigeCount: 0,
+        units: prev.units
+      })
+    );
+  }
+
+  it("an overshoot under the material ratio clamps but is not material", () => {
+    const verdict = clampScenario(10); // 10 / 1e6 = 1e-5, well under 0.1%
+    expect(verdict.outcome).toBe("clamp");
+    if (verdict.outcome === "clamp") expect(verdict.material).toBe(false);
+  });
+
+  it("an overshoot over the material ratio clamps and IS material", () => {
+    const verdict = clampScenario(2000); // 2000 / 1e6 = 0.2%, over 0.1%
+    expect(verdict.outcome).toBe("clamp");
+    if (verdict.outcome === "clamp") expect(verdict.material).toBe(true);
+  });
+});
+
 describe("evaluateSaveEnvelope — spend / free units", () => {
   it("rejects units granted without a matching token deduction", () => {
     const prev: PrevSaveSnapshot = {

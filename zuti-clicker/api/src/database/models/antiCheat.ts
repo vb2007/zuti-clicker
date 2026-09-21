@@ -6,6 +6,7 @@ import {
   SAVE_RESET_STRIKE,
   STRIKE_DECAY_DAYS,
   SOFT_CLAMP_STRIKE_THRESHOLD,
+  ANTICHEAT_STATE_WINDOW_HOURS,
   NO_FATIGUE_STREAK,
   SUSPICIOUS_WINDOWS_TO_STRIKE,
   MIN_SCORE_TO_FLAG,
@@ -175,6 +176,7 @@ export async function applyStrike(
         lastStrikeAt: now,
         lastCleanAt: now,
         softClampCount: 0,
+        softClampWindowStartedAt: null,
         suspicionScore: 0,
         highRateWindows: 0,
         lastStrikeReason: kind.slice(0, 64)
@@ -198,13 +200,44 @@ export async function recordSoftClamp(
   userId: number,
   mode: AntiCheatMode,
   enforced: boolean,
+  material: boolean,
   detail: unknown
 ): Promise<StrikeOutcome | null> {
   const now = new Date();
   const current = await decayIfDue(await getOrCreateState(userId), now, enforced);
-  const softClampCount = current.softClampCount + 1;
 
-  await logAntiCheatEvent({ userId, kind: "envelope_clamp", severity: "info", mode, detail, enforced });
+  // Always logged — the audit trail is unchanged regardless of materiality
+  // or enforcement; only the STRIKE-worthiness of the pattern below changes.
+  await logAntiCheatEvent({
+    userId,
+    kind: "envelope_clamp",
+    severity: "info",
+    mode,
+    detail: { ...((detail as object) ?? {}), material },
+    enforced
+  });
+
+  // An immaterial clamp (pure float64 residue — see
+  // SOFT_CLAMP_MATERIAL_RATIO's own comment) never counts toward the
+  // pattern, however many times it repeats. A clamp already neutralizes
+  // the gain (the server writes the bounded value; nothing survives to
+  // the attacker either way), so noise here isn't even weak evidence —
+  // this is what a real production incident hit: 5 consecutive clamps
+  // (the OLD threshold), all pure rounding residue, escalated to an actual
+  // strike against a completely legitimate account.
+  if (!material) return null;
+
+  // Roll the window: a material clamp from more than
+  // ANTICHEAT_STATE_WINDOW_HOURS ago no longer contributes to the pattern.
+  // This counter previously had NO time window at all — any
+  // SOFT_CLAMP_STRIKE_THRESHOLD material clamps ever, however far apart,
+  // would have escalated.
+  const windowStart = current.softClampWindowStartedAt;
+  const windowExpired =
+    windowStart === null ||
+    now.getTime() - windowStart.getTime() > ANTICHEAT_STATE_WINDOW_HOURS * 60 * 60 * 1000;
+  const softClampCount = windowExpired ? 1 : current.softClampCount + 1;
+  const softClampWindowStartedAt = windowExpired ? now : windowStart;
 
   if (softClampCount >= SOFT_CLAMP_STRIKE_THRESHOLD) {
     return applyStrike(userId, "envelope_clamp_pattern", mode, enforced, {
@@ -216,7 +249,11 @@ export async function recordSoftClamp(
   if (enforced) {
     await prisma.antiCheatState.update({
       where: { id: current.id },
-      data: { softClampCount, lastCleanAt: now }
+      data: { softClampCount, softClampWindowStartedAt }
+      // lastCleanAt is deliberately NOT touched here (unlike the previous
+      // version of this function) — a clamp already neutralizes the gain
+      // and must not also block the 30-day strike-decay clock the way it
+      // used to for any account that clamps at all.
     });
   }
   return null;

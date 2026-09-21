@@ -382,7 +382,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
           ...verdict.detail
         }).catch((e: unknown) => console.error("Failed to record anti-cheat strike:", e));
       } else if (verdict.outcome === "clamp") {
-        await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, {
+        await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, verdict.material, {
           reasons: verdict.reasons,
           ...verdict.detail
         }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));

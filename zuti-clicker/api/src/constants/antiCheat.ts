@@ -85,9 +85,35 @@ export const EARNED_ACCEPT_MARGIN = 1.5;
 export const PHD_BOUND_SLACK = 1;
 export const PRESTIGE_COUNT_SLACK = 2;
 
-// How many soft clamps within ANTICHEAT_STATE_WINDOW_HOURS escalate to a real
-// strike — a single clamp is invisible noise; a pattern of them is not.
-export const SOFT_CLAMP_STRIKE_THRESHOLD = 5;
+// How many MATERIAL soft clamps within ANTICHEAT_STATE_WINDOW_HOURS escalate
+// to a real strike — a single clamp is invisible noise; a pattern of them is
+// not. Raised from 5 (this system's original value): a clamp already
+// neutralizes the gain (the server writes the bounded value, nothing is
+// ever lost to the attacker), so this is now a genuinely rare pattern signal
+// rather than something ordinary float noise could ever reach — see
+// SOFT_CLAMP_MATERIAL_RATIO below for why noise can't count at all anymore.
+export const SOFT_CLAMP_STRIKE_THRESHOLD = 10;
+
+// A clamp only counts toward the pattern above if the overshoot is at
+// least this fraction of the bound — i.e. genuinely material, not float64
+// accumulation noise. A real production incident clamped a legitimate
+// account 5 times (exactly the old SOFT_CLAMP_STRIKE_THRESHOLD) purely on
+// residue: overshoots of 2.4e-6 to 8.4e-6 on ~1e7 balances, ~1e-13
+// relative — comfortably under this ratio, so noise like that now never
+// increments the counter at all, however many times it repeats (the
+// relative float-tolerance fix in checkBound already stops it from
+// clamping in the first place, going forward; this is the second,
+// independent layer of defense against the same incident, for whatever a
+// future float-precision edge case this project hasn't hit yet manages to
+// still slip through).
+export const SOFT_CLAMP_MATERIAL_RATIO = 0.001; // 0.1% over bound
+
+// The rolling window recordSoftClamp's pattern counter lives in — was
+// already declared here as documentation-only (never actually read
+// anywhere) until this fix wired it up. Previously the counter had NO time
+// window at all: any 5 clamps ever, however far apart, escalated, and
+// every clamp reset AntiCheatState.lastCleanAt, which also blocked the
+// 30-day strike-decay clock from ever running for an account that clamped.
 export const ANTICHEAT_STATE_WINDOW_HOURS = 24;
 
 // ---- Penalty ladder (services/antiCheat.ts) -------------------------------
