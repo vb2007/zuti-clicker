@@ -15,6 +15,9 @@ vi.mock("@/lib/api", () => ({
     settings: {
       load: vi.fn(),
       store: vi.fn()
+    },
+    meta: {
+      version: vi.fn()
     }
   },
   ApiError: class ApiError extends Error {}
@@ -43,6 +46,8 @@ describe("SettingsModal", () => {
       message: "ok",
       settings: { ...DEFAULT_SETTINGS, updatedAt: new Date().toISOString() }
     });
+    vi.mocked(api.meta.version).mockReset();
+    vi.mocked(api.meta.version).mockResolvedValue({ version: "9.9.9" });
   });
 
   afterEach(() => {
@@ -193,5 +198,47 @@ describe("SettingsModal", () => {
     expect(toast.toasts[0]!.kind).toBe("error");
     const ui = useUiStore();
     expect(ui.settingsModalOpen).toBe(false);
+  });
+
+  describe("version footer", () => {
+    it("shows the frontend version immediately and the API version once fetched", async () => {
+      openModal();
+      await nextTick();
+      await flushPromises();
+      const body = new DOMWrapper(document.body);
+
+      const line = body.find(".version-line").text();
+      expect(line).toContain("9.9.9"); // mocked api.meta.version() resolution
+      expect(line).toMatch(/Frontend v\d+\.\d+\.\d+/); // __APP_VERSION__, whatever it is
+    });
+
+    it("falls back to an em dash for the API half if the fetch fails, frontend half still shown", async () => {
+      vi.mocked(api.meta.version).mockRejectedValueOnce(new Error("network down"));
+      openModal();
+      await nextTick();
+      await flushPromises();
+      const body = new DOMWrapper(document.body);
+
+      const line = body.find(".version-line").text();
+      expect(line).toContain("API v—");
+      expect(line).toMatch(/Frontend v\d+\.\d+\.\d+/);
+    });
+
+    it("only fetches once across repeated open/close cycles", async () => {
+      const wrapper = openModal();
+      await nextTick();
+      await flushPromises();
+      const ui = useUiStore();
+
+      ui.settingsModalOpen = false;
+      await nextTick();
+      ui.settingsModalOpen = true;
+      await nextTick();
+      await flushPromises();
+
+      expect(api.meta.version).toHaveBeenCalledTimes(1);
+      wrapper.unmount();
+      activeWrapper = null;
+    });
   });
 });

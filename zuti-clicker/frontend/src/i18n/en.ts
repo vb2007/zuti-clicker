@@ -161,7 +161,8 @@ export default {
     closeBtn: "Done",
     saved: "Settings saved",
     savedLocal: "Settings saved on this device",
-    saveFailed: "Couldn't save settings — they're saved on this device"
+    saveFailed: "Couldn't save settings — they're saved on this device",
+    versions: "Frontend v{frontend} · API v{api}"
   },
   auth: {
     modalAriaLabel: "Log in or create an account",

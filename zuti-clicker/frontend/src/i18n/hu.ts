@@ -161,7 +161,8 @@ export default {
     closeBtn: "Kész",
     saved: "Beállítások elmentve",
     savedLocal: "Beállítások elmentve ezen az eszközön",
-    saveFailed: "Nem sikerült menteni a beállításokat — ezen az eszközön elmentve"
+    saveFailed: "Nem sikerült menteni a beállításokat — ezen az eszközön elmentve",
+    versions: "Frontend v{frontend} · API v{api}"
   },
   auth: {
     modalAriaLabel: "Bejelentkezés vagy fiók létrehozása",

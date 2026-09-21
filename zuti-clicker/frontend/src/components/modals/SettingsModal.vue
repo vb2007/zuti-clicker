@@ -6,12 +6,27 @@ import { useUiStore } from "@/stores/uiStore";
 import { useToastStore } from "@/stores/toastStore";
 import { AUTOSAVE_INTERVAL_OPTIONS } from "@/utils/gameConstants";
 import { THEMES, LANGUAGES, CEREMONIES } from "@/utils/settingsSchema";
+import { api } from "@/lib/api";
 import BaseModal from "./BaseModal.vue";
 
 const { t } = useI18n();
 const settings = useSettingsStore();
 const ui = useUiStore();
 const toast = useToastStore();
+
+// Frontend version is baked in at build time (vite.config.ts's
+// __APP_VERSION__ define); the API version has to be fetched, since it
+// reflects whatever image is actually deployed behind VITE_API_BASE_URL.
+// Fetched once, on first open, and cached in this ref for the component's
+// lifetime (it's mounted for the whole app session — see App.vue) rather
+// than re-fetched every time the modal opens.
+const apiVersion = ref<string | null>(null);
+let versionFetched = false;
+// Bound to a local const rather than referencing __APP_VERSION__ directly in
+// the template — vue-tsc's template type-checker doesn't resolve a custom
+// ambient global declared via `declare const` (env.d.ts), only script-level
+// bindings.
+const frontendVersion = __APP_VERSION__;
 
 function intervalKey(opt: (typeof AUTOSAVE_INTERVAL_OPTIONS)[number]) {
   return `settings.intervals.${opt}` as Parameters<typeof t>[0];
@@ -27,7 +42,22 @@ const saving = ref(false);
 watch(
   () => ui.settingsModalOpen,
   (open) => {
-    if (open) openSnapshot.value = settings.snapshot();
+    if (!open) return;
+    openSnapshot.value = settings.snapshot();
+    if (versionFetched) return;
+    versionFetched = true;
+    // Broad try/catch: request() calls res.json() unconditionally, so a
+    // non-JSON response (e.g. a 404 HTML page if the API is unreachable)
+    // throws a raw SyntaxError here, not an ApiError. Either way, leave
+    // apiVersion null — the line below falls back to an em dash for it.
+    api.meta
+      .version()
+      .then((res) => {
+        apiVersion.value = res.version;
+      })
+      .catch(() => {
+        // apiVersion stays null; rendered as "—".
+      });
   }
 );
 
@@ -177,6 +207,10 @@ async function handleDone() {
       </div>
     </div>
 
+    <p class="version-line">
+      {{ t("settings.versions", { frontend: frontendVersion, api: apiVersion ?? "—" }) }}
+    </p>
+
     <template #actions>
       <div class="modal-actions">
         <button class="btn-cancel" :disabled="saving" @click="handleCancel">
@@ -262,6 +296,16 @@ async function handleDone() {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+.version-line {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-align: center;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 10px;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .modal-actions {

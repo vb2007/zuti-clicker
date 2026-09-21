@@ -175,6 +175,10 @@ export interface AntiCheatStatusResponse {
   strikeCount: number;
 }
 
+export interface VersionResponse {
+  version: string;
+}
+
 export const api = {
   auth: {
     register: (username: string, email: string, password: string) =>
@@ -213,5 +217,8 @@ export const api = {
     report: (digest: AntiCheatDigest) =>
       request<AntiCheatReportResponse>("POST", "/anticheat/report", digest),
     status: () => request<AntiCheatStatusResponse>("GET", "/anticheat/status")
+  },
+  meta: {
+    version: () => request<VersionResponse>("GET", "/version")
   }
 };
