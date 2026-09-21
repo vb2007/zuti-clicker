@@ -161,7 +161,8 @@ export default {
     closeBtn: "Kész",
     saved: "Beállítások elmentve",
     savedLocal: "Beállítások elmentve ezen az eszközön",
-    saveFailed: "Nem sikerült menteni a beállításokat — ezen az eszközön elmentve"
+    saveFailed: "Nem sikerült menteni a beállításokat — ezen az eszközön elmentve",
+    versions: "Frontend v{frontend} · API v{api}"
   },
   auth: {
     modalAriaLabel: "Bejelentkezés vagy fiók létrehozása",
@@ -205,9 +206,7 @@ export default {
     title: "Fokozat",
     lockedProgress: "Haladás a következő PhD-ig",
     tokensToNext: "{amount} hiányzik",
-    unlockedHint: "+{gain} PhD készen áll megvédésre",
     progressToNextGain: "Haladás +{next}. PhD felé",
-    afterPrestige: "Utána: +{prod}% termelés · -{cost}% ár",
     phdOwned: "Megszerzett PhD",
     production: "Termelés",
     costDiscount: "Egységár",

@@ -161,7 +161,8 @@ export default {
     closeBtn: "Done",
     saved: "Settings saved",
     savedLocal: "Settings saved on this device",
-    saveFailed: "Couldn't save settings — they're saved on this device"
+    saveFailed: "Couldn't save settings — they're saved on this device",
+    versions: "Frontend v{frontend} · API v{api}"
   },
   auth: {
     modalAriaLabel: "Log in or create an account",
@@ -205,9 +206,7 @@ export default {
     title: "Prestige",
     lockedProgress: "Progress to next PhD",
     tokensToNext: "{amount} to go",
-    unlockedHint: "+{gain} PhD ready to defend",
     progressToNextGain: "Progress to +{next} PhD",
-    afterPrestige: "After: +{prod}% production · -{cost}% cost",
     phdOwned: "PhDs owned",
     production: "Production",
     costDiscount: "Unit cost",

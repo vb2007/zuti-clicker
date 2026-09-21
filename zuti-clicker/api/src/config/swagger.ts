@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 import { THEMES, LANGUAGES, PRESTIGE_CEREMONIES, AUTOSAVE_INTERVALS } from "../constants/settings";
 import { LEADERBOARD_METRICS } from "../constants/leaderboard";
+import { API_VERSION } from "../constants/version";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,7 +18,7 @@ export const buildSwaggerSpec = (): object => {
       openapi: "3.1.0",
       info: {
         title: "Zuti Clicker API",
-        version: "1.0.0",
+        version: API_VERSION,
         description: "REST API for the Zuti Clicker game."
       },
       servers: [
@@ -64,6 +65,12 @@ export const buildSwaggerSpec = (): object => {
             type: "object",
             properties: {
               message: { type: "string" }
+            }
+          },
+          VersionResponse: {
+            type: "object",
+            properties: {
+              version: { type: "string", example: API_VERSION }
             }
           },
           UnitSave: {

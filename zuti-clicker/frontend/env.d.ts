@@ -12,3 +12,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// A build-time `define` (vite.config.ts / vitest.config.ts), not a runtime
+// env var — baked into the bundle from package.json's "version" at build
+// time, same as the two ImportMetaEnv fields above.
+declare const __APP_VERSION__: string;
