@@ -419,6 +419,18 @@ tartalmazó `performance.now()`-időtartam — emiatt minden valós heartbeat
 új, opcionális mezőt úgy bevezetni, hogy a hiánya elutasítást okozzon, ugyanezt
 a hibaosztályt reprodukálná egy fokozatos kiadás közben.)
 
+**Második, éles környezetben talált incidens ugyanebből a mezőből**: a
+"hiánya sosem utasít el" szabály önmagában nem volt elég — egy **jelen lévő,
+de elavult alakú** `methodCounts` (pl. egy gyorsítótárazott régi kliens, ami
+még a `keyboard` mezőt küldi az `enter`/`space` szétválasztása előttről) a
+teljes digestet érvénytelenítette, nem csak ezt az egy jelet hagyta ki —
+pontosan ugyanaz a hibaosztály, csak a "hiányzik" eset helyett a "jelen van,
+de rossz alakú" esetre. A `sanitizeMethodCounts` (`controllers/anticheat.ts`
+és `services/antiCheat.ts`, mindkét helyen külön, védelmi rétegenként) ezért
+sosem dob el semmit emiatt — egy fel nem ismerhető alakot egyszerűen
+hiányzóként kezel, csak ez az egy jel marad kiértékeletlen, minden más jel
+(beleértve a `metronome`-ot, `sustainedRate`-et stb.) továbbra is lefut.
+
 Egy verdikt csak **legalább 3 pontnál és legalább 2 különböző jelcsoportnál**
 számít jelzettnek — a nyers kattintás-ráta önmagában (súly 1) sosem érheti el
 egyik küszöböt sem. Ez szándékos: két ember, aki felváltva/együtt kattint

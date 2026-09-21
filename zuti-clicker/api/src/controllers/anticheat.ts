@@ -3,7 +3,7 @@ import { Responses } from "../constants/responses";
 import { ANTICHEAT_MODE } from "../constants/antiCheat";
 import { HISTOGRAM_BUCKET_COUNT } from "../constants/antiCheat";
 import { processDigest, getAntiCheatStatus } from "../database/models/antiCheat";
-import type { AntiCheatDigest } from "../services/antiCheat";
+import { sanitizeMethodCounts, type AntiCheatDigest } from "../services/antiCheat";
 
 interface ReportBody {
   windowMs?: unknown;
@@ -21,26 +21,6 @@ interface ReportBody {
 
 function isNonNegativeInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
-type MethodCounts = { primary: number; secondary: number; enter: number; space: number };
-
-// Optional — omitted entirely is valid (an older cached client, or a
-// pre-this-feature deploy still mid-rollout): the digest is simply
-// evaluated without the singleMethodExceedsHumanLimit signal, never
-// rejected for lacking it. See services/antiCheat.ts's own comment on this
-// field for why (the windowMs incident this project already had once), and
-// for why enter/space are tracked separately rather than combined.
-function isValidMethodCounts(value: unknown): value is MethodCounts | undefined {
-  if (value === undefined) return true;
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return (
-    isNonNegativeInt(v["primary"]) &&
-    isNonNegativeInt(v["secondary"]) &&
-    isNonNegativeInt(v["enter"]) &&
-    isNonNegativeInt(v["space"])
-  );
 }
 
 // windowMs is a genuine millisecond DURATION (performance.now() delta), not
@@ -74,8 +54,7 @@ function parseDigest(body: ReportBody): AntiCheatDigest | null {
     !Array.isArray(body.integrityFlags) ||
     !body.integrityFlags.every((f) => typeof f === "string") ||
     !Array.isArray(body.weakSignals) ||
-    !body.weakSignals.every((f) => typeof f === "string") ||
-    !isValidMethodCounts(body.methodCounts)
+    !body.weakSignals.every((f) => typeof f === "string")
   ) {
     return null;
   }
@@ -90,7 +69,7 @@ function parseDigest(body: ReportBody): AntiCheatDigest | null {
     droppedClicks: body.droppedClicks,
     integrityFlags: body.integrityFlags as string[],
     weakSignals: body.weakSignals as string[],
-    methodCounts: body.methodCounts
+    methodCounts: sanitizeMethodCounts(body.methodCounts)
   };
 }
 
