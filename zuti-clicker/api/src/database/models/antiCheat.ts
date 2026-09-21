@@ -78,6 +78,7 @@ async function decayIfDue<
     strikeCount: number;
     lastCleanAt: Date;
     softClampCount: number;
+    softClampWindowStartedAt: Date | null;
     suspicionScore: number;
     highRateWindows: number;
   }
@@ -95,6 +96,11 @@ async function decayIfDue<
       strikeCount: newStrikeCount,
       lastCleanAt: newLastCleanAt,
       softClampCount: 0,
+      // Paired with softClampCount everywhere else it's written
+      // (recordSoftClamp, applyStrike) — a decay that wipes the counter
+      // but leaves this stale would let a future recordSoftClamp call
+      // wrongly treat a long-dead window as still current.
+      softClampWindowStartedAt: null,
       suspicionScore: 0,
       highRateWindows: 0
     };
@@ -105,6 +111,7 @@ async function decayIfDue<
       strikeCount: newStrikeCount,
       lastCleanAt: newLastCleanAt,
       softClampCount: 0,
+      softClampWindowStartedAt: null,
       suspicionScore: 0,
       highRateWindows: 0
     }
@@ -303,20 +310,38 @@ export async function processDigest(
       detail: { unscoreableReason: verdict.unscoreableReason },
       enforced: false
     });
-    const status = await getAntiCheatStatus(userId, enforced);
+    // Built directly from `current` (already the decayed state from
+    // above) instead of calling getAntiCheatStatus, which would redo the
+    // exact same getOrCreateState+decayIfDue sequence with no write in
+    // between — worth avoiding specifically here, since an unscoreable
+    // window (a backgrounded/suspended browser tab) is expected to be a
+    // FREQUENT path on real devices, not a rare one.
+    const isRestricted = current.restrictedUntil !== null && current.restrictedUntil.getTime() > now.getTime();
+    const status: AntiCheatStatus = {
+      strikeCount: current.strikeCount,
+      restrictedUntil: current.restrictedUntil,
+      isRestricted
+    };
     return { status, flagged: false, struck: false };
   }
 
   // A zero-false-positive signal (untrusted input, an integrity flag) is
   // decisive immediately. A digest that contradicts its OWN numbers
   // (`!verdict.consistent` — bucket_sum_mismatch, rate_exceeds_envelope) is
-  // real evidence, but — unlike a previous version of this code — is no
-  // longer decisive on the very first report either: it is folded into
-  // `flagged` below instead, so it goes through the ordinary "2 consecutive
-  // flagged windows" rule like every statistical signal, giving a
-  // false-triggering client (a bug, not a cheat) one window to recover
-  // before it costs the player anything.
-  const decisiveNow = digest.untrustedClicks > 0 || digest.integrityFlags.length > 0;
+  // ALSO decisive immediately, same as it always was: unlike the unscoreable
+  // case above (a structurally malformed body, or a window the browser
+  // suspended through — genuinely no information), a well-shaped digest
+  // whose own numbers contradict each other has no innocent production
+  // incident behind it and no legitimate client bug is known to produce it
+  // — there is nothing to give a "second window to recover" grace period
+  // for. (An earlier version of this fix folded !verdict.consistent into
+  // the ordinary 2-consecutive-window `flagged` path instead, on the theory
+  // that it deserved the same leniency as a statistical signal — but that
+  // opens a real evasion: alternating one inconsistent digest with one
+  // clean digest resets suspicionScore on every clean window, so the
+  // pattern never reaches 2 consecutive and never strikes at all.)
+  const decisiveNow =
+    !verdict.consistent || digest.untrustedClicks > 0 || digest.integrityFlags.length > 0;
 
   const sawSustainedRate = verdict.consistent && verdict.signals.includes("sustainedRate");
   const highRateWindows = sawSustainedRate ? current.highRateWindows + 1 : 0;
@@ -329,9 +354,8 @@ export async function processDigest(
   const distinctSignals = new Set(signals).size;
   const flagged =
     decisiveNow ||
-    !verdict.consistent ||
-    verdict.flagged ||
-    (score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG);
+    (verdict.consistent &&
+      (verdict.flagged || (score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG)));
 
   await logAntiCheatEvent({
     userId,

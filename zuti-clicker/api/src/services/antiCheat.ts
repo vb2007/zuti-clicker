@@ -138,6 +138,7 @@ export interface DigestVerdict {
   flagged: boolean; // score/signal thresholds met, independent of consistency
 }
 
+// keep in sync with frontend/src/utils/clickTelemetry.ts's own MethodCounts
 export type MethodCounts = {
   primary: number;
   secondary: number;
@@ -238,6 +239,24 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
     };
   }
 
+  // Zero-false-positive signals — a script dispatching synthetic events
+  // through the click handler (untrustedClicks) or touching a honeypot/
+  // failing a script-integrity check (integrityFlags) has no legitimate
+  // explanation at all (see Layer 2's design), so either is immediately
+  // decisive on its own — no need to wait for a second corroborating signal
+  // or a second consecutive window the way the statistical signals below do.
+  // Checked BEFORE the unscoreable-window gate below on purpose: this is
+  // CERTAIN evidence, and must never be swallowed just because the same
+  // forged report also claims an oversized windowMs — an oversized windowMs
+  // costs a real client nothing to fake (a single scalar, no side effects),
+  // so a forger pairing it with real tamper evidence to launder past
+  // detection would otherwise be trivial.
+  if (digest.untrustedClicks > 0 || digest.integrityFlags.length > 0) {
+    const signals = digest.untrustedClicks > 0 ? ["untrustedInput"] : [];
+    for (const flag of digest.integrityFlags) signals.push(`integrity:${flag}`);
+    return { consistent: true, scoreable: true, score: 99, signals, flagged: true };
+  }
+
   // A window the browser's own timer was suspended through — a backgrounded
   // tab, a locked screen, a laptop lid close — carries no meaningful timing
   // data at all: `clicks` is typically 0 and `windowMs` is however long the
@@ -285,18 +304,6 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
       signals: [],
       flagged: false
     };
-  }
-
-  // Zero-false-positive signals — a script dispatching synthetic events
-  // through the click handler (untrustedClicks) or touching a honeypot/
-  // failing a script-integrity check (integrityFlags) has no legitimate
-  // explanation at all (see Layer 2's design), so either is immediately
-  // decisive on its own — no need to wait for a second corroborating signal
-  // or a second consecutive window the way the statistical signals below do.
-  if (digest.untrustedClicks > 0 || digest.integrityFlags.length > 0) {
-    const signals = digest.untrustedClicks > 0 ? ["untrustedInput"] : [];
-    for (const flag of digest.integrityFlags) signals.push(`integrity:${flag}`);
-    return { consistent: true, scoreable: true, score: 99, signals, flagged: true };
   }
 
   const signals: string[] = [];

@@ -261,25 +261,42 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
   });
 
   // A well-SHAPED but internally-inconsistent digest (bucket sum contradicts
-  // the claimed click count) IS real evidence (see evaluateDigest's own
-  // comment) — but, unlike a previous version of this code, is no longer
-  // decisive on the very first report: it goes through the ordinary "2
-  // consecutive flagged windows" rule instead, the same as any statistical
-  // signal, so a client that momentarily reports something contradictory
-  // (its own bug, not necessarily a cheat) gets one window to recover
-  // before it costs the player anything.
-  it("a well-shaped but internally-inconsistent digest needs 2 consecutive reports to strike, same as any statistical signal", async () => {
+  // the claimed click count) is decisive immediately, exactly like an
+  // untrusted click — a self-review during this same round of fixes briefly
+  // folded this into the ordinary "2 consecutive flagged windows" rule
+  // instead (on the theory it deserved the same leniency as a statistical
+  // signal), but that opened a real evasion: alternating one inconsistent
+  // digest with one clean digest resets suspicionScore on every clean
+  // window, so the pattern would never reach 2 consecutive and never
+  // strike at all. Unlike an unscoreable digest (malformed shape, or a
+  // window the browser suspended through — genuinely no information), a
+  // digest that contradicts its own numbers has no innocent explanation.
+  it("an immediate strike on a well-shaped but internally-inconsistent digest, with no repetition needed", async () => {
     const cookie = await registerAndLogin();
-    const inconsistentDigest = { ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }; // sum(buckets)=0, claims 50 clicks
+    const res = await api
+      .post("/anticheat/report")
+      .set("Cookie", cookie)
+      .send({ ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }); // sum(buckets)=0, claims 50 clicks
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("restricted");
+    expect(res.body.strikeCount).toBe(1);
+  });
 
-    const first = await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistentDigest);
-    expect(first.status).toBe(200);
-    expect(first.body.status).toBe("clean"); // flagged, but not yet struck — suspicionScore is 1
+  // Regression: alternating an inconsistent digest with a clean one must
+  // not let the pattern evade the strike ladder — this is exactly the
+  // evasion the above test's history warns about, verified end to end.
+  it("regression: alternating inconsistent and clean digests does not evade the strike (inconsistency stays decisive)", async () => {
+    const cookie = await registerAndLogin();
+    const inconsistentDigest = { ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() };
 
-    const second = await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistentDigest);
-    expect(second.status).toBe(200);
-    expect(second.body.status).toBe("restricted");
-    expect(second.body.strikeCount).toBe(1);
+    await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistentDigest);
+    // If decisiveness were ever lost again, this alternation would reset
+    // suspicionScore to 0 every other report and never strike.
+    await api.post("/anticheat/report").set("Cookie", cookie).send(CLEAN_DIGEST);
+
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(true);
+    expect(status.body.strikeCount).toBe(1);
   });
 
   // Regression, the literal production incident ("banned for opening the
@@ -492,6 +509,30 @@ describe("Anti-cheat soft-clamp pattern — materiality and window", () => {
     await recordSoftClamp(userId, "enforce", true, true, {});
     const after = await prisma.antiCheatState.findUnique({ where: { userId } });
     expect(after?.lastCleanAt.getTime()).toBe(before?.lastCleanAt.getTime());
+  });
+
+  // Regression: decayIfDue (triggered by any anti-cheat read/write once
+  // lastCleanAt is stale enough) already reset softClampCount as part of
+  // wiping accumulated minor suspicion after a long clean stretch, but
+  // never cleared the paired softClampWindowStartedAt introduced alongside
+  // it — leaving a stale non-null timestamp next to a freshly-zeroed
+  // counter, an inconsistency every OTHER writer of this pair
+  // (recordSoftClamp, applyStrike) avoids.
+  it("regression: strike decay also clears softClampWindowStartedAt, not just softClampCount", async () => {
+    const { cookie, userId } = await registerAndGetUserId();
+    const staleLastCleanAt = new Date(Date.now() - (STRIKE_DECAY_DAYS + 1) * 24 * 60 * 60 * 1000);
+    const seed = { softClampCount: 3, softClampWindowStartedAt: new Date(), lastCleanAt: staleLastCleanAt };
+    await prisma.antiCheatState.upsert({
+      where: { userId },
+      update: seed,
+      create: { userId, ...seed }
+    });
+
+    await api.get("/anticheat/status").set("Cookie", cookie); // enforced — triggers and persists the decay
+
+    const row = await prisma.antiCheatState.findUnique({ where: { userId } });
+    expect(row?.softClampCount).toBe(0);
+    expect(row?.softClampWindowStartedAt).toBeNull();
   });
 });
 

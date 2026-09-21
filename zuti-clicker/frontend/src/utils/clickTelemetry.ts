@@ -96,6 +96,7 @@ export function computeMaxRunLength(intervalsMs: number[], tolerance = 0.05): nu
 // guessed as a keyboard press that never happened.
 export type ClickMethod = "primary" | "secondary" | "enter" | "space" | "touch" | "other";
 
+// keep in sync with api/src/services/antiCheat.ts's own MethodCounts
 export interface MethodCounts {
   primary: number;
   secondary: number;

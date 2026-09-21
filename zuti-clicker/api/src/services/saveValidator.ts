@@ -130,8 +130,13 @@ function checkBound(
     // Material = genuinely over bound, not just past this check's own
     // (much tighter) float tolerance — see SOFT_CLAMP_MATERIAL_RATIO's own
     // comment for the production incident this distinguishes from a real
-    // pattern of forged/implausible saves.
-    const material = actual - bound > bound * SOFT_CLAMP_MATERIAL_RATIO;
+    // pattern of forged/implausible saves. `bound * SOFT_CLAMP_MATERIAL_RATIO`
+    // is itself 0 whenever bound is exactly 0 (e.g. a player who spent
+    // every last token) — the same zero-width-band problem REJECT_ABS_SLACK
+    // exists to solve for the reject threshold above, so it doubles as the
+    // absolute floor here too: below it is noise even with no relative
+    // reference point to compare against.
+    const material = actual - bound > Math.max(bound * SOFT_CLAMP_MATERIAL_RATIO, REJECT_ABS_SLACK);
     return { outcome: "clamp", to: bound, material };
   }
   return { outcome: "reject" };

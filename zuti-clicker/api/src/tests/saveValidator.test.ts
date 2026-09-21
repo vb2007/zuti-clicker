@@ -423,6 +423,20 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       })
     );
     expect(verdict.outcome).not.toBe("reject");
+    // Regression: at bound === 0, `bound * SOFT_CLAMP_MATERIAL_RATIO` is
+    // ALSO 0, so the materiality check would otherwise call ANY overshoot
+    // material however tiny — exactly the false-positive class this whole
+    // materiality mechanism exists to prevent, just at the zero-bound
+    // boundary instead of a large one.
+    if (verdict.outcome === "clamp") expect(verdict.material).toBe(false);
+    // Not a coincidence: at bound === 0, checkBound's own reject threshold
+    // is exactly `bound + REJECT_ABS_SLACK`, the SAME value now used as the
+    // materiality floor — so the entire zero-bound clamp band is, by
+    // construction, always at or below that floor. Anything genuinely
+    // bigger already hard-rejects (and strikes immediately) through a
+    // different path entirely, never reaching recordSoftClamp/materiality
+    // at all — there is no reachable "large but still just a clamp" case
+    // at a zero bound to test separately from this one.
   });
 
   it("accepts a purchase paid for out of earnings within the envelope", () => {

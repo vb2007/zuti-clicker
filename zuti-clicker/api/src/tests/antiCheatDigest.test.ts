@@ -105,6 +105,21 @@ describe("evaluateDigest — zero-false-positive signals", () => {
     const verdict = evaluateDigest(baseDigest({ integrityFlags: ["honeypotTouched"] }));
     expect(verdict.flagged).toBe(true);
   });
+
+  // Regression: the unscoreable-window check (added alongside this signal
+  // in the same round of fixes) must never run BEFORE this one — an
+  // oversized windowMs costs an attacker nothing to fake (a single scalar,
+  // no side effects), so if it were checked first, pairing it with real
+  // tamper evidence would silently launder the evidence away as
+  // "unscoreable" instead of striking.
+  it("stays decisive even when the SAME digest also has an oversized windowMs", () => {
+    const verdict = evaluateDigest(
+      baseDigest({ windowMs: MAX_DIGEST_WINDOW_MS + 1, untrustedClicks: 1 })
+    );
+    expect(verdict.scoreable).toBe(true);
+    expect(verdict.flagged).toBe(true);
+    expect(verdict.signals).toContain("untrustedInput");
+  });
 });
 
 describe("evaluateDigest — weak (pointer-physics) signals are corroborating, not decisive", () => {

@@ -476,13 +476,31 @@ külön mezőt is hordoz: `scoreable: false` jelenti, hogy a digest NEM
 bizonyíték semmire (sem a hiányos/rossz alakú body, sem egy felfüggesztett
 ablak) — ez sosem strike-ol, de egy valódi jelzett sorozatot sem "mos"
 tisztára (a `suspicionScore` érintetlen marad). Egy `consistent: false`
-(hisztogram-összeg vagy ráta önellentmondás) továbbra is bizonyíték, de már
-csak a szokásos két-egymást-követő-ablak szabályon keresztül számít, nem
-azonnal. A kliens (`stores/antiCheatStore.ts`) emellett most már egyáltalán
-el sem küldi az ilyen ablakot — a `MAX_DIGEST_WINDOW_MS`-nél hosszabb
-ablakot csendben újraindítja —, és egy `visibilitychange` figyelő
-(`composables/useAntiCheat.ts`) az előtérbe kerülés pillanatában is
-újraindítja, hogy a következő ablak valódi, folytonos méréssel induljon.
+(hisztogram-összeg vagy ráta önellentmondás) **továbbra is azonnal döntő**,
+pontosan úgy, mint korábban — ez a rész maga nem volt hibás, csak a
+"strukturálisan rossz alakú" (`malformed_digest`) esettel volt egy közös
+kategóriában a `windowMs` felső korlátjával együtt. (Egy önellenőrző
+kódátvizsgálás ezt a fixet menet közben ideiglenesen a szokásos
+két-ablakos szabály alá helyezte volna át, azzal az indokkal, hogy
+ugyanaz az "adj egy esélyt felépülni" elbánás jár neki, mint egy
+statisztikai jelnek — de ez valódi kikerülési rést nyitott volna: egy
+inkonzisztens és egy tiszta digest felváltva küldve minden második
+ablakban nullázta volna a gyanú-számlálót, így a minta sosem érte volna
+el a kettőt, és sosem strike-olt volna. A javítás előtt ez ki lett
+zárva.) A zéró-hamis-pozitív jelek (`untrustedClicks`, `integrityFlags`)
+kiértékelése emellett most szándékosan a `windowMs`-felső-korlát ellenőrzés
+ELŐTT fut — egy hamisított kérés, ami MINDKETTŐT egyszerre állítja be
+(valódi hamisítás bizonyítékát ÉS egy túl nagy `windowMs`-t), a régi
+sorrendben a felső-korlát ágon "unscoreable"-ként tűnt volna el, mielőtt a
+döntő jel egyáltalán kiértékelődött volna — egy `windowMs` értéket viszont
+egy valódi kliens szemben egy `integrityFlags`/`untrustedClicks` jellel
+semmilyen költséggel nem tud hamisítani, úgyhogy ez egy valós, bár szűk,
+kikerülési rés lett volna. A kliens (`stores/antiCheatStore.ts`) emellett
+most már egyáltalán el sem küldi az ilyen ablakot — a
+`MAX_DIGEST_WINDOW_MS`-nél hosszabb ablakot csendben újraindítja —, és egy
+`visibilitychange` figyelő (`composables/useAntiCheat.ts`) az előtérbe
+kerülés pillanatában is újraindítja, hogy a következő ablak valódi,
+folytonos méréssel induljon.
 
 **Negyedik, éles környezetben talált incidens ugyanebből a mezőből**: a
 "hiánya sosem utasít el" szabály önmagában nem volt elég — egy **jelen lévő,
@@ -516,6 +534,19 @@ billentyűhöz kötni (`MouseEvent.detail === 0`, nincs megelőző `keydown` —
 pl. VoiceOver dupla-koppintás) — korábban ez tévesen egy fantom `"enter"`-ként
 íródott (a `lastKeyMethod` régi alapértéke), ami olyan billentyűlenyomást
 jelentett, ami sosem történt meg.
+
+**Tudatosan vállalt kockázat**: mivel `methodCounts` a kliens saját, nem
+ellenőrizhető állítása, egy módosított kliens vagy közvetlen API-hívás
+tetszőleges kattintást bejelenthet `touch`/`other` módként, hogy elkerülje
+a `singleMethodExceedsHumanLimit` jelet — ez nem új típusú gyengeség (a
+`primary`/`secondary`/`enter`/`space` szétosztása ugyanígy kijátszható
+volt már korábban is, lásd a "több módra szétosztva" tesztet), de a
+kizárás miatt egyetlen címke elég hozzá, nem kell szétosztani a
+kattintásokat több hamis mód között. Ez a döntés a tervezés során
+tudatosan, a felhasználó explicit jóváhagyásával született (a
+"legfeljebb saját, kutatás nélküli plafon" és a "maradjon `primary`-ként"
+alternatívák helyett) — az aggregált 45 cps burok és a többi statisztikai
+jel (nem csak `methodCounts`-ra épülő) továbbra is fedezi ezt az esetet.
 
 Egy verdikt csak **legalább 3 pontnál és legalább 2 különböző jelcsoportnál**
 számít jelzettnek — a nyers kattintás-ráta önmagában (súly 1) sosem érheti el

@@ -33,6 +33,10 @@ async function main(): Promise<void> {
 
   // Any row with SOME non-default accumulated state — a clean row (never
   // struck, never clamped) is already a no-op and skipped entirely.
+  // softClampWindowStartedAt is included independently of softClampCount:
+  // they're meant to always move together, but this script resets both
+  // defensively regardless of whether that invariant happens to hold on
+  // every row.
   const candidates = await prisma.antiCheatState.findMany({
     where: {
       OR: [
@@ -40,6 +44,7 @@ async function main(): Promise<void> {
         { restrictedUntil: { not: null } },
         { suspicionScore: { gt: 0 } },
         { softClampCount: { gt: 0 } },
+        { softClampWindowStartedAt: { not: null } },
         { highRateWindows: { gt: 0 } }
       ]
     }
@@ -49,7 +54,8 @@ async function main(): Promise<void> {
   for (const s of candidates) {
     console.log(
       `  userId=${s.userId} strikeCount=${s.strikeCount} restrictedUntil=${s.restrictedUntil?.toISOString() ?? "null"} ` +
-        `suspicionScore=${s.suspicionScore} softClampCount=${s.softClampCount} highRateWindows=${s.highRateWindows}`
+        `suspicionScore=${s.suspicionScore} softClampCount=${s.softClampCount} ` +
+        `softClampWindowStartedAt=${s.softClampWindowStartedAt?.toISOString() ?? "null"} highRateWindows=${s.highRateWindows}`
     );
   }
 

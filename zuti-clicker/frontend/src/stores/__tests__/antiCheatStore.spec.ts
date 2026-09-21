@@ -217,6 +217,32 @@ describe("antiCheatStore", () => {
       expect(api.anticheat.report).toHaveBeenCalledTimes(1);
       nowSpy.mockRestore();
     });
+
+    // Regression: honeypot.drainFlags() clears its internal state as a side
+    // effect. It used to run unconditionally BEFORE the oversized-window
+    // check, so a honeypot trip during a window that then got discarded was
+    // drained (cleared) but never actually sent anywhere — permanently lost
+    // instead of surviving to the next, usable window.
+    it("regression: a honeypot trip during a discarded oversized window is not lost — it survives to the next usable window", async () => {
+      loginAs();
+      const nowSpy = vi.spyOn(performance, "now").mockReturnValue(0);
+      const store = useAntiCheatStore();
+      store.initialize(); // installs the honeypot trap/global
+
+      (window as unknown as { __zutiGame: { addTokens: () => void } }).__zutiGame.addTokens();
+
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS + 1);
+      await store.sendHeartbeat();
+      expect(api.anticheat.report).not.toHaveBeenCalled();
+
+      nowSpy.mockReturnValue(MAX_DIGEST_WINDOW_MS + 1 + 5_000);
+      await store.sendHeartbeat();
+      expect(api.anticheat.report).toHaveBeenCalledTimes(1);
+      const digest = vi.mocked(api.anticheat.report).mock.calls[0]![0];
+      expect(digest.integrityFlags).toContain("honeypot:addTokens");
+
+      nowSpy.mockRestore();
+    });
   });
 
   describe("fetchStatus()", () => {

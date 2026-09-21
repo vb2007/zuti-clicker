@@ -229,11 +229,10 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
    * that's the caller's responsibility, not this store's).
    */
   async function sendHeartbeat(): Promise<boolean> {
-    const integrityFlags = [...new Set([...honeypot.drainFlags(), ...checkNativeIntegrity()])];
-
     if (!auth.isLoggedIn) {
       // No server digest to send, but a guest's honeypot/integrity trip is
       // still a zero-false-positive local detection and must still strike.
+      const integrityFlags = [...new Set([...honeypot.drainFlags(), ...checkNativeIntegrity()])];
       const guestSaveReset = integrityFlags.length > 0 && applyGuestStrike();
       resetWindow();
       // A logged-in account gets a fresh isRestricted every heartbeat (the
@@ -260,11 +259,18 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
     // server would only treat it as unscoreable regardless (see
     // api/src/services/antiCheat.ts), but there's no reason to make that
     // round trip.
+    //
+    // Checked BEFORE draining the honeypot/integrity trackers, not after:
+    // drainFlags() clears its internal state as a side effect, so draining
+    // it here and then discarding the digest below would silently and
+    // permanently lose a real tamper flag for this cycle instead of
+    // leaving it to be picked up by the next (hopefully usable) window.
     if (windowMs > MAX_DIGEST_WINDOW_MS) {
       resetWindow();
       return false;
     }
 
+    const integrityFlags = [...new Set([...honeypot.drainFlags(), ...checkNativeIntegrity()])];
     const digest = buildDigest({
       windowMs,
       clickTimestamps,
