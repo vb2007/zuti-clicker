@@ -66,7 +66,13 @@ const progressLabel = computed(() =>
         :disabled="!game.canPrestige"
         @click="requestPrestige"
       >
-        {{ t("prestige.button") }}
+        <span>{{ t("prestige.button") }}</span>
+        <!-- The pending gain used to be its own "+N PhD ready to defend"
+             line above this button — moved onto the button itself so the
+             number sits next to the action that grants it. Runs through
+             formatNumber (never a bare toString): a late-game gain can be
+             4-5+ digits, and the button must not overflow. -->
+        <span v-if="ready" class="btn-gain">×{{ formatNumber(game.phdGain) }}</span>
       </button>
     </div>
   </section>
@@ -170,6 +176,17 @@ const progressLabel = computed(() =>
   font-size: 13px;
   font-weight: 700;
   transition: all var(--transition-fast);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1.3;
+}
+
+.btn-gain {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .prestige-btn.ready {

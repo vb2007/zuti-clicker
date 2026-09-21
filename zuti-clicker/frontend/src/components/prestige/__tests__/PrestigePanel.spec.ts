@@ -83,21 +83,48 @@ describe("PrestigePanel", () => {
     });
   });
 
-  describe("pending PhD count", () => {
-    it("below the threshold: shows the not-ready progress block", () => {
+  describe("pending PhD count on the button", () => {
+    // Regression: the panel never read game.phdGain at all — a player saw a
+    // fully lit "ready" button and a progress bar, but no number telling
+    // them how many PhDs they were actually about to get. It's now shown as
+    // a "×N" suffix on the Defend Thesis button itself.
+    it("below the threshold: shows the not-ready progress block, no gain on the button", () => {
       const game = useGameStore();
       game.totalTokensEarned = 500_000;
       game.runTokensEarned = 500_000;
       const wrapper = mount(PrestigePanel);
       expect(wrapper.find(".progress-caption").exists()).toBe(true);
+      expect(wrapper.find(".btn-gain").exists()).toBe(false);
+      expect(wrapper.find(".prestige-btn").text()).not.toContain("×");
     });
 
-    it("at 1 PhD ready: relabels the progress bar and drops the caption", () => {
+    it("at 1 PhD ready: shows ×1 on the button and the relabeled progress bar", () => {
       const game = useGameStore();
       game.totalTokensEarned = 1_000_000;
       game.runTokensEarned = 1_000_000;
       const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".btn-gain").text()).toBe("×1");
       expect(wrapper.find(".progress-caption").exists()).toBe(false);
+    });
+
+    it("at multiple PhDs ready: the button reflects the exact pending count", () => {
+      const game = useGameStore();
+      game.totalTokensEarned = 9_000_000;
+      game.runTokensEarned = 9_000_000; // getPhdGain(9e6) = 3
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".btn-gain").text()).toBe("×3");
+    });
+
+    it("a large gain is abbreviated through formatNumber rather than printed raw", () => {
+      // getPhdGain(1_440_000_000_000) = floor(sqrt(1,440,000)) = 1200 exactly
+      // (1200^2 = 1,440,000) — deliberately not a value that would
+      // coincidentally format the same whether abbreviated or not.
+      const game = useGameStore();
+      game.totalTokensEarned = 1_440_000_000_000;
+      game.runTokensEarned = 1_440_000_000_000;
+      expect(game.phdGain).toBe(1200);
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".btn-gain").text()).toBe("×1.20K");
     });
   });
 });
