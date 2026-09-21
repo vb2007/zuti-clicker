@@ -91,8 +91,13 @@ describe("CheatWarningModal", () => {
   // ever failed (network blip) or restrictedUntil didn't update for any
   // reason, the exact same stale comparison kept re-firing every second
   // indefinitely — a permanent once-per-second poll for the rest of the
-  // session, with no backoff and no cap.
-  it("regression: does not keep polling every second after expiry if the status check fails", async () => {
+  // session, with no backoff and no cap. fetchStatus() itself never throws
+  // (it catches internally — see antiCheatStore.ts), so a failed underlying
+  // request still needs to retry SOME time later rather than get stuck
+  // forever (see the clock-skew test below for why "never retry" is itself
+  // a bug) — the point here is specifically that it's bounded to a 5s
+  // backoff, not a per-second storm.
+  it("regression: retries with a bounded backoff after a failure, never a per-second storm", async () => {
     loginAs();
     vi.mocked(api.anticheat.status).mockRejectedValue(new Error("network down"));
     const antiCheat = useAntiCheatStore();
@@ -100,11 +105,41 @@ describe("CheatWarningModal", () => {
     antiCheat.restrictedUntil = new Date(Date.now() + 1_000);
     mount(CheatWarningModal);
 
-    await vi.advanceTimersByTimeAsync(1_500); // the one scheduled check fires (and fails)
+    await vi.advanceTimersByTimeAsync(1_500); // the first scheduled check fires (and fails)
     expect(api.anticheat.status).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(10_000); // ten more seconds of countdown ticks
-    expect(api.anticheat.status).toHaveBeenCalledTimes(1); // still just the one attempt — no per-second retry storm
+    await vi.advanceTimersByTimeAsync(2_000); // well under the 5s backoff — no retry yet
+    expect(api.anticheat.status).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(3_500); // past the 5s backoff from the first attempt
+    expect(api.anticheat.status).toHaveBeenCalledTimes(2); // exactly one retry, not a burst
+  });
+
+  // Regression (found in review): the fix above only rescheduled via a
+  // `watch` on restrictedUntil's own timestamp — if the server's re-check
+  // says "still restricted" with the EXACT SAME restrictedUntil (its clock
+  // lagging slightly behind the client's right at the boundary), that
+  // timestamp never changes, so the watch alone never fires again and no
+  // further check ever gets scheduled — the modal would sit stuck at
+  // "0:00" indefinitely with isRestricted still true.
+  it("regression: still restricted with the SAME restrictedUntil (clock skew) still gets re-checked and eventually clears", async () => {
+    loginAs();
+    const sameRestrictedUntil = new Date(Date.now() + 1_000).toISOString();
+    vi.mocked(api.anticheat.status)
+      .mockResolvedValueOnce({ isRestricted: true, restrictedUntil: sameRestrictedUntil, strikeCount: 1 })
+      .mockResolvedValue({ isRestricted: false, restrictedUntil: null, strikeCount: 1 });
+    const antiCheat = useAntiCheatStore();
+    antiCheat.isRestricted = true;
+    antiCheat.restrictedUntil = new Date(sameRestrictedUntil);
+    mount(CheatWarningModal);
+
+    await vi.advanceTimersByTimeAsync(1_500); // first check — server confirms still restricted, same timestamp
+    expect(api.anticheat.status).toHaveBeenCalledTimes(1);
+    expect(antiCheat.isRestricted).toBe(true); // not stuck cleared, but not stuck silent either
+
+    await vi.advanceTimersByTimeAsync(5_000); // backoff elapses — a SECOND check must still fire
+    expect(api.anticheat.status).toHaveBeenCalledTimes(2);
+    expect(antiCheat.isRestricted).toBe(false); // this time the server agrees it's over
   });
 
   it("dismiss closes the modal without lifting the restriction", async () => {

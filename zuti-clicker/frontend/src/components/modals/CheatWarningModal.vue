@@ -37,24 +37,35 @@ onUnmounted(() => {
 });
 
 // The countdown can reach zero before the next scheduled heartbeat confirms
-// the restriction actually lifted — ask once, right when it should expire,
+// the restriction actually lifted — ask right when it should expire,
 // instead of leaving the player blocked for up to another heartbeat
 // interval past when they can see it should be over.
 //
-// Regression: this used to be a per-second poll (re-checking "is now past
-// restrictedUntil" inside the 1s countdown tick above) — if that single
-// fetchStatus() call ever failed (network blip) or the server's clock
-// lagged slightly behind the client's, restrictedUntil never changed, so
-// the SAME stale comparison kept re-firing every second, forever, for the
-// rest of the session, with no backoff and no cap. A ONE-SHOT timer
-// scheduled for exactly when the restriction should end fires exactly
-// once; if the server says it's still restricted (clock skew, or a
-// genuinely extended restriction), the watch below reschedules exactly one
-// more one-shot check for the new time — never a recurring poll. If the
-// single fetchStatus() call fails outright, this does not retry itself;
-// the regular 60s heartbeat (stores/antiCheatStore.ts) still self-heals
-// within its own next cycle, the same safety net every other failed report
-// already relies on.
+// Regression #1: this used to be a per-second poll (re-checking "is now
+// past restrictedUntil" inside the 1s countdown tick above) — if that
+// single fetchStatus() call ever failed (network blip) or the server's
+// clock lagged slightly behind the client's, restrictedUntil never
+// changed, so the SAME stale comparison kept re-firing every second,
+// forever, for the rest of the session, with no backoff and no cap.
+//
+// Regression #2 (found in review of the fix for #1): replacing the poll
+// with a single one-shot timer, rescheduled only via a `watch` on
+// restrictedUntil's own timestamp, has its own gap — if the server's
+// re-check says "still restricted" with the EXACT SAME restrictedUntil
+// (its clock lagging slightly behind the client's right at the boundary —
+// the most likely reason a re-check ever comes back unchanged), that
+// timestamp never changes, so the watch alone never fires again and the
+// modal sits stuck at "0:00" with isRestricted still true.
+//
+// Final design: every fetchStatus() call (success OR failure — it never
+// throws, see antiCheatStore.ts) reschedules exactly one more check via
+// its own `.finally`, not just the watch. RETRY_BACKOFF_MS bounds this to
+// once every 5s once already past the deadline, so it can never turn back
+// into the per-second storm from regression #1 while still converging
+// (via either the watch, once restrictedUntil actually changes, or this
+// backoff, once the server's clock also passes the deadline) instead of
+// getting stuck the way regression #2 did.
+const RETRY_BACKOFF_MS = 5000;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 function clearExpiryTimer(): void {
   if (expiryTimer !== null) {
@@ -68,7 +79,12 @@ function scheduleExpiryCheck(): void {
   const msRemaining = antiCheat.restrictedUntil.getTime() - Date.now();
   // A small buffer past the exact deadline absorbs client/server clock
   // skew without costing the player anything beyond a fraction of a second.
-  expiryTimer = setTimeout(() => void antiCheat.fetchStatus(), Math.max(0, msRemaining) + 250);
+  // Once already past deadline (this is itself a retry), back off instead
+  // of hammering the endpoint again immediately.
+  const delay = msRemaining > 0 ? msRemaining + 250 : RETRY_BACKOFF_MS;
+  expiryTimer = setTimeout(() => {
+    void antiCheat.fetchStatus().finally(scheduleExpiryCheck);
+  }, delay);
 }
 watch(() => antiCheat.restrictedUntil?.getTime(), scheduleExpiryCheck, { immediate: true });
 onUnmounted(clearExpiryTimer);
