@@ -245,19 +245,41 @@ export async function processDigest(
   const current = await decayIfDue(await getOrCreateState(userId), now, enforced);
   const verdict = evaluateDigest(digest);
 
-  // A digest that contradicts its own numbers, or trips a zero-false-positive
-  // signal, is decisive immediately — everything else needs a second
-  // consecutive flagged window (tracked via suspicionScore) before striking.
-  // Computed BEFORE `flagged` and folded into it directly below: an
-  // inconsistent digest is never `verdict.flagged` (evaluateDigest has no
-  // meaningful score for malformed input), so a `flagged` that required
-  // `verdict.consistent` would make inconsistency completely unpunishable —
-  // exactly the escape hatch this variable exists to close. A previous
-  // version of this function had exactly that bug: `flagged` short-circuited
-  // on `!verdict.consistent`, so the `!flagged` branch below always returned
-  // early and `decisiveNow` was computed but never actually consulted.
-  const decisiveNow =
-    !verdict.consistent || digest.untrustedClicks > 0 || digest.integrityFlags.length > 0;
+  // A digest with no valid information at all — a structurally malformed
+  // body, or a window the browser's own timer was suspended through (see
+  // evaluateDigest's own comments; this is the direct fix for a real
+  // production incident where a backgrounded/locked phone's next heartbeat
+  // struck a completely idle player) — is NEUTRAL, not evidence of
+  // anything in EITHER direction. It must never move suspicionScore toward
+  // a strike, but it also must never reset a genuinely flagged streak the
+  // way a real clean window does (that would let a cheater launder a
+  // flagged streak by injecting a bogus digest between real ones).
+  // Logged separately (kind: "digest_unscoreable") so this is visible in
+  // the audit trail without being confused with either a clean window or
+  // an inconsistent one.
+  if (!verdict.scoreable) {
+    await logAntiCheatEvent({
+      userId,
+      kind: "digest_unscoreable",
+      severity: "info",
+      mode,
+      detail: { unscoreableReason: verdict.unscoreableReason },
+      enforced: false
+    });
+    const status = await getAntiCheatStatus(userId, enforced);
+    return { status, flagged: false, struck: false };
+  }
+
+  // A zero-false-positive signal (untrusted input, an integrity flag) is
+  // decisive immediately. A digest that contradicts its OWN numbers
+  // (`!verdict.consistent` — bucket_sum_mismatch, rate_exceeds_envelope) is
+  // real evidence, but — unlike a previous version of this code — is no
+  // longer decisive on the very first report either: it is folded into
+  // `flagged` below instead, so it goes through the ordinary "2 consecutive
+  // flagged windows" rule like every statistical signal, giving a
+  // false-triggering client (a bug, not a cheat) one window to recover
+  // before it costs the player anything.
+  const decisiveNow = digest.untrustedClicks > 0 || digest.integrityFlags.length > 0;
 
   const sawSustainedRate = verdict.consistent && verdict.signals.includes("sustainedRate");
   const highRateWindows = sawSustainedRate ? current.highRateWindows + 1 : 0;
@@ -270,8 +292,9 @@ export async function processDigest(
   const distinctSignals = new Set(signals).size;
   const flagged =
     decisiveNow ||
-    (verdict.consistent &&
-      (verdict.flagged || (score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG)));
+    !verdict.consistent ||
+    verdict.flagged ||
+    (score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG);
 
   await logAntiCheatEvent({
     userId,

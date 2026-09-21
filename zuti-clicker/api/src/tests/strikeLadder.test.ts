@@ -253,21 +253,63 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     expect(res.body.strikeCount).toBe(1);
   });
 
-  // Regression: `flagged` used to short-circuit on `verdict.consistent`
-  // itself, so an inconsistent digest could never reach the `flagged` branch
-  // at all — `decisiveNow` was computed but never actually consulted, making
-  // a client that lies about its own histogram completely unpunishable. A
-  // well-SHAPED but internally-inconsistent digest (bucket sum contradicts
-  // the claimed click count) must strike on the very first report, exactly
-  // like an untrusted click does — no second window needed.
-  it("an immediate strike on a well-shaped but internally-inconsistent digest, with no repetition needed", async () => {
+  // A well-SHAPED but internally-inconsistent digest (bucket sum contradicts
+  // the claimed click count) IS real evidence (see evaluateDigest's own
+  // comment) — but, unlike a previous version of this code, is no longer
+  // decisive on the very first report: it goes through the ordinary "2
+  // consecutive flagged windows" rule instead, the same as any statistical
+  // signal, so a client that momentarily reports something contradictory
+  // (its own bug, not necessarily a cheat) gets one window to recover
+  // before it costs the player anything.
+  it("a well-shaped but internally-inconsistent digest needs 2 consecutive reports to strike, same as any statistical signal", async () => {
     const cookie = await registerAndLogin();
-    const res = await api
+    const inconsistentDigest = { ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }; // sum(buckets)=0, claims 50 clicks
+
+    const first = await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistentDigest);
+    expect(first.status).toBe(200);
+    expect(first.body.status).toBe("clean"); // flagged, but not yet struck — suspicionScore is 1
+
+    const second = await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistentDigest);
+    expect(second.status).toBe(200);
+    expect(second.body.status).toBe("restricted");
+    expect(second.body.strikeCount).toBe(1);
+  });
+
+  // Regression, the literal production incident ("banned for opening the
+  // prestige modal for a few seconds" on iOS/WebKit): a window the
+  // browser's own timer was suspended through — backgrounded tab, locked
+  // screen — reports an oversized windowMs with 0 clicks. This must be
+  // completely inert: no strike, not even after repetition, and it must
+  // not reset a genuinely flagged streak either (see the next test).
+  it("regression: an oversized windowMs (a backgrounded/suspended window) is never a strike, however many times it repeats", async () => {
+    const cookie = await registerAndLogin();
+    const suspendedDigest = { ...CLEAN_DIGEST, windowMs: 300_000, clicks: 0 };
+
+    for (let i = 0; i < 5; i++) {
+      const res = await api.post("/anticheat/report").set("Cookie", cookie).send(suspendedDigest);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("clean");
+    }
+
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body.isRestricted).toBe(false);
+    expect(status.body.strikeCount).toBe(0);
+  });
+
+  // An unscoreable window must be NEUTRAL, not "clean" — laundering a
+  // flagged streak through a bogus/suspended digest would let a real
+  // cheater dodge the 2-consecutive-window rule by interleaving one.
+  it("an unscoreable window does not reset an in-progress suspicion streak", async () => {
+    const cookie = await registerAndLogin();
+    await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST); // suspicionScore -> 1
+    await api
       .post("/anticheat/report")
       .set("Cookie", cookie)
-      .send({ ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }); // sum(buckets)=0, claims 50 clicks
+      .send({ ...CLEAN_DIGEST, windowMs: 300_000, clicks: 0 }); // unscoreable, not a clean window
+
+    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe("restricted");
+    expect(res.body.status).toBe("restricted"); // the streak survived the unscoreable window
     expect(res.body.strikeCount).toBe(1);
   });
 

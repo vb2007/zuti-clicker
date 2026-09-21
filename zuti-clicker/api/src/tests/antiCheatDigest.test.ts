@@ -4,7 +4,7 @@ import {
   bucketIndexForIntervalMs,
   type AntiCheatDigest
 } from "../services/antiCheat.js";
-import { HISTOGRAM_BUCKET_COUNT, ENVELOPE_MAX_CPS } from "../constants/antiCheat.js";
+import { HISTOGRAM_BUCKET_COUNT, ENVELOPE_MAX_CPS, MAX_DIGEST_WINDOW_MS } from "../constants/antiCheat.js";
 
 // Pure unit tests — no live server or database. This is where the
 // statistical scoring itself is proved; the stateful "2 consecutive
@@ -44,6 +44,10 @@ describe("evaluateDigest — consistency", () => {
     const verdict = evaluateDigest(baseDigest({ clicks: 3, buckets }));
     expect(verdict.consistent).toBe(false);
     expect(verdict.inconsistencyReason).toBe("bucket_sum_mismatch");
+    // Unlike a structurally malformed body, this IS real evidence (a
+    // well-formed digest lying about its own numbers) — scoreable, just
+    // never decisive on the first report (see strikeLadder.test.ts).
+    expect(verdict.scoreable).toBe(true);
   });
 
   it("rejects a rate beyond the envelope's own hard ceiling", () => {
@@ -58,10 +62,36 @@ describe("evaluateDigest — consistency", () => {
     expect(verdict.inconsistencyReason).toBe("rate_exceeds_envelope");
   });
 
-  it("rejects a malformed digest (wrong bucket count) without throwing", () => {
+  it("treats a malformed digest (wrong bucket count) as unscoreable, not evidence of tampering", () => {
+    // Regression: this used to be `consistent: false` (the same bucket as
+    // bucket_sum_mismatch/rate_exceeds_envelope, real evidence), which made
+    // it decisive on the very first report — but a structurally malformed
+    // body is far more likely to be a client bug or a stale build (this
+    // project has hit exactly that four times in production) than a real
+    // forgery, which would send a well-formed shape.
     const verdict = evaluateDigest(baseDigest({ buckets: [1, 2, 3] }));
-    expect(verdict.consistent).toBe(false);
-    expect(verdict.inconsistencyReason).toBe("malformed_digest");
+    expect(verdict.scoreable).toBe(false);
+    expect(verdict.unscoreableReason).toBe("malformed_digest");
+    expect(verdict.flagged).toBe(false);
+  });
+
+  // Regression, real production incident ("banned for opening the prestige
+  // modal for a few seconds" on iOS/WebKit): a window the browser's own
+  // timer was suspended through — backgrounded tab, locked screen, laptop
+  // lid close — reports however long the suspension lasted as windowMs,
+  // which carries no real timing information (clicks is typically 0). This
+  // must never be treated as tampering evidence, only as unscoreable.
+  it("treats an oversized windowMs (a browser-suspended window) as unscoreable, not malformed or inconsistent", () => {
+    const verdict = evaluateDigest(baseDigest({ windowMs: MAX_DIGEST_WINDOW_MS + 1, clicks: 0 }));
+    expect(verdict.scoreable).toBe(false);
+    expect(verdict.unscoreableReason).toBe("window_out_of_range");
+    expect(verdict.flagged).toBe(false);
+  });
+
+  it("still scores a within-range windowMs normally", () => {
+    const verdict = evaluateDigest(baseDigest({ windowMs: MAX_DIGEST_WINDOW_MS }));
+    expect(verdict.scoreable).toBe(true);
+    expect(verdict.consistent).toBe(true);
   });
 });
 

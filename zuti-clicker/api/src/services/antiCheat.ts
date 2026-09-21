@@ -109,12 +109,22 @@ export interface AntiCheatDigest {
 }
 
 export interface DigestVerdict {
-  // A digest that contradicts its own numbers (bucket sum vs click count, or
-  // an impossible rate) is certain, not merely suspicious — see
-  // database/models/antiCheat.ts for how this short-circuits the
-  // "2 consecutive windows" requirement below.
+  // A digest that contradicts its OWN numbers (bucket sum vs click count, or
+  // a rate beyond the envelope's own ceiling) is EVIDENCE — a well-formed
+  // body that lies about itself has no innocent explanation. Still never
+  // decisive on the very first report though (see
+  // database/models/antiCheat.ts's processDigest): it goes through the
+  // normal "2 consecutive flagged windows" rule, same as every statistical
+  // signal, giving a false-triggering client every chance to recover
+  // before it costs the player anything.
   consistent: boolean;
   inconsistencyReason?: string;
+  // Whether this digest carried enough well-formed information to score at
+  // all. false means NO INFORMATION — never evidence of anything, in
+  // either direction (see scoreable's own comment on isValidShape and the
+  // MAX_DIGEST_WINDOW_MS check below for what lands here and why).
+  scoreable: boolean;
+  unscoreableReason?: string;
   score: number;
   signals: string[];
   flagged: boolean; // score/signal thresholds met, independent of consistency
@@ -165,11 +175,19 @@ export function sanitizeMethodCounts(value: unknown): MethodCounts | undefined {
   return undefined;
 }
 
+// Genuinely structural problems only — a non-integer count, a missing/
+// wrong-length bucket array, and so on. windowMs's UPPER bound is
+// deliberately NOT checked here (see evaluateDigest's own oversized-window
+// branch below): a client bug producing a structurally wrong body and a
+// browser suspending a timer through a whole backgrounded window are both
+// "no information", but the latter is expected to happen constantly on
+// real devices (locking a phone, switching apps) and must be visibly
+// distinguished (unscoreableReason) even though both are treated the same
+// way — neutral, never a strike.
 function isValidShape(digest: AntiCheatDigest): boolean {
   return (
     Number.isFinite(digest.windowMs) &&
     digest.windowMs > 0 &&
-    digest.windowMs <= MAX_DIGEST_WINDOW_MS &&
     Number.isInteger(digest.clicks) &&
     digest.clicks >= 0 &&
     Array.isArray(digest.buckets) &&
@@ -186,7 +204,42 @@ function isValidShape(digest: AntiCheatDigest): boolean {
 
 export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   if (!isValidShape(digest)) {
-    return { consistent: false, inconsistencyReason: "malformed_digest", score: 0, signals: [], flagged: false };
+    // Structurally malformed — a client bug or a stale/differently-shaped
+    // build, not evidence of anything. This project has hit exactly this
+    // class of bug FOUR times in production (windowMs precision,
+    // methodCounts shape, ...); a real forger sends a well-formed body, so
+    // treating "can't be parsed" as "certainly cheating" only ever
+    // punishes legitimate quirks.
+    return {
+      consistent: true,
+      scoreable: false,
+      unscoreableReason: "malformed_digest",
+      score: 0,
+      signals: [],
+      flagged: false
+    };
+  }
+
+  // A window the browser's own timer was suspended through — a backgrounded
+  // tab, a locked screen, a laptop lid close — carries no meaningful timing
+  // data at all: `clicks` is typically 0 and `windowMs` is however long the
+  // suspension lasted, not a real measurement of anything. This is the
+  // exact root cause of a real production incident ("banned for opening
+  // the prestige modal for a few seconds" on iOS/WebKit, which suspends
+  // setInterval while backgrounded). The client should skip sending these
+  // (see frontend antiCheatConstants.ts's own MAX_DIGEST_WINDOW_MS), but a
+  // client that ships one anyway — stale cache, a platform quirk this
+  // project hasn't seen yet — must never be punished for the browser's own
+  // scheduler; treated as unscoreable, exactly like an absent digest.
+  if (digest.windowMs > MAX_DIGEST_WINDOW_MS) {
+    return {
+      consistent: true,
+      scoreable: false,
+      unscoreableReason: "window_out_of_range",
+      score: 0,
+      signals: [],
+      flagged: false
+    };
   }
 
   const bucketSum = digest.buckets.reduce((a, b) => a + b, 0);
@@ -194,12 +247,26 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   // "previous click" for the first one) — a small fixed tolerance absorbs
   // that without weakening the check against real tampering.
   if (Math.abs(bucketSum - Math.max(0, digest.clicks - 1)) > HISTOGRAM_SUM_TOLERANCE) {
-    return { consistent: false, inconsistencyReason: "bucket_sum_mismatch", score: 0, signals: [], flagged: false };
+    return {
+      consistent: false,
+      inconsistencyReason: "bucket_sum_mismatch",
+      scoreable: true,
+      score: 0,
+      signals: [],
+      flagged: false
+    };
   }
 
   const cps = digest.clicks / (digest.windowMs / 1000);
   if (cps > ENVELOPE_MAX_CPS) {
-    return { consistent: false, inconsistencyReason: "rate_exceeds_envelope", score: 0, signals: [], flagged: false };
+    return {
+      consistent: false,
+      inconsistencyReason: "rate_exceeds_envelope",
+      scoreable: true,
+      score: 0,
+      signals: [],
+      flagged: false
+    };
   }
 
   // Zero-false-positive signals — a script dispatching synthetic events
@@ -211,7 +278,7 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   if (digest.untrustedClicks > 0 || digest.integrityFlags.length > 0) {
     const signals = digest.untrustedClicks > 0 ? ["untrustedInput"] : [];
     for (const flag of digest.integrityFlags) signals.push(`integrity:${flag}`);
-    return { consistent: true, score: 99, signals, flagged: true };
+    return { consistent: true, scoreable: true, score: 99, signals, flagged: true };
   }
 
   const signals: string[] = [];
@@ -295,5 +362,5 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   const distinctSignals = new Set(signals).size;
   const flagged = score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG;
 
-  return { consistent: true, score, signals, flagged };
+  return { consistent: true, scoreable: true, score, signals, flagged };
 }
