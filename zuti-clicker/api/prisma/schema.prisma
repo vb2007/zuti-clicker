@@ -120,6 +120,11 @@ model AntiCheatState {
   lastCleanAt      DateTime  @default(now())
   suspicionScore   Int       @default(0)
   softClampCount   Int       @default(0)
+  // Anchors the rolling 24h window recordSoftClamp counts materially-over-
+  // bound clamps within — NULL until the first material clamp. Separate
+  // from lastCleanAt: a clamp no longer resets the strike-decay anchor (a
+  // clamp already neutralizes the gain; it must not also block decay).
+  softClampWindowStartedAt DateTime?
   highRateWindows  Int       @default(0)
   updatedAt        DateTime  @updatedAt
 }
