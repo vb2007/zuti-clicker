@@ -191,7 +191,7 @@ function buy(e: MouseEvent) {
   justify-content: center;
   gap: 3px;
   aspect-ratio: 1;
-  padding: 8px 6px;
+  padding: 8px 4px;
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -238,7 +238,9 @@ function buy(e: MouseEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  /* Three lines: a long name ("Nyílt Könyves Vizsga", "Department Newsletter") needs
+     a third in a ~70px tile; the square tile simply grows taller if it must. */
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 

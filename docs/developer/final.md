@@ -274,7 +274,7 @@ tartsd szinkronban a megfelelő CSS-sel.
 | `max-width: 759px` és `max-height: 500px` (telefon fekvő) | A fejléc egysoros (`--header-h-compact: 52px`, a statisztika a fejlécben inline), a fülsáv 48px; a lapok teljes magasságot kapnak (nincs `--sheet-gap`); az `ActiveBoostersBar` chipjei bal oldalt, függőlegesen állnak. |
 | `max-width: 399px` | A fejlécből eltűnik a nyelv- és témagomb (a Beállításokban megvannak). Egy bejelentkezett fejléc ~355px-t igényel, e fölött fér el egy sorban. |
 | `max-height: 500px` és `min-width: 640px` | Az Upgrader két oszlopra bomlik (kerék + kimenetek \| tét, szorzó, Spin). 640px alatt egy oszlop marad, mert különben a tét mezője ~70px-re szűkülne. |
-| `max-width: 380px` | A fejlesztések rácsa 4 helyett 3 oszlopos. |
+| (szélességtől független) | A fejlesztések rácsa `repeat(auto-fill, minmax(68px, 1fr))`: annyi oszlop, amennyi még olvasható csempeszélességgel elfér (a keskenyített tablet-panelen 2, 1280px-es asztalon 3, telefonon 3–5), a csempenév legfeljebb 3 soros. A `minmax(0, …)`-jellegű minimum az, ami megakadályozza, hogy egy hosszú szó kitolja az oszlopot. |
 | `(pointer: coarse)` | Az összes 44px-es érintési célméret szabály a `max-width: 759px` mellett erre is vonatkozik — egy tablet 760px fölött is érintős. |
 | `(hover: hover)` | **Minden** `:hover` stílus ebbe van csomagolva, különben érintésnél a koppintás után "beragad" a hover-állapot. |
 

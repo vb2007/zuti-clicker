@@ -54,6 +54,26 @@ for (const language of ["en", "hu"] as const) {
       expect(bad).toEqual([]);
     });
 
+    // Tiles must stay wide enough to read: a name never truncated to "Overhea d…" because the
+    // rail (narrowed to ~232px on tablets) was divided into columns too narrow for it.
+    test("upgrade tiles are readable: not squeezed, no name cut off", async ({ app, page }) => {
+      await openShop(app, page);
+      await page.locator("#shop-tab-upgrades").click();
+      await expect(page.locator(".upgrade-grid").first()).toBeVisible();
+      await app.settle();
+      const g = await page.evaluate(() => {
+        const tiles = [...document.querySelectorAll<HTMLElement>(".upgrade-tile")];
+        const narrowest = Math.min(...tiles.map((t) => t.getBoundingClientRect().width));
+        const cut = tiles
+          .map((t) => t.querySelector<HTMLElement>(".tile-name")!)
+          .filter((n) => n.scrollHeight > n.clientHeight + 1 || n.scrollWidth > n.clientWidth + 1)
+          .map((n) => n.textContent!.trim());
+        return { narrowest, cut };
+      });
+      expect(g.narrowest).toBeGreaterThanOrEqual(66);
+      expect(g.cut).toEqual([]);
+    });
+
     test("the units list fits its panel", async ({ app, page }) => {
       await openShop(app, page);
       expect(await app.horizontalOverflow([".units-list", ".units-panel", ".unit-card"])).toEqual(
