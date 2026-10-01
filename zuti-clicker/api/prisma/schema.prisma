@@ -50,6 +50,13 @@ model GameSave {
   // makes every pre-existing row immediately claimable, which is correct.
   boostersCollected Int             @default(0)
   nextBoosterAt     DateTime        @default(now())
+  // Upgrader (PhD gamble) state, written ONLY by POST /upgrader/spin — see
+  // database/models/upgrader.ts. upgraderNet is the signed sum of
+  // (payout - stake) over every spin; the save envelope adds it to its PhD
+  // bound. upgraderSeq counts spins and doubles as PUT /save's stale-write
+  // guard, so an in-flight save can't resurrect PhDs a later spin removed.
+  upgraderNet       Int             @default(0)
+  upgraderSeq       Int             @default(0)
   savedAt           DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   units             UnitSave[]
