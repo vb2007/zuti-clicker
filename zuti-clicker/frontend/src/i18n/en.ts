@@ -203,6 +203,15 @@ export default {
       "You're playing as a guest — your PhDs are lost when you close this tab. Log in to keep them.",
     prestigeConfirmBtn: "Defend Thesis"
   },
+  upgrader: {
+    errors: {
+      syncFailed: "Couldn't save your progress before spinning, so the spin didn't happen.",
+      insufficient: "You don't have that many PhDs to stake.",
+      limit: "That spin could push your PhD total past its limit.",
+      invalid: "That stake or multiplier isn't valid.",
+      generic: "The spin failed. Try again."
+    }
+  },
   prestige: {
     title: "Prestige",
     lockedProgress: "Progress to next PhD",

@@ -203,6 +203,15 @@ export default {
       "Vendégként játszol — a PhD fokozataid elvesznek a lap bezárásakor. Jelentkezz be a megőrzésükhöz.",
     prestigeConfirmBtn: "Disszertáció megvédése"
   },
+  upgrader: {
+    errors: {
+      syncFailed: "Nem sikerült elmenteni a haladásod pörgetés előtt, ezért a pörgetés elmaradt.",
+      insufficient: "Nincs ennyi PhD-d, amit feltehetnél.",
+      limit: "Ez a pörgetés a PhD-k felső korlátja fölé vinné az összeget.",
+      invalid: "Ez a tét vagy szorzó nem érvényes.",
+      generic: "A pörgetés nem sikerült. Próbáld újra."
+    }
+  },
   prestige: {
     title: "Fokozat",
     lockedProgress: "Haladás a következő PhD-ig",

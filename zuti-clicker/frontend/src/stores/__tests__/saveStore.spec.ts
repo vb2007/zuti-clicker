@@ -226,7 +226,9 @@ describe("saveStore", () => {
       const work = vi.fn().mockResolvedValue("x");
 
       const save = useSaveStore();
-      await expect(save.withSyncLock(work)).rejects.toBeInstanceOf(SyncFlushError);
+      const err = await save.withSyncLock(work).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SyncFlushError);
+      expect((err as SyncFlushError).stale).toBe(false);
       expect(work).not.toHaveBeenCalled();
       expect(save.syncError).toBe("boom");
     });
@@ -249,7 +251,11 @@ describe("saveStore", () => {
       });
       const work = vi.fn();
 
-      await expect(useSaveStore().withSyncLock(work)).rejects.toBeInstanceOf(SyncFlushError);
+      const err = await useSaveStore().withSyncLock(work).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SyncFlushError);
+      // Flagged stale so the caller doesn't add a second message to the one the
+      // store already showed when it reloaded.
+      expect((err as SyncFlushError).stale).toBe(true);
       expect(work).not.toHaveBeenCalled();
       expect(useGameStore().upgraderSeq).toBe(3);
     });
