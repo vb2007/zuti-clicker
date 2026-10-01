@@ -66,7 +66,8 @@ export function randomSafePosition(
     [maxX, maxY]
   ];
   const [x, y] = corners.reduce((best, c) =>
-    Math.hypot(c[0] - circle.cx, c[1] - circle.cy) > Math.hypot(best[0] - circle.cx, best[1] - circle.cy)
+    Math.hypot(c[0] - circle.cx, c[1] - circle.cy) >
+    Math.hypot(best[0] - circle.cx, best[1] - circle.cy)
       ? c
       : best
   );

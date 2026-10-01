@@ -17,7 +17,10 @@ test.describe("clicker area", () => {
 
   // Regression: a fixed 220px circle plus its hint and cps pill needs ~311px of
   // height; phone landscape leaves the area ~275px, so the stack was clipped.
-  test("the circle, hint and cps pill all fit inside the area (never clipped)", async ({ app, page }) => {
+  test("the circle, hint and cps pill all fit inside the area (never clipped)", async ({
+    app,
+    page
+  }) => {
     await app.seed((s) => void (s.game.tokens = 10));
     await app.settle();
     const g = await page.evaluate(() => {

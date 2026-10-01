@@ -13,8 +13,12 @@ const launchOptions = { executablePath, args: ["--no-sandbox"] };
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
-  retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["list"], ["junit", { outputFile: process.env.E2E_JUNIT ?? "reports/junit-e2e.xml" }]] : "list",
+  // No retries: Playwright's JUnit report counts a retried pass as a pass, which would hide
+  // a flaky layout assertion from the CI summary. A flake should fail loudly and be fixed.
+  retries: 0,
+  reporter: process.env.CI
+    ? [["list"], ["junit", { outputFile: process.env.E2E_JUNIT ?? "reports/junit-e2e.xml" }]]
+    : "list",
   use: {
     baseURL: `http://localhost:${PORT}`,
     launchOptions,
@@ -29,12 +33,33 @@ export default defineConfig({
   // Each project is a device class. `touch` projects have hasTouch and a coarse
   // pointer (isMobile), so (pointer: coarse) / (hover: none) media queries match.
   projects: [
-    { name: "phone-320", use: { viewport: { width: 320, height: 568 }, hasTouch: true, isMobile: true } },
-    { name: "phone-375", use: { viewport: { width: 375, height: 667 }, hasTouch: true, isMobile: true } },
-    { name: "phone-390", use: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true } },
-    { name: "phone-landscape", use: { viewport: { width: 667, height: 375 }, hasTouch: true, isMobile: true } },
-    { name: "tablet", use: { viewport: { width: 768, height: 1024 }, hasTouch: true, isMobile: true } },
-    { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, launchOptions } },
-    { name: "desktop-wide", use: { ...devices["Desktop Chrome"], viewport: { width: 1920, height: 1080 }, launchOptions } }
+    {
+      name: "phone-320",
+      use: { viewport: { width: 320, height: 568 }, hasTouch: true, isMobile: true }
+    },
+    {
+      name: "phone-375",
+      use: { viewport: { width: 375, height: 667 }, hasTouch: true, isMobile: true }
+    },
+    {
+      name: "phone-390",
+      use: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }
+    },
+    {
+      name: "phone-landscape",
+      use: { viewport: { width: 667, height: 375 }, hasTouch: true, isMobile: true }
+    },
+    {
+      name: "tablet",
+      use: { viewport: { width: 768, height: 1024 }, hasTouch: true, isMobile: true }
+    },
+    {
+      name: "desktop",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, launchOptions }
+    },
+    {
+      name: "desktop-wide",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1920, height: 1080 }, launchOptions }
+    }
   ]
 });

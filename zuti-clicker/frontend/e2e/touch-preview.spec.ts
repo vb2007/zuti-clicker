@@ -33,7 +33,10 @@ async function hold(page: Page, x: number, y: number, ms: number) {
 const humanTap = (page: Page, x: number, y: number) => hold(page, x, y, 120);
 
 const center = async (page: Page, sel: string) => {
-  await page.locator(sel).first().evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await page
+    .locator(sel)
+    .first()
+    .evaluate((el) => el.scrollIntoView({ block: "center" }));
   const b = (await page.locator(sel).first().boundingBox())!;
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 };
@@ -65,9 +68,11 @@ test.describe("upgrade tiles on touch", () => {
   test("rapid tapping buys every tile it taps, with no preview", async ({ app, page }) => {
     await openUpgrades(app, page);
     // Tap the first tile of each family quickly, as fast as Playwright can issue taps.
-    const firstOfEach = await page.locator(".upgrade-grid").evaluateAll((grids) =>
-      grids.map((g) => g.querySelector<HTMLElement>(".upgrade-tile")?.textContent ?? "")
-    );
+    const firstOfEach = await page
+      .locator(".upgrade-grid")
+      .evaluateAll((grids) =>
+        grids.map((g) => g.querySelector<HTMLElement>(".upgrade-tile")?.textContent ?? "")
+      );
     expect(firstOfEach.length).toBeGreaterThan(1);
 
     const bought: number[] = [];
@@ -85,7 +90,10 @@ test.describe("upgrade tiles on touch", () => {
     expect(bought).toHaveLength(firstOfEach.length);
   });
 
-  test("an unaffordable (locked) tile can still be previewed by holding it", async ({ app, page }) => {
+  test("an unaffordable (locked) tile can still be previewed by holding it", async ({
+    app,
+    page
+  }) => {
     await openUpgrades(app, page);
     await app.seed((s) => void (s.game.tokens = 0));
     await expect(page.locator(".upgrade-tile[aria-disabled='true']").first()).toBeVisible();
@@ -107,7 +115,10 @@ test.describe("upgrade tiles on touch", () => {
 });
 
 test.describe("unit info tooltip on touch", () => {
-  test("tapping the (i) of a unit near the bottom opens a tooltip that stays on screen", async ({ app, page }) => {
+  test("tapping the (i) of a unit near the bottom opens a tooltip that stays on screen", async ({
+    app,
+    page
+  }) => {
     test.skip(!(await coarse(page)), "touch devices only");
     await app.open();
     await app.dismissGuestWarning();

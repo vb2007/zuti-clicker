@@ -332,9 +332,10 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
-  # Frontend e2e (Playwright): layout/responsiveness regressions that happy-dom
-  # cannot see (it does no layout). The API is fully mocked in the browser via
-  # route interception (frontend/e2e/fixtures.ts) - no database, no live server.
+  # Stage 3b: frontend e2e (Playwright): layout/responsiveness regressions that
+  # happy-dom cannot see (it does no layout). The API is fully mocked in the
+  # browser via route interception (frontend/e2e/fixtures.ts) - no database, no
+  # live server.
   # ---------------------------------------------------------------------------
   frontend-e2e:
     name: Frontend e2e
@@ -381,6 +382,18 @@ jobs:
           archive: false
           retention-days: 14
           if-no-files-found: warn
+
+      # Failure traces (screenshots, DOM snapshots, network) are what make a layout
+      # failure diagnosable from CI; the JUnit XML alone only says which assertion.
+      # Named e2e-traces-*, deliberately not junit-*: the report job globs junit-*.
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-${{ github.run_number }}
+          path: zuti-clicker/frontend/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
   # Stage 4: api tests (Jest/supertest integration tests against a real,

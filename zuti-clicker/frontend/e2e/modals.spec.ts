@@ -116,14 +116,19 @@ test.describe("closable modals", () => {
   // Regression: an overlay opened between our own history.back() being requested and it
   // landing was never given a sentinel, so Back left the game. Delays straddle the window.
   for (const delay of [0, 1, 5, 20]) {
-    test(`Back still works when an overlay opens ${delay}ms after another closed`, async ({ app, page }) => {
+    test(`Back still works when an overlay opens ${delay}ms after another closed`, async ({
+      app,
+      page
+    }) => {
       await app.open();
       await app.seed((s) => void (s.ui.settingsModalOpen = true));
       await expect(modalOf(page)).toBeVisible();
       await page.evaluate(
         (d) =>
           new Promise<void>((resolve) => {
-            const ui = (document.querySelector("#app") as any).__vue_app__.config.globalProperties.$pinia._s.get("ui");
+            const ui = (
+              document.querySelector("#app") as any
+            ).__vue_app__.config.globalProperties.$pinia._s.get("ui");
             ui.settingsModalOpen = false;
             setTimeout(() => {
               ui.leaderboardModalOpen = true;
@@ -196,7 +201,10 @@ test.describe("upgrader bet controls stay reachable", () => {
     };
   }
 
-  test("every control can be scrolled clear of the sticky bar and header", async ({ app, page }) => {
+  test("every control can be scrolled clear of the sticky bar and header", async ({
+    app,
+    page
+  }) => {
     await app.open();
     await app.seed((s) => {
       s.game.phdCount = 50;
@@ -214,7 +222,10 @@ test.describe("upgrader bet controls stay reachable", () => {
 
   test("phone landscape: the whole bet is in view with no scrolling", async ({ app, page }) => {
     const vp = page.viewportSize()!;
-    test.skip(!(vp.height <= 500 && vp.width >= 640), "only applies to the two-column landscape layout");
+    test.skip(
+      !(vp.height <= 500 && vp.width >= 640),
+      "only applies to the two-column landscape layout"
+    );
     await app.open();
     await app.seed((s) => {
       s.game.phdCount = 50;
@@ -333,7 +344,9 @@ test.describe("upgrader stake input is never too narrow to read", () => {
     await app.settle();
     const input = page.locator("#upgrader-stake");
     await input.fill("1999999");
-    const clipped = await input.evaluate((el: HTMLInputElement) => el.scrollWidth > el.clientWidth + 1);
+    const clipped = await input.evaluate(
+      (el: HTMLInputElement) => el.scrollWidth > el.clientWidth + 1
+    );
     expect(clipped).toBe(false);
   });
 });

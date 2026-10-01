@@ -4,9 +4,9 @@ import { mount } from "@vue/test-utils";
 import { useMediaQuery } from "@/composables/useMediaQuery";
 
 function setViewport(size: { width?: number; height?: number }) {
-  (globalThis as unknown as { happyDOM: { setViewport: (o: object) => void } }).happyDOM.setViewport(
-    size
-  );
+  (
+    globalThis as unknown as { happyDOM: { setViewport: (o: object) => void } }
+  ).happyDOM.setViewport(size);
 }
 
 function mountWith(query: string) {

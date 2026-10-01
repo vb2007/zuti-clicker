@@ -40,7 +40,11 @@ describe("useOverlayStack", () => {
   it("preserves the existing history.state (vue-router bookkeeping) in the sentinel", () => {
     vi.spyOn(window.history, "state", "get").mockReturnValue({ position: 4, current: "/" });
     registerOverlay(() => {});
-    expect(pushState.mock.calls[0]![0]).toMatchObject({ position: 4, current: "/", zutiOverlay: true });
+    expect(pushState.mock.calls[0]![0]).toMatchObject({
+      position: 4,
+      current: "/",
+      zutiOverlay: true
+    });
   });
 
   it("Escape closes only the top-most overlay", () => {

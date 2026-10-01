@@ -12,19 +12,28 @@ async function undersized(page: Page): Promise<string[]> {
   await page.waitForFunction(() =>
     document
       .getAnimations()
-      .every((a) => a.playState !== "running" || (a.effect?.getComputedTiming().iterations ?? 1) === Infinity)
+      .every(
+        (a) =>
+          a.playState !== "running" || (a.effect?.getComputedTiming().iterations ?? 1) === Infinity
+      )
   );
   return page.evaluate((exempt) => {
     const out: string[] = [];
-    for (const el of document.querySelectorAll<HTMLElement>("button, [role=tab], input[type=range]")) {
+    for (const el of document.querySelectorAll<HTMLElement>(
+      "button, [role=tab], input[type=range]"
+    )) {
       if (exempt.some((sel) => el.matches(sel))) continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       // Skip anything off-screen (a sheet parked below the fold, scrolled-out rows).
-      if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) continue;
+      if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth)
+        continue;
       const cs = getComputedStyle(el);
       if (cs.visibility === "hidden" || cs.display === "none") continue;
-      if (r.height < 43.5) out.push(`${el.tagName.toLowerCase()}.${el.className.toString().split(" ")[0]} ${Math.round(r.width)}x${Math.round(r.height)}`);
+      if (r.height < 43.5)
+        out.push(
+          `${el.tagName.toLowerCase()}.${el.className.toString().split(" ")[0]} ${Math.round(r.width)}x${Math.round(r.height)}`
+        );
     }
     return [...new Set(out)];
   }, PADDED_TARGETS);
@@ -64,7 +73,8 @@ test.describe("touch targets are at least 44px", () => {
 
   test("upgrades tab and user menu", async ({ app, page }) => {
     await start(app, page);
-    if (page.viewportSize()!.width < 760) await page.locator(".mobile-tab-bar .tab-btn").nth(1).click();
+    if (page.viewportSize()!.width < 760)
+      await page.locator(".mobile-tab-bar .tab-btn").nth(1).click();
     await page.locator("#shop-tab-upgrades").click();
     await app.settle();
     expect(await undersized(page)).toEqual([]);

@@ -18,12 +18,15 @@ for (const language of ["en", "hu"] as const) {
           const header = document.querySelector(".app-header")!;
           const h = header.getBoundingClientRect();
           const problems: string[] = [];
-          if (header.scrollHeight > header.clientHeight + 1) problems.push("header content taller than header");
+          if (header.scrollHeight > header.clientHeight + 1)
+            problems.push("header content taller than header");
           for (const el of header.querySelectorAll<HTMLElement>("button, .brand, .mini-stats")) {
             const r = el.getBoundingClientRect();
             if (r.width === 0 || r.height === 0) continue; // display: none
-            if (r.right > window.innerWidth + 0.5 || r.left < -0.5) problems.push(`${el.className} off-screen`);
-            if (r.bottom > h.bottom + 0.5 || r.top < h.top - 0.5) problems.push(`${el.className} outside header`);
+            if (r.right > window.innerWidth + 0.5 || r.left < -0.5)
+              problems.push(`${el.className} off-screen`);
+            if (r.bottom > h.bottom + 0.5 || r.top < h.top - 0.5)
+              problems.push(`${el.className} outside header`);
           }
           return { problems, height: h.height };
         });
@@ -32,7 +35,9 @@ for (const language of ["en", "hu"] as const) {
         if (isCompact(page)) {
           // The fixed height the sheets and scrim are positioned against.
           const token = await page.evaluate(() =>
-            parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-h-compact"))
+            parseFloat(
+              getComputedStyle(document.documentElement).getPropertyValue("--header-h-compact")
+            )
           );
           expect(result.height).toBeCloseTo(token, 0);
           // Touch targets.
@@ -80,7 +85,9 @@ test.describe("mobile sheets", () => {
         expect(b.height).toBeGreaterThanOrEqual(43.5);
         await close.click();
         expect(await panelState(app)).toBe("none");
-        await expect.poll(() => page.evaluate(() => Boolean((history.state as any)?.zutiOverlay))).toBe(false);
+        await expect
+          .poll(() => page.evaluate(() => Boolean((history.state as any)?.zutiOverlay)))
+          .toBe(false);
       });
 
       test("the Back button closes it and stays in the game", async ({ app, page }) => {
@@ -94,7 +101,6 @@ test.describe("mobile sheets", () => {
         await openSheet(app, page);
         await page.keyboard.press("Escape");
         expect(await panelState(app)).toBe("none");
-
       });
 
       // Regression: the sheet used to cover the scrim exactly, so "tap outside to
@@ -129,7 +135,10 @@ test.describe("mobile sheets", () => {
     await expect(page.locator(".sheet-close")).toHaveCount(0);
   });
 
-  test("sheets and the tab bar line up, including with a 34px home-indicator inset", async ({ app, page }) => {
+  test("sheets and the tab bar line up, including with a 34px home-indicator inset", async ({
+    app,
+    page
+  }) => {
     test.skip(!isCompact(page), "mobile sheets only exist below 760px");
     await app.open();
     // Chromium can't emulate env(safe-area-inset-*); the tokens are overridable.
@@ -176,7 +185,9 @@ test.describe("closed mobile sheets", () => {
     await app.dismissGuestWarning();
 
     const closed = await page.evaluate(() =>
-      [...document.querySelectorAll<HTMLElement>(".rail")].map((r) => getComputedStyle(r).visibility)
+      [...document.querySelectorAll<HTMLElement>(".rail")].map(
+        (r) => getComputedStyle(r).visibility
+      )
     );
     expect(closed).toEqual(["hidden", "hidden"]);
 

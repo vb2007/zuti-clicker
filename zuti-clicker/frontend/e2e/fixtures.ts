@@ -95,8 +95,11 @@ export class AppHelper {
   async open() {
     await this.page.goto("/");
     await this.page.waitForSelector(".app");
-    // Let checkSession() settle so the logged-in/guest UI is final.
-    await this.page.waitForTimeout(300);
+    // Wait for checkSession() to resolve (not a fixed sleep), so the logged-in/guest UI is final.
+    await this.page.waitForFunction(() => {
+      const app = (document.querySelector("#app") as any)?.__vue_app__;
+      return app?.config.globalProperties.$pinia._s.get("auth")?.isChecked === true;
+    });
   }
 
   /** Run `fn` in the page with the Pinia stores map ({ ui, game, ... }). */

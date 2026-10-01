@@ -6,7 +6,9 @@ import { useAnchoredTooltip } from "@/composables/useAnchoredTooltip";
 type Api = ReturnType<typeof useAnchoredTooltip>;
 
 function setViewport(width: number, height: number) {
-  (globalThis as unknown as { happyDOM: { setViewport: (o: object) => void } }).happyDOM.setViewport({
+  (
+    globalThis as unknown as { happyDOM: { setViewport: (o: object) => void } }
+  ).happyDOM.setViewport({
     width,
     height
   });
@@ -161,7 +163,9 @@ describe("useAnchoredTooltip", () => {
       anchor.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
       expect(api.visible.value).toBe(true);
 
-      wrapper!.find("#elsewhere").element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      wrapper!
+        .find("#elsewhere")
+        .element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
       await nextTick();
       expect(api.visible.value).toBe(false);
     });
@@ -183,7 +187,9 @@ describe("useAnchoredTooltip", () => {
       wrapper!.unmount();
       wrapper = null;
       expect(removeDoc.mock.calls.map((c) => c[0])).toContain("pointerdown");
-      expect(removeWin.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(["scroll", "resize"]));
+      expect(removeWin.mock.calls.map((c) => c[0])).toEqual(
+        expect.arrayContaining(["scroll", "resize"])
+      );
     });
   });
 });

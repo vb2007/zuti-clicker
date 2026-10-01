@@ -73,7 +73,10 @@ test("Continue is laid out but hidden during the count-up, then shown", async ({
   await expect(cont).toBeVisible();
 });
 
-test("Back continues past the ceremony (once offered) and stays in the game", async ({ app, page }) => {
+test("Back continues past the ceremony (once offered) and stays in the game", async ({
+  app,
+  page
+}) => {
   await app.open();
   await app.dismissGuestWarning();
   await app.seed((s) => {

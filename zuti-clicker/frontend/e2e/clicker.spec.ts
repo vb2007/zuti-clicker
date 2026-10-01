@@ -33,7 +33,10 @@ test.describe("booster pickups", () => {
           distance: Math.hypot(pc.x - c.x, pc.y - c.y),
           minDistance: circle.width / 2 + pr,
           inside:
-            pc.x - pr >= area.left && pc.x + pr <= area.right && pc.y - pr >= area.top && pc.y + pr <= area.bottom
+            pc.x - pr >= area.left &&
+            pc.x + pr <= area.right &&
+            pc.y - pr >= area.top &&
+            pc.y + pr <= area.bottom
         };
       });
       expect(g.inside, `spawn ${i} inside area`).toBe(true);
