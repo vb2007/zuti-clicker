@@ -89,6 +89,14 @@ describe("UnitCard", () => {
       expect(body().find(".tooltip").exists()).toBe(false);
     });
 
+    // Regression: on iOS Safari a tap neither focuses a button nor reliably emulates
+    // mouseenter, so the info tooltip could not be opened by touch at all.
+    it("regression: a click on the info button opens the tooltip (touch has no hover or focus)", async () => {
+      wrapper = mount(UnitCard, { props: { unitId: "alpha", multiplier: 1 } });
+      await wrapper.find(".info-btn").trigger("click");
+      expect(body().find(".tooltip").exists()).toBe(true);
+    });
+
     it("regression: opens on focusing the info button, reaching it without a pointer", async () => {
       wrapper = mount(UnitCard, { props: { unitId: "alpha", multiplier: 1 } });
       await wrapper.find(".info-btn").trigger("focus");

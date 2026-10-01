@@ -81,7 +81,8 @@ const {
   onEnter: onInfoEnter,
   onLeave: onInfoLeave,
   onFocus: onInfoFocus,
-  onBlur: onInfoBlur
+  onBlur: onInfoBlur,
+  toggle: onInfoToggle
 } = useAnchoredTooltip();
 </script>
 
@@ -102,6 +103,7 @@ const {
             @mouseleave="onInfoLeave"
             @focus="onInfoFocus"
             @blur="onInfoBlur"
+            @click="onInfoToggle"
           >
             <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
               <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4" />

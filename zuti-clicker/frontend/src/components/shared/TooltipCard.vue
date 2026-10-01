@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AnchoredTooltipStyle } from "@/composables/useAnchoredTooltip";
+
 // Shared shell for UnitCard's and UpgradeTile's info tooltip — the
 // Teleport/fade/positioning/name+description chrome, extracted so a future
 // visual tweak (shadow, spacing, a new header row) only needs to change in
@@ -6,14 +8,15 @@
 // (a `.tip-row`/`.tip-val` pair, still small enough that extracting it too
 // isn't worth the indirection — same call the codebase already makes for
 // MultiplierSelector's segmented-control pattern).
-// `width` must match whatever the caller passed to useAnchoredTooltip(width)
-// — the positioning calc there clamps/centers against that same number, so
-// the two must stay in sync or the tooltip renders slightly off-center.
+// `width` must match whatever the caller passed to useAnchoredTooltip(width) —
+// the positioning calc there centers against that same number. When the
+// viewport is narrower than that, the composable's clamped width (carried in
+// `positionStyle.width`) wins over this prop.
 const props = withDefaults(
   defineProps<{
     tooltipId: string;
     visible: boolean;
-    positionStyle: { top: string; left: string } | null;
+    positionStyle: AnchoredTooltipStyle | null;
     title: string;
     description: string;
     width?: number;
