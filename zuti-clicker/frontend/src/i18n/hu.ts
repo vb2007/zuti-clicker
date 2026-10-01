@@ -1,5 +1,6 @@
 export default {
   app: { title: "Zuti Clicker", titleCompact: "Zuti" },
+  common: { close: "Bezárás" },
   status: {
     title: "Haladás",
     tokens: "Tokenek",
@@ -213,7 +214,6 @@ export default {
     stakeChipAria: "A PhD-id {pct}%-ának feltétele",
     stakeAllAria: "Az összes PhD feltétele",
     stakeMax: "Max",
-    close: "Bezárás",
     multiplier: "Szorzó",
     multiplierSlider: "Egyéni szorzó",
     win: "Nyer",
@@ -271,7 +271,7 @@ export default {
     metricClicks: "Kattintások",
     metricPhd: "PhD-k",
     metricPlaytime: "Játékidő",
-    rank: "Helyezés",
+    rank: "Hely.",
     player: "Játékos",
     value: "Érték",
     yourRank: "A te helyezésed",

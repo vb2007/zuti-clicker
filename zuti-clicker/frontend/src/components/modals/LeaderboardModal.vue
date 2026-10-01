@@ -57,6 +57,7 @@ function close() {
     :title="t('leaderboard.title')"
     :max-width="420"
     :z-index="1000"
+    closable
     @close="close"
   >
     <div class="seg-group" role="group">
@@ -111,12 +112,13 @@ function close() {
 <style scoped>
 .seg-group {
   display: flex;
+  flex-wrap: wrap; /* four metrics don't fit one row on a 320px phone (or in Hungarian) */
   gap: 4px;
   margin-bottom: 16px;
 }
 
 .seg-btn {
-  flex: 1;
+  flex: 1 1 auto;
   padding: 6px 10px;
   border-radius: var(--radius-xs);
   border: 1px solid var(--border);
@@ -124,11 +126,28 @@ function close() {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
-.seg-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-text);
+@media (hover: hover) {
+  .seg-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+}
+@media (pointer: coarse), (max-width: 759px) {
+  .seg-btn {
+    min-height: 44px;
+  }
+}
+/* A 3+1 wrap looks accidental — on the narrowest phones lay the four metrics out as 2×2. */
+@media (max-width: 360px) {
+  .seg-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
 }
 .seg-btn.active {
   background: var(--accent);
@@ -151,7 +170,9 @@ function close() {
 
 .board-header {
   display: grid;
-  grid-template-columns: 40px 1fr auto;
+  /* 48px: wide enough for the Hungarian column title ("Hely.") at this size; the header
+     and every row share it so the columns line up. */
+  grid-template-columns: 48px 1fr auto;
   gap: 10px;
   padding: 4px 10px;
   font-size: 11px;
@@ -163,7 +184,7 @@ function close() {
 
 .board-row {
   display: grid;
-  grid-template-columns: 40px 1fr auto;
+  grid-template-columns: 48px 1fr auto;
   gap: 10px;
   align-items: center;
   padding: 8px 10px;
@@ -171,8 +192,10 @@ function close() {
   font-size: 13px;
   transition: background var(--transition-fast);
 }
-.board-row:hover {
-  background: var(--bg-elevated);
+@media (hover: hover) {
+  .board-row:hover {
+    background: var(--bg-elevated);
+  }
 }
 .board-row.self {
   background: var(--bg-elevated);
@@ -189,6 +212,10 @@ function close() {
 .col-rank {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  /* A too-long title is clipped rather than printed over the next column. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .col-player {
   overflow: hidden;

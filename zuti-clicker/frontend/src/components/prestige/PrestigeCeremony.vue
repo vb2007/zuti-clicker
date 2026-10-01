@@ -3,8 +3,9 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useUiStore } from "@/stores/uiStore";
 import { usePrestige } from "@/composables/usePrestige";
+import { useOverlay } from "@/composables/useOverlayStack";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const ui = useUiStore();
 const { dismissCeremony } = usePrestige();
 
@@ -35,6 +36,17 @@ onMounted(() => {
   animateCount(ui.lastPrestigeGain, 900);
 });
 
+// Back / Escape continue, exactly like the button — but only once it is
+// offered: during the count-up they are refused (the overlay stack re-arms
+// Back), so a stray press can't skip the one authored moment.
+useOverlay(
+  () => true,
+  () => {
+    if (settled.value) dismissCeremony();
+  },
+  2000 // keep in sync with .ceremony-backdrop's z-index — it covers everything
+);
+
 onUnmounted(() => {
   if (rafId !== null) cancelAnimationFrame(rafId);
 });
@@ -43,21 +55,30 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <div class="ceremony-backdrop">
-      <div class="ring ring-1"></div>
-      <div class="ring ring-2"></div>
-      <div class="ring ring-3"></div>
+      <!-- Own clipping box: the pulsing rings scale far past the screen, and
+           must not add scrollable overflow to the (scrollable) backdrop. -->
+      <div class="rings" aria-hidden="true">
+        <div class="ring ring-1"></div>
+        <div class="ring ring-2"></div>
+        <div class="ring ring-3"></div>
+      </div>
 
       <div class="ceremony-content">
         <div class="cap" aria-hidden="true">🎓</div>
-        <div class="gain-number">+{{ displayedGain }}</div>
+        <div class="gain-number">+{{ displayedGain.toLocaleString(locale) }}</div>
         <div class="gain-label">{{ t("prestige.ceremonyGained") }}</div>
         <p class="subtext">{{ t("prestige.ceremonySubtext") }}</p>
 
-        <Transition name="fade-in-up">
-          <button v-if="settled" class="continue-btn" @click="dismissCeremony">
-            {{ t("prestige.continueBtn") }}
-          </button>
-        </Transition>
+        <!-- Always laid out (hidden until the count-up settles), so its arrival
+             neither shifts the centred content nor pushes it off a short screen.
+             visibility: hidden also keeps it out of the Tab order meanwhile. -->
+        <button
+          class="continue-btn"
+          :class="{ pending: !settled }"
+          @click="dismissCeremony"
+        >
+          {{ t("prestige.continueBtn") }}
+        </button>
       </div>
     </div>
   </Teleport>
@@ -69,11 +90,19 @@ onUnmounted(() => {
   inset: 0;
   z-index: 2000;
   display: flex;
-  align-items: center;
-  justify-content: center;
   background: var(--bg-base);
   animation: fadeIn 320ms ease;
+  /* Scrolls when the content is taller than the screen (phone landscape), so
+     the Continue button can never be out of reach. */
+  overflow-y: auto;
+  padding: var(--sai-top) var(--sai-right) var(--sai-bottom) var(--sai-left);
+}
+
+.rings {
+  position: fixed;
+  inset: 0;
   overflow: hidden;
+  pointer-events: none;
 }
 
 .ring {
@@ -108,7 +137,10 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 0 24px;
+  padding: 24px;
+  /* auto margins centre it while it fits and let it start at the top (instead
+     of being cut off above the fold) once it doesn't. */
+  margin: auto;
 }
 
 .cap {
@@ -118,7 +150,10 @@ onUnmounted(() => {
 }
 
 .gain-number {
-  font-size: 72px;
+  /* Grows with the viewport but never past 72px — a 7-digit gain overflowed a
+     320px screen at the fixed size. */
+  font-size: clamp(44px, 14vw, 72px);
+  max-width: 100%;
   font-weight: 900;
   color: var(--accent);
   letter-spacing: -2px;
@@ -146,6 +181,7 @@ onUnmounted(() => {
 
 .continue-btn {
   margin-top: 36px;
+  min-height: 44px;
   padding: 12px 28px;
   border-radius: var(--radius-sm);
   background: var(--btn-buy-bg);
@@ -154,17 +190,46 @@ onUnmounted(() => {
   font-weight: 700;
   transition: filter var(--transition-fast);
 }
-.continue-btn:hover {
-  filter: brightness(1.1);
+@media (hover: hover) {
+  .continue-btn:hover {
+    filter: brightness(1.1);
+  }
 }
 
-.fade-in-up-enter-active {
+.continue-btn {
   transition:
     opacity 320ms ease,
-    transform 320ms ease;
+    transform 320ms ease,
+    filter var(--transition-fast);
 }
-.fade-in-up-enter-from {
+.continue-btn.pending {
+  visibility: hidden;
   opacity: 0;
   transform: translateY(10px);
+}
+
+/* Phone landscape: ~330px of height for everything. */
+@media (max-height: 480px) {
+  .ceremony-content {
+    padding-block: 12px;
+  }
+  .cap {
+    font-size: 32px;
+    margin-bottom: 4px;
+  }
+  .gain-number {
+    font-size: clamp(40px, 16dvh, 56px);
+  }
+  .gain-label {
+    margin-top: 6px;
+  }
+  .subtext {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .continue-btn {
+    margin-top: 16px;
+  }
 }
 </style>

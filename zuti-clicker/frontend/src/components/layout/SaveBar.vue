@@ -129,18 +129,26 @@ async function logout() {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
   white-space: nowrap;
 }
-.ctrl-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent-text);
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .ctrl-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent-text);
+    background: var(--bg-hover);
+  }
 }
 .ctrl-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .save-guest-btn { border-color: var(--accent); color: var(--accent-text); }
-.save-guest-btn:hover { background: var(--accent); color: #fff; }
+@media (hover: hover) {
+  .save-guest-btn:hover { background: var(--accent); color: #fff; }
+}
 
 .sync-btn.synced { border-color: var(--success); color: var(--success); }
 .sync-btn.sync-error { border-color: var(--danger); color: var(--danger); }
@@ -176,11 +184,17 @@ async function logout() {
   font-weight: 500;
   background: transparent;
   color: var(--text-secondary);
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
-.dropdown-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+@media (hover: hover) {
+  .dropdown-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+}
 .dropdown-item.danger { color: var(--danger); }
-.dropdown-item.danger:hover { background: rgba(248, 113, 113, 0.08); }
+@media (hover: hover) {
+  .dropdown-item.danger:hover { background: rgba(248, 113, 113, 0.08); }
+}
 
 @media (max-width: 759px) {
   /* Icon-only: the header is already tight below 760px (see AppHeader.vue),
@@ -190,10 +204,18 @@ async function logout() {
     display: none;
   }
 
+}
+
+/* Touch: phone sheet layouts and tablets alike (a coarse pointer above 760px
+   gets the same 44px targets). */
+@media (max-width: 759px), (pointer: coarse) {
   .ctrl-btn {
     min-width: 44px;
     min-height: 44px;
     justify-content: center;
+  }
+  .dropdown-item {
+    min-height: 44px;
   }
 }
 </style>

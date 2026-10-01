@@ -248,7 +248,13 @@ const ownedGroups = computed(() =>
 
 .upgrade-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* As many columns as fit at a readable tile width, rather than a fixed count:
+     a fixed 3 made ~62px tiles in the narrowed tablet rail (names broke
+     mid-word), and a 4-then-3 breakpoint pair guessed at phone widths. The
+     minimum is also the minmax(0, …) fix: a bare 1fr is minmax(auto, 1fr), so
+     one tile's long unbreakable word (esp. Hungarian) forced its column — and
+     the whole grid — wider than the rail, scrolling it sideways. */
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
   gap: 8px;
 }
 
@@ -337,9 +343,5 @@ const ownedGroups = computed(() =>
   color: var(--text-muted);
 }
 
-@media (max-width: 759px) {
-  .upgrade-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
+
 </style>

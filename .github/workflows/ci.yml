@@ -1,11 +1,12 @@
 name: PR Tests
 
-# Runs on every PR into main. Four test stages feed a shared JUnit -> HTML/ODS
-# report pipeline, aggregated and published by two further jobs. Three of the
-# four (typecheck, verify-migrations, frontend-tests) have no interdependency
-# between them - on this single self-hosted runner they still queue one after
-# another, but this keeps each stage's pass/fail visible on its own and keeps
-# the door open for more runners later. api-tests depends on verify-migrations
+# Runs on every PR into main. Five test stages feed a shared JUnit -> HTML/ODS
+# report pipeline, aggregated and published by two further jobs. Four of the
+# five (typecheck, verify-migrations, frontend-tests, frontend-e2e) have no
+# interdependency between them - on this single self-hosted runner they still
+# queue one after another, but this keeps each stage's pass/fail visible on its
+# own and keeps the door open for more runners later. api-tests depends on
+# verify-migrations
 # so it runs its test suite against an already-migrated, already-verified
 # database instead of re-applying migrations itself.
 on:
@@ -332,6 +333,88 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
+  # Stage 3b: frontend e2e (Playwright): layout/responsiveness regressions that
+  # happy-dom cannot see (it does no layout). The API is fully mocked in the
+  # browser via route interception (frontend/e2e/fixtures.ts) - no database, no
+  # live server.
+  # ---------------------------------------------------------------------------
+  frontend-e2e:
+    name: Frontend e2e
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        working-directory: zuti-clicker/frontend
+        run: pnpm install --frozen-lockfile
+
+      # Prefer a system Chromium (what the playwright config's CHROMIUM_PATH
+      # expects); fall back to Playwright's own download only when none exists.
+      - name: Locate Chromium
+        working-directory: zuti-clicker/frontend
+        run: |
+          for bin in chromium chromium-browser google-chrome-stable google-chrome; do
+            if path=$(command -v "$bin"); then
+              echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          pnpm exec playwright install chromium
+
+      # Fail once, clearly, instead of ~800 identical launch errors: Playwright's own download
+      # needs system libraries (libnspr4, libnss3, ...) that a bare-metal runner may lack.
+      - name: Check the browser can launch
+        working-directory: zuti-clicker/frontend
+        run: |
+          node -e "
+            require('@playwright/test').chromium
+              .launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--no-sandbox'] })
+              .then((b) => b.close())
+              .catch((e) => {
+                console.error(e.message.split('\n').slice(0, 4).join('\n'));
+                process.exit(1);
+              });
+          " || {
+            echo "::error title=No launchable Chromium on this runner::Install one on the runner host (e.g. 'sudo apt-get install -y chromium'; this job then picks it up from PATH), or its shared libraries ('sudo pnpm exec playwright install-deps chromium')."
+            exit 1
+          }
+
+      - name: Run e2e tests
+        working-directory: zuti-clicker/frontend
+        run: pnpm exec playwright test
+        env:
+          CI: "true"
+          E2E_JUNIT: reports/junit-frontend-e2e-${{ github.run_number }}.xml
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          path: zuti-clicker/frontend/reports/junit-frontend-e2e-${{ github.run_number }}.xml
+          archive: false
+          retention-days: 14
+          if-no-files-found: warn
+
+      # Failure traces (screenshots, DOM snapshots, network) are what make a layout
+      # failure diagnosable from CI; the JUnit XML alone only says which assertion.
+      # Named e2e-traces-*, deliberately not junit-*: the report job globs junit-*.
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-${{ github.run_number }}
+          path: zuti-clicker/frontend/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
   # Stage 4: api tests (Jest/supertest integration tests against a real,
   # dedicated zutiClickerTest database - see CLAUDE.md "Database & migrations"
   # and the CI/CD plan's "What I need from you" section for how the runner's
@@ -481,7 +564,7 @@ jobs:
   # ---------------------------------------------------------------------------
   reports:
     name: Aggregate reports
-    needs: [typecheck, verify-migrations, frontend-tests, api-tests]
+    needs: [typecheck, verify-migrations, frontend-tests, frontend-e2e, api-tests]
     if: always()
     runs-on: [self-hosted, Linux, X64]
     steps:

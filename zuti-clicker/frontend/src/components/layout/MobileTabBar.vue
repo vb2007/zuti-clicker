@@ -48,8 +48,11 @@ function toggle(panel: Exclude<MobilePanel, "none">) {
     left: 0;
     right: 0;
     bottom: 0;
-    height: var(--mobile-tabbar-h);
-    padding-bottom: env(safe-area-inset-bottom);
+    /* --tabbar-total includes the home-indicator inset. Under border-box the
+       padding below eats into it, leaving exactly --mobile-tabbar-h of content
+       height; the previous fixed 60px left only ~26px on an iPhone. */
+    height: var(--tabbar-total);
+    padding: 0 var(--sai-right) var(--sai-bottom) var(--sai-left);
     background: var(--bg-surface);
     border-top: 1px solid var(--border);
     z-index: 500;

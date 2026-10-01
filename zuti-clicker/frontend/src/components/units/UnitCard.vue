@@ -81,7 +81,8 @@ const {
   onEnter: onInfoEnter,
   onLeave: onInfoLeave,
   onFocus: onInfoFocus,
-  onBlur: onInfoBlur
+  onBlur: onInfoBlur,
+  toggle: onInfoToggle
 } = useAnchoredTooltip();
 </script>
 
@@ -102,6 +103,7 @@ const {
             @mouseleave="onInfoLeave"
             @focus="onInfoFocus"
             @blur="onInfoBlur"
+            @click="onInfoToggle"
           >
             <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
               <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4" />
@@ -167,19 +169,27 @@ const {
   gap: 10px;
   padding: 11px 14px;
   border-bottom: 1px solid var(--border-subtle);
+  /* Always present (transparent until affordable): adding the accent border only
+     when a unit became affordable shifted the whole card 2px sideways each time,
+     which happens constantly as tokens tick up. */
+  border-left: 2px solid transparent;
   transition: background var(--transition-fast);
 }
 
-.unit-card:hover {
-  background: var(--bg-elevated);
+@media (hover: hover) {
+  .unit-card:hover {
+    background: var(--bg-elevated);
+  }
 }
 
 .unit-card.affordable {
-  border-left: 2px solid var(--accent);
+  border-left-color: var(--accent);
 }
 
-.unit-card.affordable:hover {
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .unit-card.affordable:hover {
+    background: var(--bg-hover);
+  }
 }
 
 /* info */
@@ -219,9 +229,13 @@ const {
   transition: color var(--transition-fast);
   position: relative;
 }
-.info-btn:hover,
 .info-btn:focus-visible {
   color: var(--accent-text);
+}
+@media (hover: hover) {
+  .info-btn:hover {
+    color: var(--accent-text);
+  }
 }
 
 /* The 20px icon is a precise, small hover target on purpose — hovering
@@ -280,14 +294,21 @@ const {
   border-radius: var(--radius-sm);
   background: var(--btn-buy-bg);
   color: var(--btn-buy-text);
-  transition: all var(--transition-fast);
+  transition:
+    filter var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
   flex-shrink: 0;
 }
 
-.buy-btn:hover:not(:disabled) {
-  filter: brightness(1.15);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px var(--accent-glow);
+@media (hover: hover) {
+  .buy-btn:hover:not(:disabled) {
+    filter: brightness(1.15);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px var(--accent-glow);
+  }
 }
 
 .buy-btn:active:not(:disabled) {
@@ -325,10 +346,10 @@ const {
   color: var(--booster);
 }
 
-@media (max-width: 759px) {
-  /* This panel becomes a touch-driven mobile sheet at this width (see
-     App.vue) — the buy button's desktop sizing runs a little short of a
-     comfortable touch target. */
+@media (max-width: 759px), (pointer: coarse) {
+  /* Touch-driven (a mobile sheet below 760px — see App.vue — or a tablet's
+     coarse pointer above it) — the buy button's desktop sizing runs a little
+     short of a comfortable touch target. */
   .buy-btn {
     min-height: 44px;
   }

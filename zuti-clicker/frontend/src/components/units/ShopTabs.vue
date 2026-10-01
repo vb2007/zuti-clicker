@@ -51,14 +51,18 @@ const TABS: ShopTab[] = ["units", "upgrades"];
   font-weight: 700;
   background: transparent;
   color: var(--text-secondary);
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 .shop-tab-btn.active { background: var(--accent); color: #fff; }
-.shop-tab-btn:not(.active):hover { color: var(--text-primary); }
+@media (hover: hover) {
+  .shop-tab-btn:not(.active):hover { color: var(--text-primary); }
+}
 
-@media (max-width: 759px) {
+@media (max-width: 759px), (pointer: coarse) {
   .shop-tab-btn {
-    min-height: 40px;
+    min-height: 44px;
   }
 }
 </style>

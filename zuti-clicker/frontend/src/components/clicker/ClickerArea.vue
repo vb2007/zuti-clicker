@@ -8,10 +8,35 @@ import FloatingNumber from "./FloatingNumber.vue";
 import BoosterPickup from "./BoosterPickup.vue";
 import ActiveBoostersBar from "./ActiveBoostersBar.vue";
 import { useBoosters } from "@/composables/useBoosters";
+import type { PlacementLayout } from "@/utils/boosterPlacement";
 
 const { t } = useI18n();
 const game = useGameStore();
-const { pickupVisible, pickupPosition, visibleWindowMs, claimPickup } = useBoosters();
+const areaRef = ref<HTMLElement | null>(null);
+
+// Where the click circle is inside this area, so a booster pickup never spawns
+// on top of it (see utils/boosterPlacement.ts). null when there is no layout to
+// measure (e.g. a non-browser test environment) — useBoosters then uses a default.
+function measureLayout(): PlacementLayout | null {
+  const area = areaRef.value;
+  const circle = area?.querySelector(".circle-wrap");
+  if (!area || !circle) return null;
+  const a = area.getBoundingClientRect();
+  const c = circle.getBoundingClientRect();
+  if (a.width === 0 || a.height === 0) return null;
+  return {
+    areaW: a.width,
+    areaH: a.height,
+    circle: {
+      cx: c.left - a.left + c.width / 2,
+      cy: c.top - a.top + c.height / 2,
+      r: c.width / 2
+    }
+  };
+}
+
+const { pickupVisible, pickupPosition, visibleWindowMs, claimPickup } =
+  useBoosters(measureLayout);
 
 interface FloatEntry {
   id: number;
@@ -73,7 +98,7 @@ function onCircleClick({ x, y }: { x: number; y: number }) {
 </script>
 
 <template>
-  <main class="clicker-area">
+  <main ref="areaRef" class="clicker-area">
     <div class="glow-bg" aria-hidden="true"></div>
 
     <ActiveBoostersBar />
@@ -127,6 +152,41 @@ function onCircleClick({ x, y }: { x: number; y: number }) {
   background: var(--bg-base);
   overflow: hidden;
   transition: background var(--transition-slow);
+  --circle: 220px;
+}
+
+/* The click circle is sized to the room this area actually has, not the
+   viewport: ~62% of its width, but never so tall that the hint and cps pill
+   under it (plus a booster chip bar above) no longer fit — which is what
+   clipped it in phone landscape (a 220px circle in ~275px of height). The upper
+   cap grows with the viewport (220px up to ~1220px wide — the original size on
+   phones and typical desktops — then 18vw, at most 300px), so only a big monitor
+   gets a visibly larger circle. The area becomes a size
+   container so cqw/cqh are its own dimensions; it is a grid item whose track
+   is sized by the layout (never by its content), so size containment is safe.
+   Browsers without container units keep the fixed 220px above. */
+@supports (width: 1cqw) {
+  .clicker-area {
+    container-type: size;
+    --circle: clamp(140px, min(62cqw, 100cqh - 140px), clamp(220px, 18vw, 300px));
+  }
+}
+
+/* Narrow areas (phone portrait): nudge the stack down a little so up to three
+   simultaneous booster chips (ActiveBoostersBar, two rows here) sit above the
+   circle instead of on it. The shift is constant — the circle never moves when
+   a booster starts or ends. */
+@container (max-width: 420px) {
+  .clicker-content {
+    margin-top: 40px;
+  }
+}
+
+/* Short areas (phone landscape) tighten the stack under the circle. */
+@container (max-height: 400px) {
+  .clicker-content {
+    gap: 12px;
+  }
 }
 
 .glow-bg {

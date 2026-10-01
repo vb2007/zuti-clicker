@@ -108,6 +108,7 @@ async function handleDone() {
     :max-width="420"
     :z-index="1000"
     :dismiss-on-backdrop="false"
+    closable
     @close="handleCancel"
   >
     <div class="section">
@@ -253,7 +254,8 @@ async function handleDone() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap; /* a long label (esp. Hungarian) and its control stack instead of colliding */
+  gap: 6px 12px;
   padding: 6px 0;
 }
 
@@ -265,7 +267,10 @@ async function handleDone() {
 
 .seg-group {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+  margin-left: auto;
 }
 
 .seg-btn {
@@ -276,11 +281,16 @@ async function handleDone() {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
-.seg-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-text);
+@media (hover: hover) {
+  .seg-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
 }
 .seg-btn.active {
   background: var(--accent);
@@ -297,12 +307,31 @@ async function handleDone() {
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 .toggle-btn.active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+/* Touch: 44px minimum targets (the desktop sizes above are mouse-sized). */
+@media (pointer: coarse), (max-width: 759px) {
+  .seg-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .toggle-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .btn-cancel,
+  .btn-close {
+    min-height: 44px;
+  }
 }
 
 .version-line {
@@ -329,9 +358,14 @@ async function handleDone() {
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
-  transition: all var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
 }
-.btn-cancel:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+@media (hover: hover) {
+  .btn-cancel:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+}
 .btn-cancel:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-close {
@@ -342,8 +376,12 @@ async function handleDone() {
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    filter var(--transition-fast),
+    opacity var(--transition-fast);
 }
-.btn-close:hover:not(:disabled) { filter: brightness(1.1); }
+@media (hover: hover) {
+  .btn-close:hover:not(:disabled) { filter: brightness(1.1); }
+}
 .btn-close:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>

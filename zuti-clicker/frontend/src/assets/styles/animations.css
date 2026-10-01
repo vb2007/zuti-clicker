@@ -1,6 +1,10 @@
+/* The ambient pulse is an opacity fade over a *static* glow: animating box-shadow
+   itself repaints the element (and a large blur) every frame, forever, on a phone.
+   Elements using this carry their own fixed box-shadow (see .glow-layer, and the
+   prestige button's ::after) — only its visibility pulses. */
 @keyframes breathe {
-  0%, 100% { box-shadow: 0 0 24px var(--accent-glow); }
-  50%       { box-shadow: 0 0 48px var(--accent-glow), 0 0 72px var(--accent-glow); }
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
 }
 
 @keyframes floatUp {
@@ -45,7 +49,7 @@
 @media (prefers-reduced-motion: reduce) {
   /* Ambient/infinite — flatten to the resting state; nothing pulses. */
   @keyframes breathe {
-    0%, 100% { box-shadow: 0 0 36px var(--accent-glow); }
+    0%, 100% { opacity: 0.75; }
   }
 
   /* One-shot reveals — stop; content appears already in its final state

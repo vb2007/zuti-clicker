@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
@@ -38,8 +38,83 @@ const {
   onEnter,
   onLeave,
   onFocus,
-  onBlur
+  onBlur,
+  open: openTooltip,
+  close: closeTooltip
 } = useAnchoredTooltip(200);
+
+// Touch has no hover, and a tap buys — so a touch user could never read what an
+// upgrade does before paying for it. Holding a tile previews it instead.
+//
+// The threshold is what keeps this out of the way of buying in bulk: a tap that
+// lifts before LONG_PRESS_MS (rapid-fire tapping is ~100-200ms a tap) never arms
+// anything, the timer is cancelled by lift/cancel/movement, and only a press that
+// actually fired the preview swallows the click that follows its release.
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_PX = 10;
+const SWALLOW_WINDOW_MS = 400;
+let pressTimer: ReturnType<typeof setTimeout> | null = null;
+let swallowTimer: ReturnType<typeof setTimeout> | null = null;
+let pressOrigin: { x: number; y: number } | null = null;
+let longPressFired = false;
+let swallowClick = false;
+
+function clearPress(): void {
+  if (pressTimer !== null) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+  pressOrigin = null;
+}
+
+function onPointerDown(e: PointerEvent): void {
+  if (e.pointerType !== "touch") return;
+  clearPress();
+  longPressFired = false;
+  swallowClick = false;
+  pressOrigin = { x: e.clientX, y: e.clientY };
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    longPressFired = true;
+    openTooltip();
+  }, LONG_PRESS_MS);
+}
+
+function onPointerMove(e: PointerEvent): void {
+  if (!pressOrigin) return;
+  if (Math.hypot(e.clientX - pressOrigin.x, e.clientY - pressOrigin.y) > LONG_PRESS_MOVE_PX) {
+    clearPress();
+  }
+}
+
+function onPointerUp(): void {
+  clearPress();
+  if (!longPressFired) return;
+  // The browser fires a click right after this pointerup — it ends a preview, it
+  // must not also buy. Expires on its own in case no click ever follows.
+  longPressFired = false;
+  swallowClick = true;
+  if (swallowTimer !== null) clearTimeout(swallowTimer);
+  swallowTimer = setTimeout(() => {
+    swallowClick = false;
+    swallowTimer = null;
+  }, SWALLOW_WINDOW_MS);
+}
+
+function onPointerCancel(): void {
+  clearPress();
+  longPressFired = false;
+}
+
+// A touch long-press can raise the OS context menu / text-selection callout.
+function onContextMenu(e: MouseEvent): void {
+  if ((e as PointerEvent).pointerType === "touch") e.preventDefault();
+}
+
+onUnmounted(() => {
+  clearPress();
+  if (swallowTimer !== null) clearTimeout(swallowTimer);
+});
 
 // isTrusted-gated the same way UnitCard.vue's buy() is — see that
 // component's comment for why this matters even though the purchase itself
@@ -49,8 +124,18 @@ function buy(e: MouseEvent) {
     antiCheat.recordClick(false);
     return;
   }
-  if (!affordable.value) return;
-  if (game.buyUpgrade(props.upgradeId)) antiCheat.recordPurchase();
+  if (swallowClick) {
+    swallowClick = false;
+    return;
+  }
+  // aria-disabled (not disabled) keeps the tile focusable and hoverable, so a
+  // locked upgrade's tooltip can still be read — it just never buys.
+  if (!affordable.value || antiCheat.isRestricted) return;
+  if (game.buyUpgrade(props.upgradeId)) {
+    antiCheat.recordPurchase();
+    // A preview left open by a long-press has done its job.
+    closeTooltip();
+  }
 }
 </script>
 
@@ -60,9 +145,14 @@ function buy(e: MouseEvent) {
     type="button"
     class="upgrade-tile"
     :class="{ affordable }"
-    :disabled="!affordable || antiCheat.isRestricted"
+    :aria-disabled="!affordable || antiCheat.isRestricted"
     :aria-describedby="tooltipVisible ? tooltipId : undefined"
     @click="buy($event)"
+    @pointerdown="onPointerDown"
+    @pointermove="onPointerMove"
+    @pointerup="onPointerUp"
+    @pointercancel="onPointerCancel"
+    @contextmenu="onContextMenu"
     @mouseenter="onEnter"
     @mouseleave="onLeave"
     @focus="onFocus"
@@ -101,7 +191,7 @@ function buy(e: MouseEvent) {
   justify-content: center;
   gap: 3px;
   aspect-ratio: 1;
-  padding: 8px 6px;
+  padding: 8px 4px;
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -110,6 +200,11 @@ function buy(e: MouseEvent) {
     background var(--transition-fast),
     box-shadow var(--transition-fast);
   text-align: center;
+  /* Holding a tile previews it (see the long-press handling in the script):
+     keep iOS from raising its callout / starting a text selection meanwhile. */
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 .upgrade-tile.affordable {
@@ -117,12 +212,14 @@ function buy(e: MouseEvent) {
   box-shadow: 0 0 0 1px var(--accent-glow);
 }
 
-.upgrade-tile.affordable:hover {
-  background: var(--bg-hover);
-  box-shadow: 0 4px 14px var(--accent-glow);
+@media (hover: hover) {
+  .upgrade-tile.affordable:hover {
+    background: var(--bg-hover);
+    box-shadow: 0 4px 14px var(--accent-glow);
+  }
 }
 
-.upgrade-tile:disabled {
+.upgrade-tile[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -132,10 +229,18 @@ function buy(e: MouseEvent) {
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
+  max-width: 100%;
+  /* Break/hyphenate a long word (<html lang> is kept in sync with the language
+     setting, so hyphens: auto uses the right dictionary) rather than let it
+     push the tile wider than its column. */
+  overflow-wrap: break-word;
+  hyphens: auto;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  /* Three lines: a long name ("Nyílt Könyves Vizsga", "Department Newsletter") needs
+     a third in a ~70px tile; the square tile simply grows taller if it must. */
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 
@@ -152,7 +257,7 @@ function buy(e: MouseEvent) {
   font-variant-numeric: tabular-nums;
 }
 
-.upgrade-tile:disabled .tile-cost {
+.upgrade-tile[aria-disabled="true"] .tile-cost {
   color: var(--btn-dis-text);
 }
 

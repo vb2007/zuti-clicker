@@ -177,4 +177,105 @@ describe("BaseModal", () => {
     await wrapper.setProps({ compact: true });
     expect(body().find(".base-modal").classes()).toContain("compact");
   });
+
+  describe("closable", () => {
+    function mountClosable(props: { closable?: boolean } = {}) {
+      const Host = defineComponent({
+        components: { BaseModal },
+        setup() {
+          const open = ref(true);
+          return { open, closable: props.closable ?? true };
+        },
+        template: `
+          <BaseModal :open="open" title="T" :closable="closable" @close="open = false">
+            <input id="field" />
+          </BaseModal>`
+      });
+      return mount(Host, { attachTo: document.body });
+    }
+
+    it("is off by default: no close button", async () => {
+      wrapper = mountHost(true);
+      await wrapper.vm.$nextTick();
+      expect(body().find(".modal-close").exists()).toBe(false);
+    });
+
+    it("renders a labelled ✕ that emits close", async () => {
+      wrapper = mountClosable();
+      await wrapper.vm.$nextTick();
+
+      const close = body().find(".modal-close");
+      expect(close.attributes("aria-label")).toBe("Close");
+      await close.trigger("click");
+
+      expect((wrapper.vm as unknown as { open: boolean }).open).toBe(false);
+    });
+
+    it("renders even without a title (aria-label-only modals like Auth)", async () => {
+      const Host = defineComponent({
+        components: { BaseModal },
+        template: `<BaseModal :open="true" aria-label="x" closable><p>hi</p></BaseModal>`
+      });
+      wrapper = mount(Host, { attachTo: document.body });
+      await wrapper.vm.$nextTick();
+      expect(body().find(".modal-close").exists()).toBe(true);
+    });
+
+    it("does not steal initial focus: content gets it, not the ✕", async () => {
+      wrapper = mountClosable();
+      await wrapper.vm.$nextTick();
+      await wrapper.vm.$nextTick();
+      expect(document.activeElement?.id).toBe("field");
+    });
+
+    it("the ✕ stays inside the Tab focus trap", async () => {
+      wrapper = mountClosable();
+      await wrapper.vm.$nextTick();
+      await wrapper.vm.$nextTick();
+
+      // From the last focusable (the field), Tab wraps to the first (the ✕).
+      (body().find("#field").element as HTMLElement).focus();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", cancelable: true }));
+      expect(document.activeElement?.className).toContain("modal-close");
+    });
+  });
+
+  // Regression: every open modal used to listen for Escape on its own, so a
+  // stacked pair (confirm over settings) both closed on a single press.
+  it("regression: Escape closes only the top-most of two stacked modals", async () => {
+    const Host = defineComponent({
+      components: { BaseModal },
+      setup() {
+        return { lower: ref(true), upper: ref(true) };
+      },
+      template: `
+        <div>
+          <BaseModal :open="lower" title="Lower" @close="lower = false"><p>l</p></BaseModal>
+          <BaseModal :open="upper" title="Upper" @close="upper = false"><p>u</p></BaseModal>
+        </div>`
+    });
+    wrapper = mount(Host, { attachTo: document.body });
+    await wrapper.vm.$nextTick();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await wrapper.vm.$nextTick();
+
+    const vm = wrapper.vm as unknown as { lower: boolean; upper: boolean };
+    expect(vm.upper).toBe(false);
+    expect(vm.lower).toBe(true);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await wrapper.vm.$nextTick();
+    expect(vm.lower).toBe(false);
+  });
+
+  it("Back (popstate) closes the modal like Escape does", async () => {
+    wrapper = mountHost(true);
+    await wrapper.vm.$nextTick();
+
+    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+    await wrapper.vm.$nextTick();
+
+    expect((wrapper.vm as unknown as { open: boolean }).open).toBe(false);
+  });
 });

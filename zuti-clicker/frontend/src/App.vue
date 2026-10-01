@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/authStore";
 import { useSaveStore } from "@/stores/saveStore";
@@ -23,6 +23,7 @@ import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import { useGameLoop } from "@/composables/useGameLoop";
 import { useAntiCheat } from "@/composables/useAntiCheat";
 import { useBreakpoint } from "@/composables/useBreakpoint";
+import { useOverlay, initOverlayStack } from "@/composables/useOverlayStack";
 import { QUICK_RESET_ENABLED, shouldQuickReset } from "@/utils/featureFlags";
 import CheatWarningModal from "@/components/modals/CheatWarningModal.vue";
 
@@ -46,14 +47,40 @@ watch(isCompact, (compact) => {
   if (!compact) ui.mobilePanel = "none";
 });
 
+initOverlayStack();
+
+// The open mobile sheet is an overlay like any modal: Escape and the browser/
+// Android Back button close it, but only when nothing sits above it (modals
+// register later, so they are always on top of it).
+useOverlay(
+  () => ui.mobilePanel !== "none",
+  () => {
+    ui.mobilePanel = "none";
+  },
+  400 // the sheet's z-index (see .rail below): under every modal (>= 900)
+);
+
+// Closing a sheet while focus is inside it (its ✕, or Escape) would otherwise drop focus to
+// <body> once the closed sheet turns visibility: hidden. Hand it back to the tab that opened it.
+watch(
+  () => ui.mobilePanel,
+  async (panel, previous) => {
+    if (panel !== "none" || previous === "none") return;
+    const sheet = document.getElementById(`mobile-sheet-${previous}`);
+    if (!sheet?.contains(document.activeElement)) return;
+    await nextTick();
+    document
+      .querySelector<HTMLElement>(`.mobile-tab-bar [aria-controls="mobile-sheet-${previous}"]`)
+      ?.focus();
+  }
+);
+
 async function onKeydown(e: KeyboardEvent) {
   if (shouldQuickReset(e, QUICK_RESET_ENABLED)) {
     e.preventDefault();
     await save.resetSave();
     await auth.logout();
   }
-
-  if (e.key === "Escape" && ui.mobilePanel !== "none") ui.mobilePanel = "none";
 }
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
@@ -160,6 +187,9 @@ async function onConfirmDelete() {
   flex: 1;
   overflow: hidden;
   position: relative;
+  /* Landscape on a notched phone: keep the rails out from under the notch. */
+  padding-left: var(--sai-left);
+  padding-right: var(--sai-right);
 }
 
 /* Tablet / narrow desktop: keep the three-column shell, but the fixed rails
@@ -172,35 +202,75 @@ async function onConfirmDelete() {
 }
 
 /* Mobile: the clicker takes the full width; the two rails become slide-up
-   sheets over it, opened by MobileTabBar and closed by the scrim, Escape, or
-   tapping the active tab again. The rail components themselves are never
+   sheets over it, opened by MobileTabBar and closed by their ✕, the scrim (the
+   dimmed strip left above the sheet), Escape/Back, or tapping the active tab
+   again. The rail components themselves are never
    unmounted — only re-parented visually via this class — so their own
    mount-in animations (slideInLeft/Right) don't replay on every open. */
 @media (max-width: 759px) {
   .game-layout {
+    --sheet-gap: 56px;
+    /* A bare duration: --transition-base is "220ms ease" (duration AND easing), so it
+       cannot sit in "visibility 0s linear <delay>" — a second easing function makes the
+       whole declaration invalid and the slide-out silently loses its animation.
+       Keep in sync with --transition-base's duration. */
+    --sheet-ms: 220ms;
     grid-template-columns: 1fr;
   }
 
   .game-layout .rail {
     position: fixed;
-    left: 0;
-    right: 0;
-    top: var(--header-h-compact);
-    bottom: var(--mobile-tabbar-h);
+    left: var(--sai-left);
+    right: var(--sai-right);
+    /* --sheet-gap leaves a strip of the scrim uncovered above the sheet: a
+       sheet that exactly covered the scrim (as it used to) made "tap outside to
+       close" impossible — the scrim was never reachable. */
+    top: calc(var(--header-h-compact) + var(--sheet-gap));
+    /* The bar's full footprint, home-indicator inset included. */
+    bottom: var(--tabbar-total);
     z-index: 400;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
     transform: translateY(100%);
-    transition: transform var(--transition-base);
+    /* Closed = off-canvas AND hidden: without this the parked sheet's upward
+       shadow spilled over the clicker area on every load, and its buttons stayed
+       in the Tab order / accessibility tree. Visibility flips only once the
+       slide-out has finished (hence the delay), and at once on opening. */
+    visibility: hidden;
+    transition:
+      transform var(--sheet-ms) ease,
+      visibility 0s linear var(--sheet-ms);
     animation: none; /* supersede the rail's own one-shot mount animation */
   }
 
   .game-layout.panel-stats-open .rail-stats,
   .game-layout.panel-units-open .rail-units {
     transform: translateY(0);
+    visibility: visible;
+    transition:
+      transform var(--sheet-ms) ease,
+      visibility 0s;
   }
 }
 
-@media (max-width: 759px) and (prefers-reduced-motion: reduce) {
+/* Phone landscape has no height to spare: the sheet takes it all, and the ✕,
+   Back/Escape and the tab button are the ways out. */
+@media (max-width: 759px) and (max-height: 500px) {
+  .game-layout {
+    --sheet-gap: 0px;
+  }
   .game-layout .rail {
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* The open-state rule above is more specific than .rail, so it must be listed too or
+   reduced-motion users still get the slide-in. */
+@media (max-width: 759px) and (prefers-reduced-motion: reduce) {
+  .game-layout .rail,
+  .game-layout.panel-stats-open .rail-stats,
+  .game-layout.panel-units-open .rail-units {
     transition: none;
   }
 }
@@ -213,7 +283,7 @@ async function onConfirmDelete() {
   .mobile-scrim {
     display: block;
     position: fixed;
-    inset: var(--header-h-compact) 0 var(--mobile-tabbar-h) 0;
+    inset: var(--header-h-compact) 0 var(--tabbar-total) 0;
     background: rgba(0, 0, 0, 0.45);
     z-index: 300;
     animation: fadeIn var(--transition-base);

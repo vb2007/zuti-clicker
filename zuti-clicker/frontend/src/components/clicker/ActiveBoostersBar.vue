@@ -72,6 +72,58 @@ function formatCountdown(secs: number): string {
   max-width: calc(100% - 24px);
 }
 
+/* A narrow area (phone portrait): three simultaneous boosters, each as wide as
+   "Name · effect  0:42", stack into three rows and land on the circle. Drop the
+   name (the effect is the useful part) and tighten up so two fit per row and the
+   bar stays above the circle. */
+@container (max-width: 420px) {
+  .boosters-bar {
+    gap: 4px;
+    top: 8px;
+  }
+  .booster-chip {
+    gap: 4px;
+    padding: 3px 8px;
+  }
+  .chip-label,
+  .chip-sep {
+    display: none;
+  }
+}
+
+/* Short screen (phone landscape): the circle fills the area's height, so a bar centred
+   above it would sit on top of it. Park the chips down the left side instead, and let
+   them use only the room beside the circle — the effect text is ellipsized to fit
+   (the time always stays), rather than a long Hungarian effect reaching the circle. The
+   name is dropped; the effect is the useful part. */
+@media (max-height: 500px) {
+  .boosters-bar {
+    left: 12px;
+    transform: none;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+    max-width: max(64px, calc((100% - var(--circle, 220px)) / 2 - 20px));
+  }
+  .booster-chip {
+    max-width: 100%;
+  }
+  .chip-label,
+  .chip-sep {
+    display: none;
+  }
+  .chip-effect {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chip-icon,
+  .chip-time {
+    flex: none;
+  }
+}
+
 .booster-chip {
   display: flex;
   align-items: center;

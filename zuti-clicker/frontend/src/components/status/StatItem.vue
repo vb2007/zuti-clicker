@@ -33,8 +33,10 @@ defineProps<{
   transition: background var(--transition-fast);
 }
 
-.stat-item:hover {
-  background: var(--bg-elevated);
+@media (hover: hover) {
+  .stat-item:hover {
+    background: var(--bg-elevated);
+  }
 }
 
 .stat-label {

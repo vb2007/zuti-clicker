@@ -51,10 +51,9 @@ async function submit() {
     :aria-label="t('auth.modalAriaLabel')"
     :max-width="400"
     :z-index="1000"
+    closable
     @close="close"
   >
-    <button class="modal-close" @click="close" aria-label="Close">✕</button>
-
     <div class="modal-tabs">
       <button
         :class="['tab-btn', { active: tab === 'login' }]"
@@ -112,19 +111,6 @@ async function submit() {
 </template>
 
 <style scoped>
-.modal-close {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 14px;
-  padding: 4px 6px;
-  border-radius: var(--radius-xs);
-  transition: color var(--transition-fast);
-}
-.modal-close:hover { color: var(--text-primary); }
-
 .modal-tabs {
   display: flex;
   gap: 4px;
@@ -142,10 +128,14 @@ async function submit() {
   font-weight: 600;
   background: transparent;
   color: var(--text-secondary);
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 .tab-btn.active { background: var(--accent); color: #fff; }
-.tab-btn:not(.active):hover { color: var(--text-primary); }
+@media (hover: hover) {
+  .tab-btn:not(.active):hover { color: var(--text-primary); }
+}
 
 .modal-form { display: flex; flex-direction: column; gap: 14px; }
 
@@ -192,7 +182,9 @@ async function submit() {
   transition: background var(--transition-fast);
   margin-top: 4px;
 }
-.submit-btn:hover:not(:disabled) { background: var(--accent-dim); }
+@media (hover: hover) {
+  .submit-btn:hover:not(:disabled) { background: var(--accent-dim); }
+}
 .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .switch-btn {
@@ -205,5 +197,7 @@ async function submit() {
   text-underline-offset: 2px;
   transition: color var(--transition-fast);
 }
-.switch-btn:hover { color: var(--accent-text); }
+@media (hover: hover) {
+  .switch-btn:hover { color: var(--accent-text); }
+}
 </style>

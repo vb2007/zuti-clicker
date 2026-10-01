@@ -1,5 +1,6 @@
 export default {
   app: { title: "Zuti Clicker", titleCompact: "Zuti" },
+  common: { close: "Close" },
   status: {
     title: "Progress",
     tokens: "Tokens",
@@ -212,7 +213,6 @@ export default {
     stakeChipAria: "Stake {pct}% of your PhDs",
     stakeAllAria: "Stake all your PhDs",
     stakeMax: "Max",
-    close: "Close",
     multiplier: "Multiplier",
     multiplierSlider: "Custom multiplier",
     win: "Win",

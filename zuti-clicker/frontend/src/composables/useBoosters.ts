@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useToastStore } from "@/stores/toastStore";
 import { api, ApiError } from "@/lib/api";
 import { pickWeightedBoosterId } from "@/utils/upgrades";
+import { randomSafePosition, DEFAULT_LAYOUT, type PlacementLayout } from "@/utils/boosterPlacement";
 import { getBoosterEffectText } from "@/utils/boosterEffectText";
 import {
   BOOSTER_DEFINITIONS,
@@ -30,7 +31,7 @@ import {
  * claimPickup below), and the 409's nextAvailableInMs immediately re-syncs
  * the local schedule, so any drift self-corrects within one missed click.
  */
-export function useBoosters() {
+export function useBoosters(getLayout?: () => PlacementLayout | null) {
   const game = useGameStore();
   const auth = useAuthStore();
   const toast = useToastStore();
@@ -61,29 +62,6 @@ export function useBoosters() {
     return (minSecs + Math.random() * (maxSecs - minSecs)) * 1000;
   }
 
-  /**
-   * Placement rejection-samples a point on the clicker area, expressed as a
-   * percentage of its box, until it clears a circular "safe zone" around the
-   * center (where the click circle and its hint text live) — so a pickup
-   * never renders on top of the thing the player is trying to click.
-   * Percentages (not pixels) so BoosterPickup.vue stays correct across any
-   * clicker-area size without this composable measuring the DOM.
-   */
-  function randomSafePosition(): { xPct: number; yPct: number } {
-    const SAFE_RADIUS_PCT = 30; // roughly covers the circle + hint + cps pill
-    const MARGIN_PCT = 8; // keep the pickup fully inside with room to spare
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const xPct = MARGIN_PCT + Math.random() * (100 - 2 * MARGIN_PCT);
-      const yPct = MARGIN_PCT + Math.random() * (100 - 2 * MARGIN_PCT);
-      const dx = xPct - 50;
-      const dy = yPct - 50;
-      if (Math.sqrt(dx * dx + dy * dy) >= SAFE_RADIUS_PCT) return { xPct, yPct };
-    }
-    // Fallback after repeated rejection (shouldn't happen at these ratios,
-    // but never loop forever): a corner is always outside the safe zone.
-    return { xPct: MARGIN_PCT, yPct: MARGIN_PCT };
-  }
-
   function clearTimers(): void {
     if (spawnTimer !== null) {
       clearTimeout(spawnTimer);
@@ -105,7 +83,9 @@ export function useBoosters() {
   }
 
   function showPickup(): void {
-    pickupPosition.value = randomSafePosition();
+    // Measured at spawn time (not cached): the area and circle resize with the
+    // viewport, and a pickup must clear the circle as it is *now*.
+    pickupPosition.value = randomSafePosition(getLayout?.() ?? DEFAULT_LAYOUT);
     visibleWindowMs.value = randomMs(BOOSTER_VISIBLE_MIN_SECS, BOOSTER_VISIBLE_MAX_SECS);
     pickupVisible.value = true;
     visibleTimer = setTimeout(missPickup, visibleWindowMs.value);

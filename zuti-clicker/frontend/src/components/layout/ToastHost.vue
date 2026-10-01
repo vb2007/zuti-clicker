@@ -30,9 +30,8 @@ const toast = useToastStore();
 <style scoped>
 .toast-host {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
-  bottom: max(20px, env(safe-area-inset-bottom));
+  right: max(20px, var(--sai-right));
+  bottom: max(20px, var(--sai-bottom));
   z-index: 1500;
   pointer-events: none;
   display: flex;
@@ -92,7 +91,9 @@ const toast = useToastStore();
   position: absolute;
   inset: -16px;
 }
-.toast-close:hover { color: var(--text-primary); }
+@media (hover: hover) {
+  .toast-close:hover { color: var(--text-primary); }
+}
 
 .toast-enter-active,
 .toast-leave-active {
@@ -111,11 +112,10 @@ const toast = useToastStore();
 
 @media (max-width: 759px) {
   .toast-host {
-    left: 16px;
-    right: 16px;
+    left: max(16px, var(--sai-left));
+    right: max(16px, var(--sai-right));
     justify-content: center;
-    bottom: calc(var(--mobile-tabbar-h) + 16px);
-    bottom: calc(var(--mobile-tabbar-h) + 16px + env(safe-area-inset-bottom));
+    bottom: calc(var(--tabbar-total) + 16px);
   }
   .toast-item {
     max-width: 100%;

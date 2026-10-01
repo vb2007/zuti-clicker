@@ -66,7 +66,9 @@ function dismiss() {
   font-weight: 700;
   transition: background var(--transition-fast);
 }
-.btn-primary:hover { background: var(--accent-dim); }
+@media (hover: hover) {
+  .btn-primary:hover { background: var(--accent-dim); }
+}
 
 .btn-ghost {
   padding: 8px 16px;
@@ -76,5 +78,11 @@ function dismiss() {
   border-radius: var(--radius-sm);
   transition: color var(--transition-fast);
 }
-.btn-ghost:hover { color: var(--text-secondary); }
+@media (hover: hover) {
+  .btn-ghost:hover { color: var(--text-secondary); }
+}
+/* Touch / phone: 44px minimum targets (the ghost link included). */
+@media (max-width: 480px), (pointer: coarse) {
+  .modal-actions button { min-height: 44px; }
+}
 </style>

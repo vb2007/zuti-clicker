@@ -189,7 +189,10 @@ const progressLabel = computed(() =>
   color: var(--btn-dis-text);
   font-size: 13px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    filter var(--transition-fast);
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -204,13 +207,28 @@ const progressLabel = computed(() =>
 }
 
 .prestige-btn.ready {
+  position: relative;
   background: var(--btn-buy-bg);
   color: var(--btn-buy-text);
+}
+/* The ready-state glow: a static shadow on a pseudo-element whose opacity pulses
+   (`breathe`) — animating the button's own box-shadow would repaint it every frame. */
+.prestige-btn.ready::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 28px var(--accent-glow),
+    0 0 56px var(--accent-glow);
+  pointer-events: none;
   animation: breathe 3.5s ease-in-out infinite;
 }
 
-.prestige-btn.ready:hover {
-  filter: brightness(1.08);
+@media (hover: hover) {
+  .prestige-btn.ready:hover {
+    filter: brightness(1.08);
+  }
 }
 
 .upgrader-btn {
@@ -221,12 +239,25 @@ const progressLabel = computed(() =>
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
-.upgrader-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-text);
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .upgrader-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+    background: var(--bg-hover);
+  }
+}
+
+/* Touch (mobile sheet, or a tablet's coarse pointer): 44px targets. */
+@media (max-width: 759px), (pointer: coarse) {
+  .prestige-btn,
+  .upgrader-btn {
+    min-height: 44px;
+  }
 }
 
 .prestige-btn:disabled {

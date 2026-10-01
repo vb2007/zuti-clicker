@@ -5,9 +5,13 @@ import { useGameStore } from "@/stores/gameStore";
 import { formatNumber, formatRate, formatTime } from "@/utils/formatters";
 import StatItem from "./StatItem.vue";
 import PrestigePanel from "@/components/prestige/PrestigePanel.vue";
+import { useUiStore } from "@/stores/uiStore";
+import { useBreakpoint } from "@/composables/useBreakpoint";
 
 const { t } = useI18n();
 const game = useGameStore();
+const ui = useUiStore();
+const { isCompact } = useBreakpoint();
 
 const stats = computed(() => [
   {
@@ -45,6 +49,25 @@ const runStats = computed(() => [
   <aside class="status-col">
     <div class="col-header">
       <span class="col-title">{{ t("status.title") }}</span>
+      <!-- Only on the mobile sheet (compact viewports): the rail is a slide-up
+           sheet there, and the tab bar button was its only way out. -->
+      <button
+        v-if="isCompact"
+        type="button"
+        class="sheet-close"
+        :aria-label="t('common.close')"
+        @click="ui.mobilePanel = 'none'"
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path
+            d="M3 3l10 10M13 3L3 13"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
     </div>
 
     <div class="token-hero">
@@ -89,6 +112,8 @@ const runStats = computed(() => [
 }
 
 .col-header {
+  display: flex;
+  align-items: center;
   padding: 16px 14px 10px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
@@ -100,6 +125,25 @@ const runStats = computed(() => [
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--text-muted);
+}
+
+.sheet-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -12px -8px -12px auto; /* the 44px target without making the header taller */
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+@media (hover: hover) {
+  .sheet-close:hover {
+    color: var(--text-primary);
+  }
 }
 
 .token-hero {
