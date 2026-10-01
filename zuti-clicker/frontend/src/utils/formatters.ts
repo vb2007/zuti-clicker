@@ -41,6 +41,16 @@ export function formatPercent(value: number): string {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
+// A win chance given in parts per million (the upgrader's native unit — see
+// utils/upgrader.ts) as a percentage with up to 2 decimals, trailing zeros
+// trimmed: 450000 -> "45", 25000 -> "2.5", 179999 -> "18". Two places because
+// the chance steps in fine increments (x100 is 0.9%, x36 is exactly 2.5%) and a
+// whole-number rounding would misstate them — see formatPercent's note.
+export function formatChancePpm(ppm: number): string {
+  if (!isFinite(ppm)) return "0";
+  return (ppm / 10_000).toFixed(2).replace(/\.?0+$/, "");
+}
+
 // Floating "+X" click value. A fractional prestige multiplier (e.g. 32 PhD ->
 // x1.6400000000000001) must never reach the DOM as a raw float — round to 2
 // decimals and trim trailing zeros, same spirit as formatPercent's trim but

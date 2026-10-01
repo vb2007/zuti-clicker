@@ -81,9 +81,10 @@ export const useSaveStore = defineStore("save", () => {
   let _locked = false;
   let _inflight: Promise<SyncOutcome> | null = null;
 
-  // One PUT /save. Resolves with how it went and never rejects. A STALE refusal — this save was made before a wheel spin that
-  // happened elsewhere (another tab) — is not an error to show in the sync
-  // indicator: the server's progress is simply newer, so reload it and say so.
+  // One PUT /save. Resolves with how it went and never rejects. A STALE
+  // refusal — this save was made before a wheel spin that happened elsewhere
+  // (another tab) — is not an error to show in the sync indicator: the
+  // server's progress is simply newer, so reload it and say so.
   async function _performSync(): Promise<SyncOutcome> {
     isSyncing.value = true;
     syncError.value = null;

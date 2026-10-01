@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   toHundredths,
   quoteSpin,
+  minStake,
   isWinningRoll,
   settleSpin,
   rollPpmLocal,
@@ -49,6 +50,25 @@ describe("quoteSpin properties", () => {
 
   it("every preset multiplier is a valid multiplier", () => {
     for (const m of UPGRADER_PRESET_MULTIPLIERS) expect(toHundredths(m)).not.toBeNull();
+  });
+});
+
+describe("minStake", () => {
+  it("matches the worked examples: x1.2 needs 5, x1.5 needs 2, x2 and up need 1", () => {
+    expect(minStake(120)).toBe(5);
+    expect(minStake(150)).toBe(2);
+    expect(minStake(200)).toBe(1);
+    expect(minStake(10_000)).toBe(1);
+  });
+
+  // The exhaustive check: for EVERY allowed multiplier, the stake it reports is
+  // the smallest one quoteSpin accepts — one less is refused, it is accepted.
+  it("is exactly the smallest stake quoteSpin accepts, for every allowed multiplier", () => {
+    for (let h = 120; h <= 10_000; h++) {
+      const min = minStake(h);
+      expect(quoteSpin(min, h)).not.toBeNull();
+      if (min > 1) expect(quoteSpin(min - 1, h)).toBeNull();
+    }
   });
 });
 

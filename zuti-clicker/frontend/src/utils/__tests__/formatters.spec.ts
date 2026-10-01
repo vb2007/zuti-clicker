@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { formatNumber, formatRate, formatTime, formatPercent, formatGain } from "@/utils/formatters";
+import {
+  formatNumber,
+  formatRate,
+  formatTime,
+  formatPercent,
+  formatGain,
+  formatChancePpm
+} from "@/utils/formatters";
 
 describe("formatNumber - regression", () => {
   it("matches the existing implementation's known values", () => {
@@ -121,5 +128,34 @@ describe("formatTime - regression", () => {
     expect(formatTime(3599)).toBe("59m 59s");
     expect(formatTime(3600)).toBe("1h 0m");
     expect(formatTime(7265)).toBe("2h 1m");
+  });
+});
+
+describe("formatChancePpm", () => {
+  it("shows a whole-number chance without a decimal", () => {
+    expect(formatChancePpm(450_000)).toBe("45");
+    expect(formatChancePpm(800_000)).toBe("80");
+    expect(formatChancePpm(1_000_000)).toBe("100");
+  });
+
+  // The same trap formatPercent documents: Math.round(2.5) is 3, which would show
+  // double-ish of the real chance. Up to two decimals are kept, trailing zeros trimmed.
+  it("regression: keeps a fractional chance instead of rounding it (2.5%, 0.9%, 97.5%)", () => {
+    expect(formatChancePpm(25_000)).toBe("2.5");
+    expect(formatChancePpm(9_000)).toBe("0.9");
+    expect(formatChancePpm(975_000)).toBe("97.5");
+    expect(formatChancePpm(206_896)).toBe("20.69");
+  });
+
+  it("trims only trailing zeros, never a zero that is part of the number", () => {
+    expect(formatChancePpm(100_000)).toBe("10");
+    expect(formatChancePpm(105_000)).toBe("10.5");
+    expect(formatChancePpm(10_000)).toBe("1");
+    expect(formatChancePpm(0)).toBe("0");
+  });
+
+  it("is safe on a non-finite input", () => {
+    expect(formatChancePpm(NaN)).toBe("0");
+    expect(formatChancePpm(Infinity)).toBe("0");
   });
 });

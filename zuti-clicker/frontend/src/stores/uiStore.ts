@@ -18,6 +18,7 @@ export const useUiStore = defineStore("ui", () => {
   const leaderboardModalOpen = ref(false);
   const prestigeConfirmOpen = ref(false);
   const prestigeCeremonyOpen = ref(false);
+  const upgraderOpen = ref(false);
   const lastPrestigeGain = ref(0);
   const mobilePanel = ref<MobilePanel>("none");
   const shopTab = ref<ShopTab>("units");
@@ -30,6 +31,7 @@ export const useUiStore = defineStore("ui", () => {
     leaderboardModalOpen,
     prestigeConfirmOpen,
     prestigeCeremonyOpen,
+    upgraderOpen,
     lastPrestigeGain,
     mobilePanel,
     shopTab

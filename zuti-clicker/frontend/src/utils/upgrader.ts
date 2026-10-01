@@ -72,6 +72,16 @@ export function quoteSpin(stake: number, multiplierHundredths: number): SpinQuot
 }
 
 /**
+ * The smallest stake at which a multiplier pays out MORE than the stake:
+ * floor(s * m / 100) >= s + 1  <=>  s * (m - 100) >= 100. Below it quoteSpin
+ * rejects the bet (e.g. 1 PhD at x1.5 floors back to 1), so the UI can say so
+ * up front instead of only disabling the button.
+ */
+export function minStake(multiplierHundredths: number): number {
+  return Math.ceil(100 / (multiplierHundredths - 100));
+}
+
+/**
  * How long a losing spin's consolation frenzy lasts, in ms: strictly
  * proportional to the share of the player's PhDs that was put up, or 0 when that
  * is under the grant threshold. There is no minimum on purpose — a floor would

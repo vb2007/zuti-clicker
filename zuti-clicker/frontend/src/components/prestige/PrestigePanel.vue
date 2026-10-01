@@ -2,12 +2,14 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
+import { useUiStore } from "@/stores/uiStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { formatNumber } from "@/utils/formatters";
 import { PHD_TOKEN_SCALE, UNIT_REVEAL_FRACTION } from "@/utils/gameConstants";
 
 const { t } = useI18n();
 const game = useGameStore();
+const ui = useUiStore();
 const { requestPrestige } = usePrestige();
 
 // Same progressive-reveal idiom as the unit shop: once the player is close
@@ -73,6 +75,18 @@ const progressLabel = computed(() =>
              formatNumber (never a bare toString): a late-game gain can be
              4-5+ digits, and the button must not overflow. -->
         <span v-if="ready" class="btn-gain">×{{ formatNumber(game.phdGain) }}</span>
+      </button>
+
+      <!-- Keyed to prestigeCount (monotonic) rather than the PhD balance, so it
+           is a one-way discovery gate like the panel itself: spending or losing
+           every PhD on the wheel never hides it again. -->
+      <button
+        v-if="game.prestigeCount >= 1"
+        class="upgrader-btn"
+        type="button"
+        @click="ui.upgraderOpen = true"
+      >
+        {{ t("upgrader.openBtn") }}
       </button>
     </div>
   </section>
@@ -197,6 +211,22 @@ const progressLabel = computed(() =>
 
 .prestige-btn.ready:hover {
   filter: brightness(1.08);
+}
+
+.upgrader-btn {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  transition: all var(--transition-fast);
+}
+.upgrader-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--bg-hover);
 }
 
 .prestige-btn:disabled {

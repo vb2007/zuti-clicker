@@ -163,4 +163,18 @@ describe("BaseModal", () => {
     expect(labelledBy).toBeTruthy();
     expect(body().find(`#${labelledBy}`).text()).toBe("Test modal");
   });
+
+  it("compact tightens the padding via a class, and is off by default", async () => {
+    const Host = defineComponent({
+      components: { BaseModal },
+      props: { compact: { type: Boolean, default: false } },
+      template: `<BaseModal :open="true" title="T" :compact="compact"><p>x</p></BaseModal>`
+    });
+    wrapper = mount(Host, { attachTo: document.body });
+    await wrapper.vm.$nextTick();
+    expect(body().find(".base-modal").classes()).not.toContain("compact");
+
+    await wrapper.setProps({ compact: true });
+    expect(body().find(".base-modal").classes()).toContain("compact");
+  });
 });
