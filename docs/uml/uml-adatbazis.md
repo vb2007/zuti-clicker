@@ -32,6 +32,8 @@ erDiagram
         Float   runSeconds           "Aktuális menet ideje (másodperc)"
         Int     boostersCollected    "Összes begyűjtött booster száma (életút)"
         DateTime nextBoosterAt       "Legkorábbi időpont, amikor a következő booster igényelhető"
+        Int     upgraderNet          "Az Upgrader pörgetések (nyeremény − tét) előjeles összege"
+        Int     upgraderSeq          "Az Upgrader pörgetések száma (egyben a PUT /save elavult-írás védelme)"
         DateTime savedAt             "Utolsó mentés ideje"
         DateTime updatedAt           "Automatikus frissítés"
     }
@@ -120,6 +122,8 @@ A `totalTokensEarned`/`totalClicks`/`elapsedSeconds` mezők **életút-szintűek
 A `totalTokensEarned`, `totalClicks`, `phdCount` és `elapsedSeconds` mezőkön egy-egy index (`@@index`) is létezik — ezek szolgálják ki a `GET /leaderboard` rangsoroló (`ORDER BY ... DESC LIMIT`) lekérdezéseit.
 
 A `boostersCollected` és `nextBoosterAt` mezők a booster-rendszer (lásd `POST /boosters/claim` és a fejlesztői dokumentáció "Anti-cheat modell" → "Boosterek" szakasza) állapotát tárolják. A `nextBoosterAt` az egyetlen kapu, amely eldönti, mikor igényelhető a következő booster — ezt kizárólag a szerver módosítja, a `PUT /save` sosem írja. Egy meglévő mentésnél a mezőt bevezető migráció a jelenlegi időre állította be az alapértéket, így minden korábbi mentés azonnal jogosulttá vált az első booster igénylésére.
+
+Az `upgraderNet` és `upgraderSeq` mezők az Upgrader (PhD-kerék; lásd `POST /upgrader/spin` és a fejlesztői dokumentáció "Anti-cheat modell" → "Az Upgrader" szakasza) állapotát tárolják, és **kizárólag** a `POST /upgrader/spin` írja őket — a `PUT /save` sosem. Az `upgraderNet` az összes pörgetés `nyeremény − tét` értékeinek *előjeles* összege (egy nettó vesztesnél negatív): a mentés-hihetőségi burok ezzel tolja el a PhD-korlátját, mert a birtokolt PhD = a prestige-ekből szerzett + ez az érték. Az `upgraderSeq` a pörgetések száma, és egyben a `PUT /save` elavult-írás védelme: a kliens minden mentésnél visszaküldi, és ha nem egyezik a tárolt értékkel, a mentés egy pörgetés *előtti* állapotot hordoz, ezért `409`-et kap (nem strike), és semmi nem íródik. Mindkét oszlop additív (`NOT NULL DEFAULT 0`), így minden korábbi mentés — amelyen még nem pörgetett senki — helyes marad, és a korábbi API-verzió, amely nem olvassa őket, változatlanul működik tovább (az Upgrader előtti verzióra visszaállás hatásáról lásd a fejlesztői dokumentáció "Visszaállás egy korábbi verzióra" részét).
 
 ### `UnitSave`
 Az egyes egységtípusokhoz tartozó megvásárolt darabszámokat tárolja. Egy `GameSave`-hez több `UnitSave` sor is tartozhat (1:N kapcsolat). A `gameSaveId + unitId` páros egyedi kényszert kapott, hogy egy mentésen belül minden egységtípus legfeljebb egyszer szerepeljen. Ha a szülő `GameSave` törlésre kerül, az összes kapcsolódó `UnitSave` sor automatikusan törlődik (`ON DELETE CASCADE`).

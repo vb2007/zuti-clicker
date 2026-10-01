@@ -183,6 +183,7 @@ router/ → controllers/ → database/models/ → Prisma → MariaDB
 | `GET`, `PUT` | `/settings` | kötelező | Felhasználói beállítások betöltése (alapértékek, ha még nincs mentve) és részleges frissítése |
 | `GET` | `/leaderboard` | kötelező | Rangsor egy adott mérőszám szerint (`tokens`, `clicks`, `phd`, `playtime`), plusz a lekérdező saját helyezése |
 | `POST` | `/boosters/claim` | kötelező | Egy véletlenszerű booster igénylése, ha a lehűlési idő már letelt — lásd lent, "Anti-cheat modell" |
+| `POST` | `/upgrader/spin` | kötelező | A PhD-kerék egy pörgetése: `{ stake, multiplier }` — a szerver dobja és számolja el a kimenetelt — lásd lent, "Anti-cheat modell" → "Az Upgrader" |
 | `POST` | `/anticheat/report` | kötelező | Kattintás-időzítési telemetria digest beküldése (fix ütemezéssel + azonnal lokális detekció esetén) — lásd lent, "Anti-cheat modell" |
 | `GET` | `/anticheat/status` | kötelező | A jelenlegi korlátozási állapot (`isRestricted`, `restrictedUntil`, `strikeCount`) lekérdezése |
 
@@ -192,6 +193,8 @@ Egy formailag helyes, de az előző mentéshez és az eltelt időhöz képest fi
 
 Egy hatodik, szintén opcionális mező, az `upgrades` (megszerzett fejlesztés-azonosítók tömbje) ugyanezt a mintát követi: hiányzása esetén a szerver a már tárolt fejlesztéseket változatlanul hagyja, jelenléte esetén viszont — az `units` mezőhöz hasonlóan — teljesen felülírja őket. Minden elemének egy ismert fejlesztés-azonosítónak kell lennie (`api/src/constants/upgrades.ts`'s `KNOWN_UPGRADE_IDS`), különben a végpont `400`-at ad vissza. A `GET /save` válasza az `upgrades` mellett egy csak-olvasható `activeBoosters` tömböt is tartalmaz (a jelenleg aktív boosterek, `remainingMs` hátralévő idővel) — ezt a `PUT /save` sosem fogadja el, kizárólag a `POST /boosters/claim` hozhatja létre vagy frissítheti.
 
+A hetedik, szintén opcionális mező, az `upgraderSeq` az Upgrader pörgetés-számlálója: a `GET /save` és a `POST /upgrader/spin` adja ki, a kliens pedig minden mentésnél visszaküldi. A `PUT /save` **sosem tárolja** — kizárólag az írást védi: ha nem egyezik a fiók aktuális értékével, a mentés egy pörgetés *előtti* állapotot hordoz, ezért `409`-et kap `code: "save_stale"` kóddal (nem strike, minden `ANTICHEAT_MODE` alatt), és semmi nem íródik. Hiányzó értéke `0`-nak számít (egy sosem pörgetett fióknál ez helyes). Lásd lent, "Az Upgrader".
+
 ### Frontend state management
 
 ```
@@ -200,15 +203,17 @@ App.vue
   ├── useAntiCheat()         → 60s telemetria heartbeat + pointerdown/pointermove figyelők — lásd lent, "Anti-cheat modell"
   ├── usePrestige()          → gameStore.prestige() -> ceremónia/szinkron
   ├── useBoosters()          → booster pickup ütemezése (spawn/láthatósági ablak) + igénylés
+  ├── useUpgrader()          → egy Upgrader-pörgetés végigvitele (előzetes mentés → szerver-pörgetés → eredmény alkalmazása); UpgraderModal.vue használja
   ├── useBreakpoint()        → isCompact (matchMedia, < 760px)
   ├── authStore              → session check, login/register/logout
   ├── settingsStore          → téma, nyelv, autosave, ceremónia — localStorage + szerver szinkron
-  ├── saveStore               → load/sync/reset (autosave-időzítő a settingsStore-ból olvas)
+  ├── saveStore               → load/sync/reset (autosave-időzítő a settingsStore-ból olvas) + withSyncLock (lásd lent, "Az Upgrader")
   ├── uiStore                → modál állapotok, mobilePanel ("none" | "stats" | "units"), shopTab ("units" | "upgrades")
   ├── toastStore             → átmeneti értesítések (pl. beállítások mentése, booster begyűjtése)
   ├── leaderboardStore       → mérőszámonkénti rangsor lekérése (nincs localStorage-gyorsítótár, mindig a szerver a forrás)
   ├── antiCheatStore         → recordClick()/recordPurchase(), isRestricted/restrictedUntil/strikeCount, telemetria-puffer
-  └── gameStore              → tokenek, egységek, fejlesztések (upgrades), aktív boosterek, statisztikák, prestige állapot
+  └── gameStore              → tokenek, egységek, fejlesztések (upgrades), aktív boosterek, statisztikák, prestige állapot,
+                                upgraderSeq / spinPending / phdCountDisplay
                                 (minden progressziót módosító akció előbb antiCheatStore.isRestricted-et ellenőrzi)
 ```
 
@@ -598,8 +603,8 @@ A `lastCleanAt` mezőt egy korrekció mostantól **nem** írja felül (korábban
 minden korrekció `now()`-ra állította) — ez blokkolta a 30 napos
 strike-lecsökkenési órát bármely, valaha korrigáló fiók esetén.
 
-A `requireNotRestricted` middleware (`middlewares/index.ts`) a `PUT /save`-t
-és a `POST /boosters/claim`-et zárja le aktív korlátozás alatt — a
+A `requireNotRestricted` middleware (`middlewares/index.ts`) a `PUT /save`-t,
+a `POST /boosters/claim`-et és a `POST /upgrader/spin`-t zárja le aktív korlátozás alatt — a
 `GET /save` és a `DELETE /save` szándékosan **nem** záródik le (a korlátozott
 játékos továbbra is látja a saját állapotát, és törölheti is a mentését, ha
 úgy dönt). Csak `ANTICHEAT_MODE=enforce` alatt aktív; `monitor`/`off` alatt
@@ -670,6 +675,46 @@ megjelenési ütemezéséért (mindig kliens-oldali becslés, súlyozott ugyanú
 mint a szerver saját elosztása) és az igénylésért; részletek a fájl saját
 kommentjeiben.
 
+### Az Upgrader (PhD-kerék)
+
+A játékos tetszőleges számú PhD-t tesz fel egy kerékre, egy választott szorzóval (×1,2–×100, legfeljebb 2 tizedesjeggyel). Nyerésnél `floor(tét × szorzó)` PhD-je lesz a tét helyett; vesztésnél a tét elvész, és vigaszdíjként egy **Értékelési Roham** (`frenzy`, ×7 termelés) booster-t kap. Az első PhD-*sink* a játékban: eddig a PhD csak nőhetett.
+
+**Miért szerver-hiteles.** Az 1. réteg a `phdCount`-ot monoton növekvőnek, és a prestige-ekből felülről korlátozottnak tekintette. Egy kliensben eldöntött pörgetés mentése ezért vesztéskor monotonitás-sértés (409 + strike), nyereményként pedig a PhD-korlát lenyesné. A kimenetelt tehát — a boosterekhez hasonlóan — a szerver dönti el: `POST /upgrader/spin` (`isAuthenticated` + `requireNotRestricted`), a kliens csak `{ stake, multiplier }`-t küld.
+
+**Esély és kifizetés** (`api/src/services/upgrader.ts`, a frontend `utils/upgrader.ts` kézzel tartott tükre). Kizárólag egész számokkal számol, mert `100 × 4,35` lebegőpontosan `434,99999999999994`, a `floor()` így 435 helyett 434-et fizetne. A szorzó először egész századdá alakul (`toHundredths`: legfeljebb 2 tizedes, 1,2–100), onnan `payout = floor(tét × század / 100)` és `winPpm = min(800 000, floor(900 000 × tét / payout))` (BigInt; ppm = milliomod). A lefelé kerekítés miatt a valós megtérülés legfeljebb 90%, sosem több; a nyerési esély sosem haladja meg a 80%-ot (pl. 9 PhD ×1,2: korlát nélkül 81% lenne). Érvénytelen a fogadás, ha `payout ≤ tét` (pl. 1 PhD ×1,5 → 1 — a „nyeremény" nem hozna semmit); a legkisebb érvényes tét `ceil(100 / (század − 100))` (a frontend `minStake`).
+
+**Szerver-oldali elszámolás** (`database/models/upgrader.ts`), egyetlen tranzakcióban:
+
+1. `SELECT … FOR UPDATE` — **zároló** olvasás, nem sima `findUnique`. A tranzakció sima olvasása a saját kezdeti pillanatfelvételét látja, amely nem látja egy párhuzamos tranzakció commit-ját: a versenyben alulmaradó pörgetés rossz hibát kapott (méréskor 60 párhuzamos vesztesből 48 „túlcsordulást"), és elavult egyenleget jelentett. A zárolt olvasásnál a párhuzamos pörgetések sorba állnak, és mind az előző által hagyott egyenleget látja.
+2. Fedezet: `phdCount < tét` → `409` `INSUFFICIENT_PHD`, a válasz a **valós** egyenleget is tartalmazza.
+3. Túlcsordulás-előszűrés a dobás **előtt**, sima aritmetikával: ha egy nyeremény túlvinné a `phdCount` vagy az `upgraderNet` `Int` oszlopát → `409` `LIMIT_REACHED`. Így a válasz sosem függ a szerencsétől, és tartományon kívüli érték sosem jut a Prismáig.
+4. `crypto.randomInt(0, 1 000 000)`; nyer, ha `roll < winPpm`. A válasz a `rollPpm`-et és a `winPpm`-et is tartalmazza, így a kerék pontosan a szerver dobására áll rá — nincs megrendezett „majdnem".
+5. Feltételes `updateMany` (`WHERE phdCount >= tét`): a `phdCount`, az `upgraderNet` és az `upgraderSeq` növelése. A sor már zárolt, ez egy második, független garancia.
+6. Vesztésnél vigaszdíj (lent).
+
+Az újrapróbálkozás (`withWriteConflictRetry`) új dobást jelent, ami biztonságos: a visszagörgetett tranzakció semmit nem írt, a kliens az első dobást sosem látta.
+
+**Vigaszdíj.** A hossza **szigorúan arányos** a feltett PhD-k hányadával (`tét / phdElőtte × 60 s`), **minimum nélkül**; 1 másodperc alatt nem jár. Egy review találta meg, miért kell: a korábbi 10 s-os minimummal 1 PhD ismételt feltétele (a booster-lehűlést megkerülve) kb. 0,6 PhD/perc áron tartotta volna a játékost szinte folyamatosan ×7 termelésben. Szigorúan arányosan egy másodperc roham várható ára csak a PhD-készlet nagyságától függ, ezért nincs mit farmolni. Egy futó rohamot meghosszabbít, de a hátralévő idő legfeljebb 120 s, és sosem rövidít; a ×7 szorzó a burok `MAX_PRODUCTION_BOOSTER_MULTIPLIER` határán belül marad.
+
+**Két új `GameSave` oszlop** (additív, `NOT NULL DEFAULT 0`; a `20261001071241_add_upgrader` migráció): `upgraderNet` (a `payout − tét` előjeles összege az összes pörgetésen), `upgraderSeq` (pörgetés-számláló). Kizárólag a `POST /upgrader/spin` írja őket.
+
+**Hogyan illeszkedik a `PUT /save`-hez:**
+
+- **Elavult-írás védelem.** Egy pörgetés közvetlenül az adatbázisba írja a PhD-változást; egy már úton lévő vagy másik lapról érkező mentés ezt felülírhatná (egy vesztés után „visszahozhatná" az elvesztett PhD-ket). Ezért a `PUT /save` az `upgraderSeq`-et visszaküldi (lásd fent), eltérésnél `409 save_stale`. Az ellenőrzés a vezérlőben a burok **előtt** fut: a burok PhD-korlátja ugyanis már tükrözi a pörgetést, így egy elavult, magasabb egyenleg hamis strike-ot okozna egy becsületes játékosnak. Az `upsertSave` `UPDATE`-je ugyanerre a számlálóra feltételes (a vezérlő-beli ellenőrzés és az írás közti ablak bezárására; `ANTICHEAT_MODE=off` alatt ez az egyetlen védelem). Következmény: ha a fiókon már volt pörgetés, egy a funkció előtti kliens-bundle minden mentése `409`-et kap, amíg a lap újra nem töltődik.
+- **A burok PhD-korlátja** `√(prestige × összes / SCALE) + PHD_BOUND_SLACK + upgraderNet`, alulról 0-ra korlátozva: a birtokolt PhD = prestige-ből szerzett (≤ a Cauchy-korlát) + a kerék nettója. Egy nettó vesztes korlátja szűkül, így a kerék által elvett PhD-ket mentéssel nem lehet visszaigényelni.
+
+**Kliens-szerződés** (ettől függ, hogy a burok többi ellenőrzése — kiadás, bevétel — igaz maradjon): a pörgetés közvetlenül az adatbázisba ír, ezért ezek az ellenőrzések csak akkor korrektek, ha az előző mentés a pörgetés előtti állapotot már tartalmazza. Ezt a kliens garantálja:
+
+1. `saveStore.withSyncLock` először **elmenti** a jelenlegi állapotot (ennek sikerülnie kell, különben a pörgetés el sem indul), majd a pörgetés alatt minden más mentést (autosave, kézi, fokozatszerzés utáni) visszatart, és az eredmény alkalmazása után egyszer, az akkori állapottal engedi el.
+2. `gameStore.spinPending` az előzetes mentés előtt bekapcsol, és az eredmény alkalmazásáig tiltja a vásárlást és a fokozatszerzést — különben a mentés után, a régi PhD-kedvezménnyel vett egység a szervernek úgy tűnne, mintha a legolcsóbb árnál is kevesebbért vették volna.
+3. Az eredmény (PhD-egyenleg + számláló + vigaszdíj) **azonnal** a `gameStore`-ba kerül, amint a szerver válaszol, így a kliens gazdasága ugyanattól a pillanattól egyezik a szerverével. A PhD-kijelzők (`phdCountDisplay`) viszont a kerék megállásáig a régi értéken maradnak (`phdDisplayHold`), hogy a háttérben látszó szám ne árulja el az eredményt.
+4. A szerver válaszából a `phdCount`-ot átvesszük, nem számoljuk újra (`applySpinResult`). Egy mentés, amely a pörgetés előtt egy másik lapon elavulttá vált, `save_stale`-t kap, a kliens újratölt és szól a játékosnak.
+
+**Elfogadott, dokumentált korlátok**: (a) a flush és a szerver-válasz közti kérés-késleltetésnyi ablakban a kliens a régi PhD-szorzóval termel — ezt a burok `×1,5` margója és a `×7` booster-tartalék bőven elnyeli, kivéve extrém, 50 000 feletti PhD-arányokat; (b) a vendég helyben, ugyanazzal a képlettel pörget (`settleSpin`), mert nincs szerver-állapot, amit védeni kellene; (c) ha az éles image-et egy régebbi verzióra állítják vissza, miután játékosok már pörgettek, a régi burok nem ismeri az `upgraderNet`-et, és a nyertesek/vesztesek mentéseit hamisan korrigálhatja vagy elutasíthatja (strike!) — visszaállás után futtasd a `reset:anticheat-state` scriptet az érintett fiókokra (lásd lent, "Visszaállás egy korábbi verzióra").
+
+**Tesztek.** `api/src/tests/upgrader-parity.test.ts` / `frontend/src/utils/__tests__/upgrader-parity.spec.ts` a közös, kézzel számolt `upgrader-vectors.json` táblát ellenőrzi (byte-azonos másolat mindkét oldalon); `upgrader.test.ts` és `upgraderSave.test.ts` a végpontot és a mentés-integrációt, utóbbi saját `enforce` és `off` szerverpéldánnyal. A párhuzamossági teszt szándékosan ×1,2-vel (75%) pörget: egy vesztő pörgetés egy booster-sort is ír, aminek holtpont-majd-újrapróbálás viselkedése elfedné egy hiányzó egyenleg-védelmet, a nyerő ág viszont nem.
+
+
 ---
 
 ## Ranglisták (leaderboard)
@@ -682,7 +727,7 @@ mező a `src/constants/leaderboard.ts`-ben van definiálva:
 |---|---|
 | `tokens` (alapértelmezett) | `totalTokensEarned` |
 | `clicks` | `totalClicks` |
-| `phd` | `phdCount` |
+| `phd` | `phdCount` (az Upgrader közvetlenül változtatja — tudatos döntés: a ranglista a *jelenlegi* PhD-készletet mutatja) |
 | `playtime` | `elapsedSeconds` |
 
 Query paraméterek: `metric` (fenti értékek egyike) és `limit` (egész szám,
@@ -759,6 +804,8 @@ economy-vectors.json`, byte-azonos másolat a frontend oldalán) és a hozzá
 tartozó két parity-teszt (`economy-parity.test.ts` / `.spec.ts`) ellenőrzi —
 egy balance-módosítás után mindkét parity-tesztet le kell futtatni, és ha a
 vektorok konkrét várt értékei is változtak, újra kell generálni őket.
+
+Az Upgrader balance-állandói (`UPGRADER_RTP`, `UPGRADER_WIN_CHANCE_CAP`, a szorzó-tartomány, a vigaszdíj `UPGRADER_CONSOLATION_*` értékei) két helyen élnek, kézzel tartva: `api/src/constants/upgrader.ts` (a szerver — ez a hiteles) és `frontend/src/utils/gameConstants.ts` (a kliens előnézete és a vendég-mód), mindkettőn „keep in sync" kommenttel. A képletek tükrei (`api/src/services/upgrader.ts` ↔ `frontend/src/utils/upgrader.ts`) közös, **kézzel számolt** arany-vektor táblát használnak (`upgrader-vectors.json`, byte-azonos másolat mindkét oldalon, `upgrader-parity.test.ts` / `.spec.ts`) — a vektorok szándékosan nem a megvalósításból generáltak, hogy egy hibát ne másoljanak le. Módosítás után mindkét parity-tesztet és az `upgraderMath.test.ts`-t futtasd, és ha egy várt érték megváltozott, kézzel számold újra, majd másold át a fájlt a másik oldalra is.
 
 ---
 
@@ -843,6 +890,8 @@ cd /mnt/raid1/zuti-clicker
 IMAGE_TAG=sha-<korábbi_rövid_sha> docker compose -f docker-compose.prod.yml up -d
 ```
 
+**Figyelem — az Upgrader előtti verzióra visszaállva:** ha a játékosok közben már pörgettek, a régi mentés-hihetőségi burok nem ismeri az `upgraderNet` oszlopot (a séma additív, ezért a régi image fut, de figyelmen kívül hagyja). A nyertesek PhD-készlete a régi burok szerint a prestige-ekből elérhetetlen (korrigálja vagy elutasítja), a vesztesek mentése pedig monotonitás-sértés — mindkettő **strike**-ot okozhat becsületes játékosoknak. Visszaállás után ezért a `pnpm reset:anticheat-state` scripttel (alapértelmezésben próbafuttatás, `--apply`-jal éles) nullázd az anti-cheat állapotot — a script **minden** fiókra hat, nem csak az érintettekre —, vagy inkább előre javíts, ne visszaállj.
+
 ---
 
 ## Fontos tudnivalók fejlesztőknek
@@ -852,6 +901,6 @@ IMAGE_TAG=sha-<korábbi_rövid_sha> docker compose -f docker-compose.prod.yml up
 - A Prisma client a `generated/prisma/` mappában van, nem a szokásos `node_modules/@prisma/client` helyen. A `pnpm prisma generate` futtatása után commitolni kell a generált fájlokat is.
 - A `CORS_ORIGIN_URLS` environment változó nincs beállítva a `.env`-ben; fejlesztési módban a Vite proxy kezeli a cross-origin kéréseket, így CORS konfiguráció nem szükséges.
 - A session tokenek az `Authentication.sessionToken` mezőben tárolódnak. Kijelentkezéskor ez üres stringre áll vissza, nem törlődik a rekord.
-- Új modálablakot a `frontend/src/components/modals/BaseModal.vue` közös héjára építve érdemes létrehozni (Esc, fókuszcsapda, fókusz-visszaállítás, `aria-labelledby`, testreszabható `dismiss-on-backdrop`/`max-width`/`z-index`) — ne másold újra a Teleport/backdrop mintát, amit ez váltott fel.
+- Új modálablakot a `frontend/src/components/modals/BaseModal.vue` közös héjára építve érdemes létrehozni (Esc, fókuszcsapda, fókusz-visszaállítás, `aria-labelledby`, testreszabható `dismiss-on-backdrop`/`max-width`/`z-index`, telefonon `compact` szűkebb belső margóhoz) — ne másold újra a Teleport/backdrop mintát, amit ez váltott fel.
 - A `@vue/test-utils`'s `trigger()` metódusa mindig `isTrusted: false` eseményt küld (ez böngésző-specifikáció, nem tesztkörnyezeti hiba — pont ezt a jelet ellenőrzi az anti-cheat rendszer 2. rétege). Egy valódi kattintást szimuláló teszthez használd a `frontend/src/__tests__/testEvents.ts`'s `dispatchTrusted()` segédfüggvényét; egy `isTrusted: false` esemény viselkedését ellenőrző teszthez a sima `trigger()` pont megfelelő (alapból is bizalmatlan eseményt küld).
 ```

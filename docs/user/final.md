@@ -236,6 +236,29 @@ Sikeres fokozatszerzés után egy teljes képernyős „ünneplés" jelenik meg:
 
 ---
 
+## Upgrader (PhD-kerék)
+
+Az első fokozatszerzésed után a „Fokozat" panelen, a „Defend Thesis" gomb alatt megjelenik egy **„Upgrader"** gomb (és onnantól mindig látható marad, akkor is, ha elfogytak a PhD-id). Rákattintva egy felugró ablak nyílik a játék fölött: itt feltehetsz egy általad választott mennyiségű PhD-t egy kerékre, és **esélyed van többet nyerni — vagy elveszíteni a feltett PhD-ket.**
+
+**A kerék az igazi esélyt mutatja.** A kerék borostyánsárga íve pontosan akkora, amekkora az esélyed a nyerésre; közepén a százalékos érték áll. A kerék alatt két mező mutatja, mi történik, ha nyersz, illetve ha veszítesz (és mekkora eséllyel). A pörgetés eredményét a szerver sorsolja ki, a kerék pedig pontosan arra a helyre áll meg — nincs „megrendezett" majdnem-nyerés.
+
+**Mit állíthatsz be:**
+
+- **Tét (Stake)**: hány PhD-t teszel fel (bármennyit, amid van). A 10% / 25% / 50% / Max gombokkal gyorsan beállíthatod a készleted egy részét.
+- **Szorzó (Multiplier)**: ×1,5 / ×2 / ×3 / ×5 / ×10 gombok, vagy a csúszka ×1,2 és ×100 között (két tizedesig). Minél nagyobb a szorzó, annál kisebb az esélyed. Példák (100 PhD tétnél): ×1,5 → 60%, ×2 → 45%, ×3 → 30%, ×5 → 18%, ×10 → 9%, ×100 → 0,9%.
+
+**Nyerés**: a feltett PhD-id helyett `tét × szorzó` PhD-t kapsz (lefelé kerekítve). **Vesztés**: a feltett PhD-id elvesznek, de vigaszdíjként egy **Értékelési Roham** (×7 termelés) boostert kapsz, amelynek hossza arányos azzal, a készleted hányadát tetted fel (a teljes készleted feltétele 60 másodperc; ha már fut egy roham, az meghosszabbodik, legfeljebb 120 másodpercig). Egészen kis tétért (a készleted töredékéért) nem jár vigaszdíj — a kerék ilyenkor kiírja.
+
+**Nem lehet túl jól járni vele**: sok pörgetés alatt a tét átlagosan kb. **90%-át** nyered vissza, és a nyerési esély **sosem haladja meg a 80%-ot**, akármilyen kicsi a szorzó. A kerék tehát kockázat, nem PhD-farm. Egy fogadás csak akkor érvényes, ha a nyeremény több a tétnél (pl. 1 PhD ×1,5-tel csak 1-et érne, ezért nem lehet) — ilyenkor az ablak kiírja a legkisebb érvényes tétet.
+
+**Pörgetés közben** a vezérlők zárolva vannak, és a vásárlás/fokozatszerzés is szünetel. A bal oldali PhD-számláló a kerék megállásáig a régi értéket mutatja, hogy ne áruljon el semmit előre. Az eredmény (nyertél/vesztettél, az új PhD-készleted) a kerék megállása után jelenik meg, a „Spin again" gombbal pedig újra pörgethetsz.
+
+**Bejelentkezve** a pörgetés előtt a játék automatikusan elmenti az állapotodat, és az eredmény a szerveren is rögzül. Ha ugyanazt a fiókot egy másik lapon is használod, és ott pörgettél, ezen a lapon a következő mentés „a haladásod máshol megváltozott" értesítést kap, és a legfrissebb mentést tölti be. **Vendégként** a pörgetés csak a játékban él — a nyert vagy elvesztett PhD-k a többi haladásoddal együtt elvesznek, ha bezárod a lapot (az ablak ezt ki is írja).
+
+A PhD-ranglista a *jelenlegi* PhD-készletedet mutatja, ezért az Upgrader közvetlenül befolyásolja a helyezésedet.
+
+---
+
 ## Mentés és szinkronizálás
 
 Ha be vagy jelentkezve, a fejlécben megjelennek a mentési vezérlők:
