@@ -623,7 +623,9 @@ onBeforeUnmount(() => {
 }
 
 .hub-pct {
-  font-size: 32px;
+  /* Scales with the wheel (32px at its 224px maximum): the hole inside the inner
+     ring is only ~65% of the wheel, and the short-landscape wheel is ~104-150px. */
+  font-size: clamp(22px, calc(var(--wheel) * 0.143), 32px);
   font-weight: 800;
   letter-spacing: -1px;
   line-height: 1;
@@ -632,10 +634,13 @@ onBeforeUnmount(() => {
 }
 
 .hub-sub {
-  font-size: 11px;
+  /* Same: "A NYERÉSRE" (Hungarian) printed over the ring on a small wheel at a fixed 11px. */
+  font-size: clamp(8px, calc(var(--wheel) * 0.05), 11px);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: clamp(0.3px, calc(var(--wheel) * 0.0045), 1px);
+  max-width: 100%;
+  text-align: center;
   color: var(--text-secondary);
 }
 

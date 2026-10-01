@@ -271,7 +271,7 @@ export default {
     metricClicks: "Kattintások",
     metricPhd: "PhD-k",
     metricPlaytime: "Játékidő",
-    rank: "Helyezés",
+    rank: "Hely.",
     player: "Játékos",
     value: "Érték",
     yourRank: "A te helyezésed",

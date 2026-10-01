@@ -170,7 +170,9 @@ function close() {
 
 .board-header {
   display: grid;
-  grid-template-columns: 40px 1fr auto;
+  /* 48px: wide enough for the Hungarian column title ("Hely.") at this size; the header
+     and every row share it so the columns line up. */
+  grid-template-columns: 48px 1fr auto;
   gap: 10px;
   padding: 4px 10px;
   font-size: 11px;
@@ -182,7 +184,7 @@ function close() {
 
 .board-row {
   display: grid;
-  grid-template-columns: 40px 1fr auto;
+  grid-template-columns: 48px 1fr auto;
   gap: 10px;
   align-items: center;
   padding: 8px 10px;
@@ -210,6 +212,10 @@ function close() {
 .col-rank {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  /* A too-long title is clipped rather than printed over the next column. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .col-player {
   overflow: hidden;

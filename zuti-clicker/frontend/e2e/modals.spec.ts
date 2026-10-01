@@ -350,3 +350,54 @@ test.describe("upgrader stake input is never too narrow to read", () => {
     expect(clipped).toBe(false);
   });
 });
+
+// Regression (final audit): in Hungarian the leaderboard's "HELYEZÉS" column title was printed
+// over "JÁTÉKOS" at 320px, and the Upgrader's hub caption ("A NYERÉSRE") spilled past the
+// wheel's inner ring once the wheel shrank for phone landscape.
+for (const language of ["en", "hu"] as const) {
+  test.describe(`text that must stay in its box (${language})`, () => {
+    test.use({ loggedIn: true, language });
+
+    test("leaderboard column titles do not collide", async ({ app, page }) => {
+      await app.open();
+      await app.seed((s) => void (s.ui.leaderboardModalOpen = true));
+      await expect(page.locator(".board-header")).toBeVisible();
+      await app.settle();
+      const g = await page.evaluate(() => {
+        const cells = [...document.querySelectorAll<HTMLElement>(".board-header > span")];
+        const rects = cells.map((c) => c.getBoundingClientRect());
+        return {
+          clipped: cells.filter((c) => c.scrollWidth > c.clientWidth + 1).map((c) => c.textContent),
+          overlaps: rects.slice(1).map((r, i) => r.left < rects[i]!.right - 0.5)
+        };
+      });
+      expect(g.clipped).toEqual([]);
+      expect(g.overlaps.some(Boolean)).toBe(false);
+    });
+
+    test("the Upgrader hub caption stays inside the wheel's inner ring", async ({ app, page }) => {
+      await app.open();
+      await app.seed((s) => {
+        s.game.phdCount = 50;
+        s.ui.upgraderOpen = true;
+      });
+      await expect(page.locator(".hub")).toBeVisible();
+      await app.settle();
+      const g = await page.evaluate(() => {
+        const wheel = document.querySelector(".wheel-stage")!.getBoundingClientRect();
+        const pct = document.querySelector(".hub-pct")!.getBoundingClientRect();
+        const sub = document.querySelector(".hub-sub")!.getBoundingClientRect();
+        const text = document.querySelector<HTMLElement>(".hub-sub")!;
+        return {
+          // The inner rim is 65% of the wheel; text must clear it with some breathing room.
+          hole: wheel.width * 0.6,
+          pct: pct.width,
+          // the text's own (unwrapped) width
+          sub: Math.max(sub.width, text.scrollWidth)
+        };
+      });
+      expect(g.sub).toBeLessThanOrEqual(g.hole);
+      expect(g.pct).toBeLessThanOrEqual(g.hole);
+    });
+  });
+}
