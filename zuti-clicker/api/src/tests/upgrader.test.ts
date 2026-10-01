@@ -270,3 +270,91 @@ describe("Upgrader endpoint - concurrent spins (race condition)", () => {
     }
   );
 });
+
+describe("Upgrader endpoint - save integration (spin counter / stale-write guard)", () => {
+  const saveBody = (over: Record<string, unknown> = {}) => ({
+    ...TestData.VALID_SAVE,
+    phdCount: 100,
+    prestigeCount: 5,
+    ...over
+  });
+
+  it("GET /save exposes upgraderSeq: 0 for a fresh save, then the spin count", async () => {
+    const cookie = await userWithPhds(100);
+    let save = await api.get("/save").set("Cookie", cookie);
+    expect(save.body.save.upgraderSeq).toBe(0);
+
+    await spin(cookie, { stake: 10, multiplier: 2 });
+    save = await api.get("/save").set("Cookie", cookie);
+    expect(save.body.save.upgraderSeq).toBe(1);
+  });
+
+  it("accepts a save that echoes the current counter, and leaves the counter alone", async () => {
+    const cookie = await userWithPhds(100);
+    const res = await spin(cookie, { stake: 10, multiplier: 2 });
+
+    const put = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(saveBody({ phdCount: res.body.phdCount, upgraderSeq: res.body.upgraderSeq }));
+    expect(put.status).toBe(200);
+
+    const save = await api.get("/save").set("Cookie", cookie);
+    expect(save.body.save.phdCount).toBe(res.body.phdCount);
+    // PUT /save never writes the counter — only a spin does.
+    expect(save.body.save.upgraderSeq).toBe(res.body.upgraderSeq);
+  });
+
+  // The anti-cheat/correctness property: a save that was made before a later
+  // wheel spin must not be able to overwrite that spin's result — in
+  // particular it must not hand back PhDs a loss took away. Whatever the
+  // roll was, the balance is no longer 100, so the stale save's 100 would be
+  // visible if it got through.
+  it("regression: a save made before a spin is refused with 409 STALE and changes nothing", async () => {
+    const cookie = await userWithPhds(100);
+    const res = await spin(cookie, { stake: 10, multiplier: 2 });
+    expect(res.body.phdCount).not.toBe(100);
+
+    const stale = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(saveBody({ tokens: 999, upgraderSeq: 0 }));
+    expect(stale.status).toBe(409);
+    expect(stale.body.error).toBe(Responses.SAVE.STALE.body.error);
+
+    const save = await api.get("/save").set("Cookie", cookie);
+    expect(save.body.save.phdCount).toBe(res.body.phdCount);
+    expect(save.body.save.tokens).toBe(TestData.VALID_SAVE.tokens);
+    expect(save.body.save.upgraderSeq).toBe(1);
+  });
+
+  it("treats an absent upgraderSeq as 0 — so a client that predates the upgrader is refused after a spin", async () => {
+    const cookie = await userWithPhds(100);
+    await spin(cookie, { stake: 10, multiplier: 2 });
+    const put = await api.put("/save").set("Cookie", cookie).send(saveBody());
+    expect(put.status).toBe(409);
+    expect(put.body.error).toBe(Responses.SAVE.STALE.body.error);
+  });
+
+  it("an absent upgraderSeq is fine for an account that has never spun", async () => {
+    const cookie = await userWithPhds(100);
+    const put = await api.put("/save").set("Cookie", cookie).send(saveBody());
+    expect(put.status).toBe(200);
+  });
+
+  it.each([
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["a numeric string", "1"],
+    ["null", null],
+    ["above the INT32 limit", 2_147_483_648]
+  ])("rejects an upgraderSeq that is %s with 400", async (_label, upgraderSeq) => {
+    const cookie = await userWithPhds(100);
+    const put = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send(saveBody({ upgraderSeq }));
+    expect(put.status).toBe(400);
+    expect(put.body.error).toBe(Responses.SAVE.INVALID_UPGRADER_SEQ.body.error);
+  });
+});

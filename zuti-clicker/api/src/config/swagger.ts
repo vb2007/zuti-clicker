@@ -170,6 +170,13 @@ export const buildSwaggerSpec = (): object => {
                   "Owned upgrade ids (omit to keep the stored value; each entry must be a known id)",
                 items: { type: "string" },
                 example: ["chalk", "firmHandshake"]
+              },
+              upgraderSeq: {
+                type: "integer",
+                minimum: 0,
+                description:
+                  "The spin counter last received from GET /save or POST /upgrader/spin. Never stored — a value behind the account's current one means this save predates a wheel spin and is refused with 409 (omit = 0, correct for an account that has never spun).",
+                example: 0
               }
             }
           },
@@ -194,6 +201,12 @@ export const buildSwaggerSpec = (): object => {
                 type: "array",
                 items: { type: "string" },
                 example: ["chalk", "firmHandshake"]
+              },
+              upgraderSeq: {
+                type: "integer",
+                minimum: 0,
+                description: "Wheel-spin counter; echo it back on PUT /save",
+                example: 0
               },
               activeBoosters: {
                 type: "array",

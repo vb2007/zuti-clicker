@@ -52,6 +52,9 @@ export interface PrevSaveSnapshot {
   elapsedSeconds: number;
   phdCount: number;
   prestigeCount: number;
+  // GameSave.upgraderNet: the signed sum of (payout - stake) across every
+  // upgrader spin. Written only by POST /upgrader/spin, never by the client.
+  upgraderNet: number;
   savedAt: Date;
   units: UnitSnapshot[];
   upgrades: string[];
@@ -410,10 +413,19 @@ export function evaluateSaveEnvelope(
   //     the already-clamped prestigeCount, the same "feed the more
   //     restrictive, already-adjusted value forward" pattern the click/
   //     earned bounds above use. ------------------------------------------
-  const phdBound =
+  //     The upgrader moves PhDs without a prestige, so the bound is shifted by
+  //     the server-recorded signed net of every spin: PhDs held = PhDs earned
+  //     through prestige (<= the Cauchy bound) + upgraderNet. A net loser's
+  //     bound shrinks accordingly, and it is floored at 0 so a forged huge
+  //     negative net can never produce a negative clamp target. ------------
+  const phdBound = Math.max(
+    0,
     Math.sqrt(
       (Math.max(0, effectivePrestigeCount) * Math.max(0, effectiveTotalTokensEarned)) / PHD_TOKEN_SCALE
-    ) + PHD_BOUND_SLACK;
+    ) +
+      PHD_BOUND_SLACK +
+      (prev?.upgraderNet ?? 0)
+  );
   const phdCheck = checkBound(incoming.phdCount, phdBound);
   detail["phd"] = { phdCount: incoming.phdCount, bound: phdBound, outcome: phdCheck.outcome };
   if (phdCheck.outcome === "reject") {

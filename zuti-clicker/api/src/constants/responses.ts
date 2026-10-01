@@ -65,6 +65,20 @@ export class Responses {
       status: 400,
       body: { error: "upgrades must be an array of known upgrade ids." }
     },
+    INVALID_UPGRADER_SEQ: {
+      status: 400,
+      body: { error: "upgraderSeq must be a non-negative integer when provided." }
+    },
+    // 409, not a strike: the save is well-formed and honest, it was simply
+    // made before a later wheel spin (another tab, or a save already in
+    // flight) and so doesn't know the current PhD balance. Nothing is written.
+    STALE: {
+      status: 409,
+      body: {
+        error:
+          "Your progress changed since this save was made (a wheel spin elsewhere). Reload to continue from your current progress."
+      }
+    },
     NOT_FOUND: { status: 404, body: { save: null } },
     SAVE_SUCCESS: { status: 200, body: { message: "Save updated successfully." } },
     RESET_SUCCESS: { status: 200, body: { message: "Save reset successfully." } },

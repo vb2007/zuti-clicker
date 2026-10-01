@@ -150,6 +150,7 @@ describe("evaluateSaveEnvelope — monotonicity", () => {
     elapsedSeconds: 500,
     phdCount: 2,
     prestigeCount: 1,
+    upgraderNet: 0,
     savedAt: new Date(NOW.getTime() - 5000),
     units: [{ unitId: "alpha", owned: 5 }],
     upgrades: ["chalk"]
@@ -221,6 +222,7 @@ describe("evaluateSaveEnvelope — earnings bound across a prestige", () => {
       elapsedSeconds: 50_000,
       phdCount: 3,
       prestigeCount: 12,
+      upgraderNet: 0,
       savedAt: new Date(NOW.getTime() - 11_709), // dtSecs === 16.709, matching the incident
       units: [{ unitId: "eta", owned: 50 }], // the pre-prestige economy — wiped in `incoming`
       upgrades: []
@@ -251,6 +253,7 @@ describe("evaluateSaveEnvelope — earnings bound across a prestige", () => {
       elapsedSeconds: 1,
       phdCount: 0,
       prestigeCount: 0,
+      upgraderNet: 0,
       savedAt: new Date(NOW.getTime() - 1000),
       units: [{ unitId: "alpha", owned: 1 }], // trivial pre-prestige economy
       upgrades: []
@@ -294,6 +297,7 @@ describe("evaluateSaveEnvelope — clamp materiality", () => {
       elapsedSeconds: 1000,
       phdCount: 0,
       prestigeCount: 0,
+      upgraderNet: 0,
       savedAt: new Date(NOW.getTime() - 1000),
       units: [{ unitId: "theta", owned: 1 }],
       upgrades: []
@@ -337,6 +341,7 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       elapsedSeconds: 1,
       phdCount: 0,
       prestigeCount: 0,
+      upgraderNet: 0,
       savedAt: new Date(NOW.getTime() - 1000),
       units: [],
       upgrades: []
@@ -374,6 +379,7 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       elapsedSeconds: 1,
       phdCount: 0,
       prestigeCount: 0,
+      upgraderNet: 0,
       savedAt: new Date(NOW.getTime() - 1000),
       units: [],
       upgrades: []
@@ -407,6 +413,7 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       elapsedSeconds: 0,
       phdCount: 0,
       prestigeCount: 0,
+      upgraderNet: 0,
       savedAt: new Date(NOW.getTime() - 1000),
       units: [],
       upgrades: []
@@ -472,6 +479,7 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       elapsedSeconds: 100,
       phdCount: 1,
       prestigeCount: 0,
+      upgraderNet: 0,
       savedAt: new Date(NOW.getTime() - 1000),
       units: [{ unitId: "alpha", owned: 500 }],
       upgrades: []
@@ -535,6 +543,7 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       elapsedSeconds: 1000,
       phdCount: 0,
       prestigeCount: 0,
+      upgraderNet: 0,
       savedAt: new Date(NOW.getTime() - 30_037), // dtSecs === 35.037, matching the incident
       units: [{ unitId: "theta", owned: 1 }], // large baseProduction so the earn bound clears easily
       upgrades: []
@@ -641,5 +650,92 @@ describe("evaluateSaveEnvelope — prestige/PhD plausibility", () => {
       expect(verdict.clamped.phdCount).toBe(21);
       expect(verdict.reasons).toContain("phd_exceeds_max_possible");
     }
+  });
+});
+
+describe("evaluateSaveEnvelope — upgrader net shifts the PhD bound", () => {
+  // n = 20 prestiges over 20 * SCALE lifetime tokens: the prestige-only PhD
+  // bound is sqrt(20 * 20) + PHD_BOUND_SLACK = 21 (see the clamp regression
+  // above). The upgrader moves PhDs without a prestige, so the server-recorded
+  // GameSave.upgraderNet (signed sum of payout - stake) shifts that bound.
+  const n = 20;
+  const totalTokensEarned = n * PHD_TOKEN_SCALE;
+  const PRESTIGE_ONLY_BOUND = 21;
+
+  function prevWith(phdCount: number, upgraderNet: number): PrevSaveSnapshot {
+    return {
+      tokens: 0,
+      totalTokensEarned,
+      totalClicks: 30_000,
+      elapsedSeconds: 500,
+      phdCount,
+      prestigeCount: n,
+      upgraderNet,
+      savedAt: new Date(NOW.getTime() - 1000),
+      units: [],
+      upgrades: []
+    };
+  }
+
+  function resync(prev: PrevSaveSnapshot, phdCount: number): IncomingSave {
+    return freshSave({
+      totalTokensEarned,
+      totalClicks: prev.totalClicks,
+      elapsedSeconds: prev.elapsedSeconds,
+      prestigeCount: n,
+      phdCount
+    });
+  }
+
+  it("accepts PhDs won on the wheel — a resync of the stored balance is not 'forged PhDs'", () => {
+    // 71 PhDs = 21 earned through prestige + 50 won. Far above the
+    // prestige-only bound (and its 2x reject line, 42).
+    const prev = prevWith(PRESTIGE_ONLY_BOUND + 50, 50);
+    expect(evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, resync(prev, 71)).outcome).toBe(
+      "accept"
+    );
+  });
+
+  it("regression: the same balance WITHOUT a recorded net is still rejected (the net is what allows it)", () => {
+    const prev = prevWith(PRESTIGE_ONLY_BOUND + 50, 0);
+    const verdict = evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, resync(prev, 71));
+    expect(verdict.outcome).toBe("reject");
+    if (verdict.outcome === "reject") expect(verdict.reason).toBe("phd_exceeds_max_possible");
+  });
+
+  it("clamps to the net-shifted bound, not the prestige-only one", () => {
+    const prev = prevWith(71, 50); // bound = 21 + 50 = 71
+    const verdict = evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, resync(prev, 100));
+    expect(verdict.outcome).toBe("clamp");
+    if (verdict.outcome === "clamp") expect(verdict.clamped.phdCount).toBe(71);
+  });
+
+  it("a net loser's bound shrinks, so PhDs the wheel took cannot be reclaimed through a save", () => {
+    // 21 earned - 16 lost = 5 held. The loser's old balance (21) no longer fits.
+    const prev = prevWith(5, -16);
+    expect(evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, resync(prev, 5)).outcome).toBe(
+      "accept"
+    );
+    const reclaim = evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, resync(prev, 20));
+    expect(reclaim.outcome).toBe("reject");
+  });
+
+  it("floors the bound at 0: a hugely negative net can never produce a negative clamp target", () => {
+    const prev = prevWith(0, -1_000_000_000);
+    expect(evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, resync(prev, 0)).outcome).toBe(
+      "accept"
+    );
+    const verdict = evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, resync(prev, 1));
+    expect(verdict.outcome).toBe("reject");
+  });
+
+  it("a first-ever save (no previous row) has no net: the prestige-only bound applies", () => {
+    const verdict = evaluateSaveEnvelope(
+      null,
+      USER_CREATED_AT,
+      NOW,
+      freshSave({ totalTokensEarned, totalClicks: 30_000, prestigeCount: n, phdCount: 71 })
+    );
+    expect(verdict.outcome).toBe("reject");
   });
 });
