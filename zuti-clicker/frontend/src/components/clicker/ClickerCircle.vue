@@ -253,11 +253,13 @@ function handleClick(e: MouseEvent) {
   z-index: 1;
 }
 
-.circle-wrap:hover .circle {
-  border-color: var(--accent-text);
-  box-shadow:
-    0 0 48px var(--accent-glow),
-    0 0 80px var(--accent-glow);
+@media (hover: hover) {
+  .circle-wrap:hover .circle {
+    border-color: var(--accent-text);
+    box-shadow:
+      0 0 48px var(--accent-glow),
+      0 0 80px var(--accent-glow);
+  }
 }
 
 .circle.circle-pressed {
@@ -307,11 +309,15 @@ function handleClick(e: MouseEvent) {
   height: 250px;
 }
 
-.circle-wrap:hover .ring-1 {
-  opacity: 0.25;
+@media (hover: hover) {
+  .circle-wrap:hover .ring-1 {
+    opacity: 0.25;
+  }
 }
-.circle-wrap:hover .ring-2 {
-  opacity: 0.1;
+@media (hover: hover) {
+  .circle-wrap:hover .ring-2 {
+    opacity: 0.1;
+  }
 }
 
 .ring-burst {

@@ -131,7 +131,9 @@ async function submit() {
   transition: all var(--transition-fast);
 }
 .tab-btn.active { background: var(--accent); color: #fff; }
-.tab-btn:not(.active):hover { color: var(--text-primary); }
+@media (hover: hover) {
+  .tab-btn:not(.active):hover { color: var(--text-primary); }
+}
 
 .modal-form { display: flex; flex-direction: column; gap: 14px; }
 
@@ -178,7 +180,9 @@ async function submit() {
   transition: background var(--transition-fast);
   margin-top: 4px;
 }
-.submit-btn:hover:not(:disabled) { background: var(--accent-dim); }
+@media (hover: hover) {
+  .submit-btn:hover:not(:disabled) { background: var(--accent-dim); }
+}
 .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .switch-btn {
@@ -191,5 +195,7 @@ async function submit() {
   text-underline-offset: 2px;
   transition: color var(--transition-fast);
 }
-.switch-btn:hover { color: var(--accent-text); }
+@media (hover: hover) {
+  .switch-btn:hover { color: var(--accent-text); }
+}
 </style>

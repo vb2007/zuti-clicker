@@ -170,16 +170,20 @@ const {
   transition: background var(--transition-fast);
 }
 
-.unit-card:hover {
-  background: var(--bg-elevated);
+@media (hover: hover) {
+  .unit-card:hover {
+    background: var(--bg-elevated);
+  }
 }
 
 .unit-card.affordable {
   border-left: 2px solid var(--accent);
 }
 
-.unit-card.affordable:hover {
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .unit-card.affordable:hover {
+    background: var(--bg-hover);
+  }
 }
 
 /* info */
@@ -219,9 +223,13 @@ const {
   transition: color var(--transition-fast);
   position: relative;
 }
-.info-btn:hover,
 .info-btn:focus-visible {
   color: var(--accent-text);
+}
+@media (hover: hover) {
+  .info-btn:hover {
+    color: var(--accent-text);
+  }
 }
 
 /* The 20px icon is a precise, small hover target on purpose — hovering
@@ -284,10 +292,12 @@ const {
   flex-shrink: 0;
 }
 
-.buy-btn:hover:not(:disabled) {
-  filter: brightness(1.15);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px var(--accent-glow);
+@media (hover: hover) {
+  .buy-btn:hover:not(:disabled) {
+    filter: brightness(1.15);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px var(--accent-glow);
+  }
 }
 
 .buy-btn:active:not(:disabled) {
@@ -325,10 +335,10 @@ const {
   color: var(--booster);
 }
 
-@media (max-width: 759px) {
-  /* This panel becomes a touch-driven mobile sheet at this width (see
-     App.vue) — the buy button's desktop sizing runs a little short of a
-     comfortable touch target. */
+@media (max-width: 759px), (pointer: coarse) {
+  /* Touch-driven (a mobile sheet below 760px — see App.vue — or a tablet's
+     coarse pointer above it) — the buy button's desktop sizing runs a little
+     short of a comfortable touch target. */
   .buy-btn {
     min-height: 44px;
   }

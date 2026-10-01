@@ -117,9 +117,11 @@ function buy(e: MouseEvent) {
   box-shadow: 0 0 0 1px var(--accent-glow);
 }
 
-.upgrade-tile.affordable:hover {
-  background: var(--bg-hover);
-  box-shadow: 0 4px 14px var(--accent-glow);
+@media (hover: hover) {
+  .upgrade-tile.affordable:hover {
+    background: var(--bg-hover);
+    box-shadow: 0 4px 14px var(--accent-glow);
+  }
 }
 
 .upgrade-tile:disabled {

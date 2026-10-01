@@ -136,10 +136,12 @@ function toggleLanguage() {
   transition: all var(--transition-fast);
 }
 
-.ctrl-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-text);
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .ctrl-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+    background: var(--bg-hover);
+  }
 }
 
 .icon-btn {
@@ -178,12 +180,6 @@ function toggleLanguage() {
     display: none;
   }
 
-  .ctrl-btn {
-    min-width: 44px;
-    min-height: 44px;
-    justify-content: center;
-  }
-
   .mini-stats {
     display: flex;
     width: 100%;
@@ -197,6 +193,16 @@ function toggleLanguage() {
 
   .mini-tps.boosted {
     color: var(--booster);
+  }
+}
+
+/* Touch (phone, or a tablet's coarse pointer): 44px targets. The header is 52px
+   tall on a tablet, which fits them. */
+@media (max-width: 759px), (pointer: coarse) {
+  .ctrl-btn {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
   }
 }
 

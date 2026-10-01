@@ -209,8 +209,10 @@ const progressLabel = computed(() =>
   animation: breathe 3.5s ease-in-out infinite;
 }
 
-.prestige-btn.ready:hover {
-  filter: brightness(1.08);
+@media (hover: hover) {
+  .prestige-btn.ready:hover {
+    filter: brightness(1.08);
+  }
 }
 
 .upgrader-btn {
@@ -223,10 +225,20 @@ const progressLabel = computed(() =>
   font-weight: 700;
   transition: all var(--transition-fast);
 }
-.upgrader-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-text);
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .upgrader-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+    background: var(--bg-hover);
+  }
+}
+
+/* Touch (mobile sheet, or a tablet's coarse pointer): 44px targets. */
+@media (max-width: 759px), (pointer: coarse) {
+  .prestige-btn,
+  .upgrader-btn {
+    min-height: 44px;
+  }
 }
 
 .prestige-btn:disabled {

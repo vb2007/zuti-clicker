@@ -91,7 +91,9 @@ const toast = useToastStore();
   position: absolute;
   inset: -16px;
 }
-.toast-close:hover { color: var(--text-primary); }
+@media (hover: hover) {
+  .toast-close:hover { color: var(--text-primary); }
+}
 
 .toast-enter-active,
 .toast-leave-active {

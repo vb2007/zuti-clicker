@@ -187,8 +187,10 @@ function close() {
   font-size: 13px;
   transition: background var(--transition-fast);
 }
-.board-row:hover {
-  background: var(--bg-elevated);
+@media (hover: hover) {
+  .board-row:hover {
+    background: var(--bg-elevated);
+  }
 }
 .board-row.self {
   background: var(--bg-elevated);

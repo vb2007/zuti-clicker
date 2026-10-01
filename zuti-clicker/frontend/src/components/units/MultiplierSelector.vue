@@ -49,10 +49,12 @@ function label(m: Multiplier): string {
   transition: all var(--transition-fast);
 }
 
-.mult-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-text);
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .mult-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+    background: var(--bg-hover);
+  }
 }
 
 .mult-btn.active {
@@ -61,10 +63,10 @@ function label(m: Multiplier): string {
   color: #fff;
 }
 
-@media (max-width: 759px) {
-  /* This panel becomes a touch-driven mobile sheet at this width (see
-     App.vue) — its own compact desktop sizing is otherwise too small a
-     touch target. */
+@media (max-width: 759px), (pointer: coarse) {
+  /* Touch-driven (a mobile sheet below 760px — see App.vue — or a tablet's
+     coarse pointer above it) — its own compact desktop sizing is otherwise
+     too small a touch target. */
   .mult-btn {
     min-height: 44px;
   }
