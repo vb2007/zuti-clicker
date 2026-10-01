@@ -78,6 +78,33 @@ export class Responses {
     INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
   } as const;
 
+  static readonly UPGRADER = {
+    INVALID_STAKE: {
+      status: 400,
+      body: { error: "stake must be a whole number of PhDs between 1 and 2147483647." }
+    },
+    INVALID_MULTIPLIER: {
+      status: 400,
+      body: { error: "multiplier must be a number from 1.2 to 100 with at most 2 decimals." }
+    },
+    // quoteSpin's payout <= stake case: e.g. 1 PhD x1.5 floors back to 1, so a
+    // "win" would gain nothing.
+    NO_GAIN: {
+      status: 400,
+      body: { error: "stake x multiplier must pay out more PhDs than the stake." }
+    },
+    NO_SAVE: { status: 404, body: { error: "No save exists yet — sync your progress first." } },
+    // phdCount is appended dynamically by the caller: the balance the spin was
+    // actually checked against, so the client can correct a stale display.
+    INSUFFICIENT_PHD: { status: 409, body: { error: "You do not have that many PhDs to stake." } },
+    LIMIT_REACHED: {
+      status: 409,
+      body: { error: "This spin would overflow the stored PhD totals." }
+    },
+    SPIN_SUCCESS: { status: 200, body: { message: "Spin settled." } },
+    INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
+  } as const;
+
   static readonly SETTINGS = {
     // Keep the allowed-value lists here in sync with constants/settings.ts.
     INVALID_THEME: { status: 400, body: { error: "theme must be one of: dark, light." } },

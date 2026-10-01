@@ -343,6 +343,84 @@ export const buildSwaggerSpec = (): object => {
               }
             ]
           },
+          SpinRequest: {
+            type: "object",
+            required: ["stake", "multiplier"],
+            properties: {
+              stake: {
+                type: "integer",
+                minimum: 1,
+                maximum: 2147483647,
+                description: "PhDs to put on the wheel (at most the PhDs the player owns)",
+                example: 100
+              },
+              multiplier: {
+                type: "number",
+                minimum: 1.2,
+                maximum: 100,
+                multipleOf: 0.01,
+                description:
+                  "Payout multiplier, at most 2 decimals. The stake x multiplier must pay out more than the stake.",
+                example: 2
+              }
+            }
+          },
+          SpinResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/MessageResponse" },
+              {
+                type: "object",
+                properties: {
+                  won: { type: "boolean", example: true },
+                  rollPpm: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 999999,
+                    description:
+                      "The server's roll in parts per million. The spin wins when rollPpm < winPpm — the wheel lands exactly here.",
+                    example: 312045
+                  },
+                  winPpm: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: 800000,
+                    description: "This spin's win chance in parts per million (never above 800000)",
+                    example: 450000
+                  },
+                  payout: {
+                    type: "integer",
+                    description: "PhDs held after a win, counting the returned stake",
+                    example: 200
+                  },
+                  phdCount: {
+                    type: "integer",
+                    minimum: 0,
+                    description: "The PhD balance after this spin",
+                    example: 200
+                  },
+                  upgraderSeq: {
+                    type: "integer",
+                    minimum: 1,
+                    description: "The new spin counter — echo it back on PUT /save",
+                    example: 7
+                  },
+                  consolation: {
+                    type: "object",
+                    description: "Present on a loss only: the consolation booster",
+                    properties: {
+                      boosterId: { type: "string", example: "frenzy" },
+                      remainingMs: {
+                        type: "integer",
+                        minimum: 0,
+                        description: "Time the buff has left, in milliseconds",
+                        example: 30000
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
           AntiCheatRestrictedResponse: {
             allOf: [
               { $ref: "#/components/schemas/ErrorResponse" },

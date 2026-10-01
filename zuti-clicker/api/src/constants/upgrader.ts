@@ -12,6 +12,11 @@ export const UPGRADER_WIN_CHANCE_CAP = 0.8;
 export const UPGRADER_MIN_MULTIPLIER_HUNDREDTHS = 120;
 export const UPGRADER_MAX_MULTIPLIER_HUNDREDTHS = 10_000;
 
+// The Int column limits every PhD-denominated value here is bound by
+// (GameSave.phdCount / upgraderNet).
+export const INT32_MAX = 2_147_483_647;
+export const INT32_MIN = -2_147_483_648;
+
 // Win chance resolution: the server rolls an integer in [0, PPM) and a spin
 // wins when roll < winPpm.
 export const UPGRADER_PPM = 1_000_000;
