@@ -60,9 +60,29 @@ csak egy kicsit keskenyedik, hogy a Kattintónak több hely maradjon. Telefonon
 (kb. 760px szélesség alatt) a Kattintó tölti ki a teljes szélességet, a két
 oldalpanel pedig alulról felcsúszó lapként jelenik meg: a képernyő alján egy
 „Stats" / „Shop" fület tartalmazó sáv nyitja meg őket. Egy nyitott panel
-bezárható a saját fülére való újbóli koppintással, a panelen kívüli terület
-megérintésével, vagy az Esc billentyűvel. A tokenegyenleg és a másodpercenkénti
-termelés ilyenkor a fejlécben, kompakt formában marad látható.
+bezárható a jobb felső sarkában lévő **✕** gombbal, a saját fülére való újbóli
+koppintással, a panel fölötti elsötétített sáv megérintésével, a telefon
+**Vissza** gombjával, vagy az Esc billentyűvel. A tokenegyenleg és a
+másodpercenkénti termelés ilyenkor a fejlécben, kompakt formában marad látható.
+
+Nagyon keskeny telefonon (kb. 400px szélesség alatt) a fejlécből eltűnik a
+nyelv- és a témaváltó gomb, hogy minden más elférjen — mindkettő továbbra is
+elérhető a Beállítások ablakban. Fekvő telefonon a fejléc egy sorba tömörül, és
+a Kattintó kisebb, hogy a felirata és a számláló is a képernyőn maradjon. A
+Kattintó körének mérete egyébként a rendelkezésre álló helyhez igazodik: nagy
+monitoron nagyobb, mint korábban.
+
+### Ablakok bezárása
+
+A felugró ablakokat (Ranglisták, Beállítások, Bejelentkezés, Upgrader) a jobb
+felső sarkukban lévő **✕** gombbal, az Esc billentyűvel, a telefon **Vissza**
+gombjával, vagy — a Beállítások kivételével — az ablakon kívülre koppintva
+zárhatod be. A Beállításokban a ✕ a „Mégse" gombbal egyenértékű (a módosítások
+visszaállnak). Ha több ablak van egymás fölött, a Vissza gomb és az Esc mindig
+a legfelsőt zárja be, egyszerre egyet — a játékból a Vissza gomb nem lép ki,
+amíg van nyitott ablak vagy panel. A kérdést feltevő ablakoknak (törlés
+megerősítése, fokozatszerzés megerősítése, vendégfigyelmeztetés, anti-cheat
+figyelmeztetés) saját gombjaik vannak, azokon kell választanod.
 
 ---
 
@@ -156,7 +176,9 @@ Minden egységnek saját kártyája van:
 
 ### Tooltip
 
-Ha az egérkurzort egy egységkártya fölé viszed, egy kis ablak jelenik meg:
+Ha az egérkurzort egy egységkártya fölé viszed (érintőképernyőn: ha rákoppintasz
+a név melletti **ⓘ** gombra; egy újabb koppintás, vagy egy máshová koppintás
+bezárja), egy kis ablak jelenik meg. Ha lent nem fér el, fölötte nyílik meg:
 - **Cost**: Az aktuális vásárlás ára (a kiválasztott szorzónak megfelelő mennyiségre)
 - **Income gain**: Mennyivel növekszik a másodpercenkénti termelésed a vásárlással
 - **Each unit**: Egy egység termelése másodpercenként
@@ -189,6 +211,15 @@ mindegyik egy rövid magyarázattal a fejlesztések listája fölött:
   mutatja, hogy lásd, mi hat ténylegesen.
 - **Boosterek**: a boosterek időtartamát hosszabbítják meg, illetve
   gyakoribbá teszik a megjelenésüket.
+
+**Érintőképernyőn** egy csempére koppintás azonnal megveszi a fejlesztést — hogy
+megvásárlás előtt el tudd olvasni, mit csinál, **nyomd hosszan** a csempét (kb.
+fél másodpercig): megjelenik a leírása, és ez a nyomás **nem vásárol**. A
+gyors, egymás utáni koppintások sosem számítanak hosszú nyomásnak, így
+gyorsan is vásárolhatsz. Az előnézet addig marad, amíg máshová nem
+koppintasz. Egérrel és billentyűzettel a tooltip a csempe fölé állva (vagy
+fókuszra) jelenik meg, és — mivel a még nem megfizethető fejlesztéseknek is
+megvan a leírásuk — az is olvasható, amit még nem tudsz megvenni.
 
 Egy fejlesztés ugyanúgy fokozatosan tárul fel, mint az egységek — minél
 többet szereztél összesen, annál több fejlesztés jelenik meg a boltban. A
@@ -251,6 +282,8 @@ Az első fokozatszerzésed után a „Fokozat" panelen, a „Defend Thesis" gomb
 
 **Nem lehet túl jól járni vele**: sok pörgetés alatt a tét átlagosan kb. **90%-át** nyered vissza, és a nyerési esély **sosem haladja meg a 80%-ot**, akármilyen kicsi a szorzó. A kerék tehát kockázat, nem PhD-farm. Egy fogadás csak akkor érvényes, ha a nyeremény több a tétnél (pl. 1 PhD ×1,5-tel csak 1-et érne, ezért nem lehet) — ilyenkor az ablak kiírja a legkisebb érvényes tétet.
 
+**Fekvő telefonon** az ablak két oszlopra bomlik — balra a kerék és a két kimenet, jobbra a tét, a szorzó és a „Spin" gomb —, így az egész fogadás egyszerre látszik; függőlegesen tartva, vagy keskenyebb fekvő képernyőn egy oszlop marad, a ✕ gomb pedig görgetés közben is a helyén marad.
+
 **Pörgetés közben** a vezérlők zárolva vannak, és a vásárlás/fokozatszerzés is szünetel. A bal oldali PhD-számláló a kerék megállásáig a régi értéket mutatja, hogy ne áruljon el semmit előre. Az eredmény (nyertél/vesztettél, az új PhD-készleted) a kerék megállása után jelenik meg, a „Spin again" gombbal pedig újra pörgethetsz.
 
 **Bejelentkezve** a pörgetés előtt a játék automatikusan elmenti az állapotodat, és az eredmény a szerveren is rögzül. Ha ugyanazt a fiókot egy másik lapon is használod, és ott pörgettél, ezen a lapon a következő mentés „a haladásod máshol megváltozott" értesítést kap, és a legfrissebb mentést tölti be. **Vendégként** a pörgetés csak a játékban él — a nyert vagy elvesztett PhD-k a többi haladásoddal együtt elvesznek, ha bezárod a lapot (az ablak ezt ki is írja). Ha vendégként pörgettél, majd bejelentkezel, a keréken nyert vagy elvesztett PhD-k **nem kerülnek át a fiókodba** (a játék értesít erről) — a fiókod haladása csak a fokozatszerzésből származó PhD-ket tartalmazza.
@@ -303,7 +336,8 @@ Ranglisták ablak. Négy mérőszám közül választhatsz a fül-váltóval:
 - **PhDs**: Az eddig megszerzett PhD-k száma.
 - **Playtime**: Az eltelt játékidő.
 
-A lista a legjobb játékosokat mutatja helyezés (Rank), felhasználónév (Player)
+Az ablakot a jobb felső ✕ gombbal (vagy a Vissza gombbal) zárhatod be. Keskeny
+telefonon a négy mérőszám-gomb 2×2-es rácsba rendeződik. A lista a legjobb játékosokat mutatja helyezés (Rank), felhasználónév (Player)
 és érték (Value) szerint. Ha a saját helyezésed nincs benne a megjelenített
 listában, egy külön, kiemelt sor jelenik meg alatta „A te helyezésed" felirattal.
 

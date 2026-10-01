@@ -152,6 +152,23 @@ pnpm test:coverage # lefedettségi riport
 
 A tesztek a `src/**/__tests__/*.spec.ts` minta alatt találhatók, a forrásfájlok mellett (pl. `src/utils/__tests__/prestige.spec.ts`).
 
+#### E2E tesztek (Playwright)
+
+A Vitest `happy-dom`-ja nem számol elrendezést (a `matchMedia`-ban sem érti a vesszős „vagy" listát), ezért a reszponzív regressziókat — vízszintes túlcsordulás, levágott vagy elérhetetlen vezérlők, érintési célméretek, a Vissza gomb viselkedése — a `frontend/e2e/` alatti Playwright csomag fogja meg valódi Chromiumban. Az API-t a böngészőben a `page.route` teljesen kimockolja (`e2e/fixtures.ts`): **nincs adatbázis és nincs élő szerver**; a `webServer` a Vite dev szervert indítja az `5199`-es porton (`E2E_PORT`-tal felülírható).
+
+```bash
+CHROMIUM_PATH=/usr/bin/chromium pnpm test:e2e                      # mind
+CHROMIUM_PATH=/usr/bin/chromium pnpm test:e2e --project=phone-375  # egy eszközosztály
+CHROMIUM_PATH=/usr/bin/chromium pnpm test:e2e e2e/modals.spec.ts   # egy spec
+```
+
+- A `CHROMIUM_PATH` egy rendszerszintű Chromiumra mutat (a Playwright saját böngészője helyett). Ha nincs megadva és nincs letöltött böngésző, előbb `pnpm exec playwright install chromium` kell.
+- Az eszközosztályok (Playwright „project"-ek): `phone-320`, `phone-375`, `phone-390`, `phone-landscape` (667×375), `tablet` (768×1024), `desktop` (1280×800), `desktop-wide` (1920×1080). Az érintős projekteken (`hasTouch` + `isMobile`) a `(pointer: coarse)` és a `(hover: none)` teljesül, az asztaliakon nem.
+- A fixture (`e2e/fixtures.ts`): `loggedIn` és `language` (`"en"` / `"hu"`) opció a `test.use()`-ban; `app.open()`, `app.seed(fn)` (a Pinia store-ok térképét kapja: `s.ui`, `s.game`, …), `app.settle()` (az egyszeri CSS-animációk lecsengésére vár — **hamis óra (`page.clock`) alatt ne használd**, mert `requestAnimationFrame`-mel pollozik), `app.horizontalOverflow(selectors)`.
+- A Chromium nem tudja emulálni az `env(safe-area-inset-*)` értéket, ezért az `--sai-*` tokenek a böngészőben felülírhatók: `document.documentElement.style.setProperty("--sai-bottom", "34px")`.
+- **Nincs újrapróbálkozás** (`retries: 0`): a Playwright JUnit-riportja az újrapróbált sikert simán sikernek számolja, ami elrejtene egy ingadozó elrendezés-ellenőrzést.
+- Új reszponzív javításhoz a regressziós tesztet ide írd, ha a hiba **elrendezés** (méret, pozíció, túlcsordulás, takarás); ha **logika** (állapotgép, geometria-függvény), akkor Vitest a megfelelő hely. A tesztet bizonyítsd: építsd vissza ideiglenesen a hibát, és győződj meg róla, hogy a megfelelő teszt elbukik.
+
 ---
 
 ## Architektúra áttekintő
@@ -204,7 +221,8 @@ App.vue
   ├── usePrestige()          → gameStore.prestige() -> ceremónia/szinkron
   ├── useBoosters()          → booster pickup ütemezése (spawn/láthatósági ablak) + igénylés
   ├── useUpgrader()          → egy Upgrader-pörgetés végigvitele (előzetes mentés → szerver-pörgetés → eredmény alkalmazása); UpgraderModal.vue használja
-  ├── useBreakpoint()        → isCompact (matchMedia, < 760px)
+  ├── useBreakpoint()        → isCompact (matchMedia, < 760px) — a useMediaQuery() vékony burkolója
+  ├── useOverlayStack()      → melyik nyitott lap/modál záródik Esc-re és a böngésző/Android Vissza gombra — lásd lent, "Overlayek és a Vissza gomb"
   ├── authStore              → session check, login/register/logout
   ├── settingsStore          → téma, nyelv, autosave, ceremónia — localStorage + szerver szinkron
   ├── saveStore               → load/sync/reset (autosave-időzítő a settingsStore-ból olvas) + withSyncLock (lásd lent, "Az Upgrader")
@@ -244,7 +262,43 @@ lefordított kimeneten ellenőriztük, mielőtt erre építettünk volna.
 A `frontend/src/composables/useBreakpoint.ts` egy `matchMedia`-alapú
 összetevő, ami `isCompact`-ot ad vissza; ez csak arra kell, amit CSS önmagában
 nem tud megoldani — pl. hogy egy nyitva hagyott mobil panel automatikusan
-bezáródjon, ha az ablak visszaszélesedik 760px fölé.
+bezáródjon, ha az ablak visszaszélesedik 760px fölé. A `useMediaQuery.ts` az
+általános változata egy tetszőleges média-lekérdezéshez (az Upgrader így dönti
+el, hogy rövid képernyőn szűkebb belső margót kapjon) — a lekérdezést mindig
+tartsd szinkronban a megfelelő CSS-sel.
+
+#### További feltételek a szélesség mellett
+
+| Feltétel | Mit változtat |
+|---|---|
+| `max-width: 759px` és `max-height: 500px` (telefon fekvő) | A fejléc egysoros (`--header-h-compact: 52px`, a statisztika a fejlécben inline), a fülsáv 48px; a lapok teljes magasságot kapnak (nincs `--sheet-gap`); az `ActiveBoostersBar` chipjei bal oldalt, függőlegesen állnak. |
+| `max-width: 399px` | A fejlécből eltűnik a nyelv- és témagomb (a Beállításokban megvannak). Egy bejelentkezett fejléc ~355px-t igényel, e fölött fér el egy sorban. |
+| `max-height: 500px` és `min-width: 640px` | Az Upgrader két oszlopra bomlik (kerék + kimenetek \| tét, szorzó, Spin). 640px alatt egy oszlop marad, mert különben a tét mezője ~70px-re szűkülne. |
+| `max-width: 380px` | A fejlesztések rácsa 4 helyett 3 oszlopos. |
+| `(pointer: coarse)` | Az összes 44px-es érintési célméret szabály a `max-width: 759px` mellett erre is vonatkozik — egy tablet 760px fölött is érintős. |
+| `(hover: hover)` | **Minden** `:hover` stílus ebbe van csomagolva, különben érintésnél a koppintás után "beragad" a hover-állapot. |
+
+#### Biztonságos területek (safe area) és a fülsáv
+
+A `viewport-fit=cover` miatt a tartalom a bevágás (notch) és a kezdőképernyő-sáv alá is benyúl. A `base.css` `--sai-top/right/bottom/left` tokenjei az `env(safe-area-inset-*)` értékét adják — **tokenként, nem nyers `env()`-ként**, hogy tesztben felülírhatók legyenek. A `--tabbar-total` a fülsáv teljes magassága (`--mobile-tabbar-h` + `--sai-bottom`): **minden, ami "a fülsáv fölé" kerül** (lapok, `.mobile-scrim`, toastok) ezt használja, nem a puszta `--mobile-tabbar-h`-t — különben iPhone-on a fülsáv alá csúszik.
+
+#### A Kattintó körének mérete és a booster pickup
+
+A `ClickerArea.vue` méret-konténer (`container-type: size`), és egyetlen `--circle` változót ad ki: a szélességének ~62%-a, de nem nagyobb, mint ami mellett a felirat, a cps-pill és a booster-sáv még elfér; 140–280px közé szorítva. A kör arca, fénye és mindkét gyűrűje ebből származik (`ClickerCircle.vue`). A tartalék érték (`220px`) a konténer-egységeket nem ismerő böngészőknek van. A `ClickerArea` a területét és a kört a pickup megjelenésekor méri le, és a `utils/boosterPlacement.ts` tiszta, pixel-alapú függvénye választ pozíciót: teljesen a területen belül, és a kör + a pickup sugarától távol — a korábbi, százalékos szabály 320px-es telefonon (96px) a kör sugaránál (110px) kisebb volt.
+
+#### Overlayek és a Vissza gomb
+
+A modálok, a mobil lapok és a fokozat-ceremónia **overlay**-ek: mindegyik a `composables/useOverlayStack.ts`-nél regisztrál (`useOverlay(isOpen, close, priority)`; a `BaseModal` automatikusan, a `z-index`-ét használva prioritásként; a mobil lap 400, a ceremónia 2000). A verem mondja meg, mit zár be az **Esc** és a böngésző/Android **Vissza** gomb: mindig a legmagasabb prioritású, azonos prioritásnál a legutóbb regisztrált overlayt, egyszerre csak egyet (a tartott, ismétlődő Esc és az IME-összeállítás nem számít).
+
+A Vissza gomb úgy működik, hogy amíg legalább egy overlay nyitva van, pontosan egy **sentinel** history-bejegyzés ül a valódi fölött (`history.pushState` az aktuális `history.state` másolatával — a `vue-router` route-ok nélkül is ebben tárolja a saját állapotát). A Vissza ezt kapja el, és bezárja a legfelső overlayt; ha marad másik, a sentinel újra felkerül (a visszautasított bezárásnál is, pl. Beállítások mentés közben, vagy a ceremónia a számlálás alatt). Ha az utolsó overlayt más módon zárják be (✕, háttér, Esc), a fölösleges sentinelt a verem egy saját `history.back()`-kel eltávolítja (az ennek megfelelő `popstate`-et figyelmen kívül hagyja). Két ritka eset külön kezelt: egy overlay, ami a saját `history.back()` még úton lévő ideje alatt nyílik, csak a `popstate` beérkezése után kapja meg a sentinelt; egy újratöltés után a `history.state`-ben maradt (immár érvénytelen) sentinelről az első használatkor lelép. Új overlayhez ne írj saját `keydown`/`popstate` figyelőt — regisztrálj a veremnél.
+
+A `BaseModal` `closable` prop-ja fejlécet ad egy mindig látható (`position: sticky`), címkézett ✕ gombbal (`common.close`; érintésen 44px). Tartalmi modáloknál használd (Ranglista, Beállítások — ott a ✕ a „Mégse"-vel azonos —, Auth, Upgrader); a kérdést feltevő, riasztás-jellegű modálok (törlés-megerősítés, fokozat-megerősítés, vendégfigyelmeztetés, anti-cheat) megmaradnak az explicit gombjaiknál, ✕ nélkül.
+
+#### Tooltipek és az érintéses előnézet
+
+A `useAnchoredTooltip` a horgonya alá nyílik; ha ott nem fér el (a konzervatív `estimatedHeight` alapján), fölé fordul (`bottom` kötéssel, így nem kell magasságot mérni), ha egyik irányban sem fér el (fekvő telefon), annyira feljebb csúszik, hogy a nézetablakon belül maradjon. A visszaadott szélesség a nézetablakhoz szorított. A `toggle()` a koppintáshoz való (a fókusz/hover ugyanazon koppintásból érkező nyitását egy rövid türelmi idő védi a rögtöni bezárástól), a nyitott tooltipet egy máshová történő `pointerdown` zárja be.
+
+Az `UpgradeTile` érintésen **hosszú nyomásra** (500ms, legfeljebb 10px mozgás) előnézetet nyit, és ez a nyomás **sosem vásárol**. A gyors koppintás sosem aktiválja: az időzítőt a felemelés, a `pointercancel` és a mozgás is törli, és csak az a nyomás nyeli el a rá következő `click`-et, amely tényleg előnézetet nyitott (egyszeri, saját lejárattal). Az elérhetetlen (drága) csempe `disabled` helyett `aria-disabled`-et kap, hogy fókuszálható/hoverelhető maradjon és a tooltipje olvasható legyen — a `buy()` ettől még elutasítja. Ha ezt a küszöböt módosítod, a Vitest és az e2e (`touch-preview.spec.ts`, emberi hosszúságú koppintásokkal) is bukik, ha túl alacsony.
 
 ---
 
@@ -849,18 +903,19 @@ Két GitHub Actions workflow fut a self-hosted runneren (`vbServer`, bare metal,
 
 ### `ci.yml` – tesztek PR-en
 
-Minden `main`-re nyíló pull request-en lefut, négy jobban. Három közülük (`typecheck`, `verify-migrations`, `frontend-tests`) egymástól független (egyetlen runner miatt sorban futnak, de a State külön látszik); az `api-tests` a `verify-migrations`-tól függ, hogy már migrált, ellenőrzött adatbázison fusson:
+Minden `main`-re nyíló pull request-en lefut, öt jobban. Négy közülük (`typecheck`, `verify-migrations`, `frontend-tests`, `frontend-e2e`) egymástól független (egyetlen runner miatt sorban futnak, de a State külön látszik); az `api-tests` a `verify-migrations`-tól függ, hogy már migrált, ellenőrzött adatbázison fusson:
 
 | Job | Mit ellenőriz |
 |---|---|
 | `typecheck` | `api`: `tsc --noEmit` · `frontend`: `vue-tsc --build` |
 | `verify-migrations` | `prisma migrate deploy` + `prisma migrate diff --exit-code` a dedikált `zutiClickerTest` adatbázis ellen — a merge előtti bizonyíték arra, hogy egy migráció nemcsak létezik, hanem helyes is (lásd lent, `deploy.yml`) |
 | `frontend-tests` | Vitest (`src/**/__tests__/*.spec.ts`), szerver/adatbázis nélkül |
+| `frontend-e2e` | Playwright (`frontend/e2e/`), a böngészőben kimockolt API-val (nincs adatbázis, nincs élő szerver) — a reszponzív/elrendezési regressziók, lásd fent, "E2E tesztek". Rendszerszintű Chromiumot keres (`chromium`, `chromium-browser`, `google-chrome[-stable]`), és csak ennek hiányában tölti le a sajátját. Hiba esetén a nyomokat (`test-results/`) `e2e-traces-<futás>` artifactként feltölti (szándékosan nem `junit-*` nevűként, mert a `reports` job ezt a mintát gyűjti) |
 | `api-tests` | Jest, éles szerver a `:2710` porton ugyanazon `zutiClickerTest` adatbázis ellen — a `verify-migrations`-tól függ, hogy már migrált adatbázison fusson |
 
 Az `api-tests` és a `verify-migrations` job egyaránt egy futtatáshoz kötött, runner-lokális `.env` fájlt vár `/mnt/raid1/zuti-clicker-ci/.env.ci` alatt (sosem GitHub secret) — ez tartalmazza a `zutiClickerTest` / `zutiClickerTestShadow` adatbázisok elérését és egy eldobható `CRYPTO_SECRET_KEY`-t. **Ennek a fájlnak tartalmaznia kell az `ANTICHEAT_MODE=monitor` sort is** (lásd fent, "Tesztek futtatása" és lent, "Anti-cheat modell") — enélkül az `api-tests` job elbukik, mert a meglévő `save`/`leaderboard`/`booster` tesztek fixture-jei nem férnek bele a mentés-hitelesség-ellenőrzésbe `enforce` módban. A teszt lefutása után az `api-tests` job a `cleanup:test-users --apply` scriptet futtatja, hogy a `test_<random>@example.com` felhasználók ne halmozódjanak.
 
-Mind a négy job feltölt egy `junit-<stage>` artifactot; egy ötödik (`reports`) job ezekből generálja a `.github/scripts/junit-report.mjs` scripttel a `report.html`, `report.ods` (valódi OpenDocument táblázat, Summary + Tests munkalapokkal) és `summary.md`/`summary.json` fájlokat, `test-reports` artifactként. A hatodik (`summary`) job publikálja az eredményt:
+Mind az öt job feltölt egy `junit-<stage>` artifactot; egy hatodik (`reports`) job ezekből generálja a `.github/scripts/junit-report.mjs` scripttel a `report.html`, `report.ods` (valódi OpenDocument táblázat, Summary + Tests munkalapokkal) és `summary.md`/`summary.json` fájlokat, `test-reports` artifactként. A hetedik (`summary`) job publikálja az eredményt:
 
 - a futás GitHub Actions job summary-jába,
 - egy "sticky" PR-kommentbe (pusholásonként frissül, nem szaporodik) — **csak
@@ -901,6 +956,7 @@ IMAGE_TAG=sha-<korábbi_rövid_sha> docker compose -f docker-compose.prod.yml up
 - A Prisma client a `generated/prisma/` mappában van, nem a szokásos `node_modules/@prisma/client` helyen. A `pnpm prisma generate` futtatása után commitolni kell a generált fájlokat is.
 - A `CORS_ORIGIN_URLS` environment változó nincs beállítva a `.env`-ben; fejlesztési módban a Vite proxy kezeli a cross-origin kéréseket, így CORS konfiguráció nem szükséges.
 - A session tokenek az `Authentication.sessionToken` mezőben tárolódnak. Kijelentkezéskor ez üres stringre áll vissza, nem törlődik a rekord.
-- Új modálablakot a `frontend/src/components/modals/BaseModal.vue` közös héjára építve érdemes létrehozni (Esc, fókuszcsapda, fókusz-visszaállítás, `aria-labelledby`, testreszabható `dismiss-on-backdrop`/`max-width`/`z-index`, telefonon `compact` szűkebb belső margóhoz) — ne másold újra a Teleport/backdrop mintát, amit ez váltott fel.
+- Új modálablakot a `frontend/src/components/modals/BaseModal.vue` közös héjára építve érdemes létrehozni (Esc és Vissza a közös overlay-vermen át, fókuszcsapda, fókusz-visszaállítás, `aria-labelledby`, testreszabható `dismiss-on-backdrop`/`max-width`/`z-index`, `closable` ✕ fejléc, telefonon `compact` szűkebb belső margóhoz, biztonságos területekhez igazodó margók) — ne másold újra a Teleport/backdrop mintát, amit ez váltott fel, és ne írj saját Esc/`popstate` figyelőt (lásd fent, "Overlayek és a Vissza gomb").
+- Reszponzív szabályt írva: az érintési célméret (`min-height: 44px`) `(max-width: 759px), (pointer: coarse)` alatt él, a hover-stílus `@media (hover: hover)` alatt; `transition: all` helyett sorold fel a tulajdonságokat; folyamatos animációt (`infinite`) csak `transform`/`opacity`-re írj, `box-shadow`-ra ne (lásd a `breathe` kulcskockát).
 - A `@vue/test-utils`'s `trigger()` metódusa mindig `isTrusted: false` eseményt küld (ez böngésző-specifikáció, nem tesztkörnyezeti hiba — pont ezt a jelet ellenőrzi az anti-cheat rendszer 2. rétege). Egy valódi kattintást szimuláló teszthez használd a `frontend/src/__tests__/testEvents.ts`'s `dispatchTrusted()` segédfüggvényét; egy `isTrusted: false` esemény viselkedését ellenőrző teszthez a sima `trigger()` pont megfelelő (alapból is bizalmatlan eseményt küld).
 ```
