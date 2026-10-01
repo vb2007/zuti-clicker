@@ -237,6 +237,9 @@ function unlockScroll() {
   color: var(--text-primary);
   /* The head owns the spacing below the title. */
   margin: 0;
+  /* Fill the row so a centred modal's text-align: center has the full width to
+     centre in (as the sole flex child it shrank to its text and sat at the left). */
+  flex: 1 1 auto;
   /* Long titles wrap (Hungarian runs longer) instead of pushing the ✕ away. */
   min-width: 0;
   overflow-wrap: anywhere;

@@ -251,6 +251,14 @@ for (const language of ["en", "hu"] as const) {
         expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
         expect(await app.horizontalOverflow([".base-modal"])).toEqual([]);
 
+        // Regression: wrapping the title in the modal header made it shrink to its text and
+        // sit at the left of centred modals (guest / anti-cheat), while everything else was centred.
+        const centred = page.locator(".base-modal.center-content .modal-title");
+        if ((await centred.count()) > 0) {
+          const t = (await centred.boundingBox())!;
+          expect(Math.abs(t.x + t.width / 2 - (box.x + box.width / 2))).toBeLessThanOrEqual(2);
+        }
+
         const buttons = dialog.getByRole("button");
         const n = await buttons.count();
         expect(n).toBeGreaterThan(0);
