@@ -59,16 +59,32 @@ export const useSaveStore = defineStore("save", () => {
     { immediate: true }
   );
 
-  async function load(): Promise<void> {
-    if (!auth.isLoggedIn) return;
+  // Wheel results made as a guest don't carry over to the account: the server has
+  // no record of them, so a first save carrying wheel-won PhDs would read as
+  // forged (and a guest's local spin counter would never match a new account's 0).
+  // Dropped the moment the player logs in, before any save could be made.
+  watch(
+    () => auth.isLoggedIn,
+    (loggedIn) => {
+      if (loggedIn && game.forfeitGuestSpins() !== 0) {
+        toast.push("error", i18n.global.t("upgrader.guestSpinsDropped"));
+      }
+    }
+  );
+
+  /** Resolves true when the server's save was applied (or there isn't one yet). */
+  async function load(): Promise<boolean> {
+    if (!auth.isLoggedIn) return true;
     try {
       const data = await api.save.load();
       if (data.save) {
         game.loadFromSave(data.save);
         lastSyncedAt.value = new Date(data.save.savedAt);
       }
+      return true;
     } catch {
-      // No save yet — start fresh
+      // No save yet — start fresh — or the request failed; either way nothing was applied.
+      return false;
     }
   }
 
@@ -94,8 +110,10 @@ export const useSaveStore = defineStore("save", () => {
       return "ok";
     } catch (e) {
       if (isStaleSaveError(e)) {
-        await load();
-        toast.push("error", i18n.global.t("save.staleReloaded"));
+        // Only claim a reload if one happened: a failed reload leaves the stale
+        // state in place, and the next sync would loop on the same refusal.
+        if (await load()) toast.push("error", i18n.global.t("save.staleReloaded"));
+        else syncError.value = (e as ApiError).message;
         return "stale";
       }
       syncError.value = (e as ApiError).message;
@@ -140,7 +158,9 @@ export const useSaveStore = defineStore("save", () => {
     _locked = true;
     try {
       if (auth.isLoggedIn) {
-        if (_inflight) await _inflight;
+        // A sync already in flight may itself come back stale (and reload): its
+        // outcome counts, or the spin would go ahead on state it just discarded.
+        if (_inflight && (await _inflight) === "stale") throw new SyncFlushError(true);
         const flushed = await _performSync();
         if (flushed !== "ok") throw new SyncFlushError(flushed === "stale");
       }

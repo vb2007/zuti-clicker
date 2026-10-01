@@ -183,7 +183,8 @@ export default {
     deleteSave: "Mentés törlése",
     logout: "Kijelentkezés",
     loginToSave: "Bejelentkezés a mentéshez",
-    staleReloaded: "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be."
+    staleReloaded:
+      "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be."
   },
   guest: {
     warningTitle: "A haladásod nem kerül mentésre",
@@ -209,13 +210,14 @@ export default {
     owned: "{phd} PhD-d van",
     wheelAria: "Kerék: {pct}% esély a nyerésre",
     stake: "Tét",
-    stakeAria: "Feltett PhD-k száma",
+    stakeChipAria: "A PhD-id {pct}%-ának feltétele",
+    stakeAllAria: "Az összes PhD feltétele",
     stakeMax: "Max",
+    close: "Bezárás",
     multiplier: "Szorzó",
     multiplierSlider: "Egyéni szorzó",
     win: "Nyer",
     lose: "Veszít",
-    chance: "{pct}% esély",
     chanceCentre: "a nyerésre",
     frenzyOnLoss: "{name} {seconds} mp-ig",
     noFrenzyOnLoss: "Túl kicsi tét ehhez: {name}",
@@ -230,12 +232,18 @@ export default {
       noPhd: "A pörgetéshez legalább 1 PhD kell.",
       enterStake: "Add meg, hány PhD-t teszel fel.",
       tooMany: "Legfeljebb {owned} PhD-t tehetsz fel.",
-      tooSmall: "×{mult} szorzónál a tét legalább {min} PhD legyen, különben a nyeremény nem több a betétnél.",
+      tooSmall:
+        "×{mult} szorzónál a tét legalább {min} PhD legyen, különben a nyeremény nem több a tétnél.",
       restricted: "A fiókod ideiglenesen korlátozott."
     },
-    finePrint: "Sok pörgetés alatt a tét kb. {rtp}%-át nyered vissza. A nyerési esély sosem haladja meg a {cap}%-ot.",
+    finePrint:
+      "Sok pörgetés alatt a tét kb. {rtp}%-át nyered vissza. A nyerési esély sosem haladja meg a {cap}%-ot.",
     guestNote: "Vendég vagy — az itt nyert vagy elvesztett PhD-k nem mentődnek.",
+    guestSpinsDropped:
+      "Vendégként a keréken nyert vagy elvesztett PhD-k nem kerülnek át a fiókodba.",
     errors: {
+      unconfirmed:
+        "Nem tudtuk megerősíteni a pörgetést, ezért újratöltöttük a haladásod a szerverről.",
       syncFailed: "Nem sikerült elmenteni a haladásod pörgetés előtt, ezért a pörgetés elmaradt.",
       insufficient: "Nincs ennyi PhD-d, amit feltehetnél.",
       limit: "Ez a pörgetés a PhD-k felső korlátja fölé vinné az összeget.",

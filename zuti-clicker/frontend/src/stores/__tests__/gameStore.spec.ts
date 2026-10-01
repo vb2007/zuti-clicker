@@ -675,4 +675,58 @@ describe("gameStore", () => {
       expect(game.phdDisplayHold).toBeNull();
     });
   });
+
+  describe("guest wheel results and reset epoch", () => {
+    it("forfeitGuestSpins removes the guest's net, whichever way it went", () => {
+      const game = useGameStore();
+      game.phdCount = 150; // 100 earned + 50 won as a guest
+      game.recordGuestSpin(50);
+      expect(game.forfeitGuestSpins()).toBe(50);
+      expect(game.phdCount).toBe(100);
+      expect(game.guestUpgraderNet).toBe(0);
+
+      game.phdCount = 70; // 100 earned - 30 lost as a guest: the loss is undone too
+      game.recordGuestSpin(-30);
+      expect(game.forfeitGuestSpins()).toBe(-30);
+      expect(game.phdCount).toBe(100);
+    });
+
+    it("is a no-op when the player never spun as a guest", () => {
+      const game = useGameStore();
+      game.phdCount = 42;
+      expect(game.forfeitGuestSpins()).toBe(0);
+      expect(game.phdCount).toBe(42);
+    });
+
+    it("keeps PhDs earned by prestige after the spins (only the wheel's net is removed)", () => {
+      const game = useGameStore();
+      game.phdCount = 100;
+      game.recordGuestSpin(40);
+      game.applySpinResult(140, 0);
+      game.runTokensEarned = 4_000_000;
+      game.prestige(); // +2 PhD
+      expect(game.phdCount).toBe(142);
+      game.forfeitGuestSpins();
+      expect(game.phdCount).toBe(102);
+    });
+
+    it("a loaded server save and a hard reset both clear the guest net", () => {
+      const game = useGameStore();
+      game.recordGuestSpin(10);
+      game.loadFromSave({ tokens: 0, totalTokensEarned: 0, totalClicks: 0, elapsedSeconds: 0, units: [] });
+      expect(game.guestUpgraderNet).toBe(0);
+      game.recordGuestSpin(10);
+      game.hardReset();
+      expect(game.guestUpgraderNet).toBe(0);
+    });
+
+    it("hardReset bumps resetEpoch; a plain load does not", () => {
+      const game = useGameStore();
+      const before = game.resetEpoch;
+      game.loadFromSave({ tokens: 0, totalTokensEarned: 0, totalClicks: 0, elapsedSeconds: 0, units: [] });
+      expect(game.resetEpoch).toBe(before);
+      game.hardReset();
+      expect(game.resetEpoch).toBe(before + 1);
+    });
+  });
 });

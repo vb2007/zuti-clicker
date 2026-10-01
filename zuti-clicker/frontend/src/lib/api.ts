@@ -20,7 +20,18 @@ export class ApiError extends Error {
 // Production: VITE_API_BASE_URL is baked in at build time by the Dockerfile.
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+// How long a save or a spin may take before the request is abandoned. After an
+// abandoned spin the server MAY have settled it, which useUpgrader handles by
+// reloading the save rather than assuming either outcome.
+const SAVE_TIMEOUT_MS = 20_000;
+const SPIN_TIMEOUT_MS = 15_000;
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  timeoutMs?: number
+): Promise<T> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -28,7 +39,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     method,
     credentials: "include",
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    // A ceiling for the calls a spin waits on, so a stalled connection can't hold
+    // purchases and prestige refused (gameStore.spinPending) for the browser's own
+    // multi-minute timeout. Absent where AbortSignal.timeout isn't supported.
+    ...(timeoutMs !== undefined && typeof AbortSignal.timeout === "function"
+      ? { signal: AbortSignal.timeout(timeoutMs) }
+      : {})
   });
 
   const data = (await res.json()) as { error?: string } & T;
@@ -225,7 +242,8 @@ export const api = {
   },
   save: {
     load: () => request<LoadSaveResponse>("GET", "/save"),
-    store: (payload: SavePayload) => request<StoreSaveResponse>("PUT", "/save", payload),
+    store: (payload: SavePayload) =>
+      request<StoreSaveResponse>("PUT", "/save", payload, SAVE_TIMEOUT_MS),
     reset: () => request<ResetSaveResponse>("DELETE", "/save")
   },
   settings: {
@@ -251,7 +269,7 @@ export const api = {
     // much to stake and at what multiplier. A 409 means not enough PhDs (its
     // body carries the real balance) or an overflow; both leave the state untouched.
     spin: (stake: number, multiplier: number) =>
-      request<SpinResponse>("POST", "/upgrader/spin", { stake, multiplier })
+      request<SpinResponse>("POST", "/upgrader/spin", { stake, multiplier }, SPIN_TIMEOUT_MS)
   },
   anticheat: {
     // Fixed heartbeat + immediate-on-local-detection — see

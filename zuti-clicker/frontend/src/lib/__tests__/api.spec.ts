@@ -109,6 +109,20 @@ describe("lib/api — upgrader spin and stale-save detection", () => {
     expect(((err as ApiError).body as { phdCount: number }).phdCount).toBe(40);
   });
 
+  // A stalled request would otherwise hold purchases and prestige refused (the
+  // spin-pending freeze) for the browser's own multi-minute timeout.
+  it("regression: the spin and the save carry a timeout signal; unrelated calls don't", async () => {
+    const fetchMock = stubFetch(200, { message: "ok" });
+    await api.upgrader.spin(10, 2).catch(() => {});
+    await api.save.store({ tokens: 0, totalTokensEarned: 0, totalClicks: 0, elapsedSeconds: 0, units: [] }).catch(() => {});
+    await api.save.load().catch(() => {});
+
+    const signals = fetchMock.mock.calls.map((c) => (c[1] as RequestInit).signal);
+    expect(signals[0]).toBeInstanceOf(AbortSignal); // spin
+    expect(signals[1]).toBeInstanceOf(AbortSignal); // save
+    expect(signals[2]).toBeUndefined(); // load: unchanged
+  });
+
   it("a 403 from the spin goes through the shared anti-cheat interceptor like every other endpoint", async () => {
     stubFetch(403, { error: "restricted", restrictedUntil: null, strikeCount: 1 });
     const store = useAntiCheatStore();

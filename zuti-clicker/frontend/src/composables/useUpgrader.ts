@@ -81,7 +81,15 @@ export function useUpgrader() {
         return;
       }
     }
-    toast.push("error", t("upgrader.errors.generic"));
+    // Anything else (a timeout, a dropped connection, a 5xx, an unreadable
+    // reply) is AMBIGUOUS: the server may or may not have settled the spin. Never
+    // assume either — take the server's word, and say the outcome wasn't confirmed.
+    if (auth.isLoggedIn) {
+      toast.push("error", t("upgrader.errors.unconfirmed"));
+      void save.load();
+    } else {
+      toast.push("error", t("upgrader.errors.generic"));
+    }
   }
 
   /**
@@ -106,10 +114,15 @@ export function useUpgrader() {
     // failed): purchases and prestige are refused in between — see gameStore.
     game.spinPending = true;
     const phdBefore = game.phdCount;
+    const epoch = game.resetEpoch;
     try {
       if (auth.isLoggedIn) {
         return await save.withSyncLock(async () => {
           const res = await api.upgrader.spin(stake, multiplier);
+          // The save was deleted or reset while the server was answering: this
+          // result belongs to a game that no longer exists. Treated as an
+          // unconfirmed spin (reload), never written onto the fresh game.
+          if (game.resetEpoch !== epoch) throw new Error("save reset during a spin");
           const outcome: SpinOutcome = {
             won: res.won,
             rollPpm: res.rollPpm,
@@ -125,7 +138,10 @@ export function useUpgrader() {
 
       const outcome = settleSpin(stake, hundredths, phdBefore, rollPpmLocal(), frenzyRemainingMs());
       if (outcome === null) return null;
-      apply(outcome, game.upgraderSeq + 1, phdBefore);
+      // A guest's counter stays where it is (it only means something against a
+      // server save), and the result is remembered so it can be dropped at login.
+      apply(outcome, game.upgraderSeq, phdBefore);
+      game.recordGuestSpin(outcome.phdCount - phdBefore);
       return outcome;
     } catch (err) {
       reportFailure(err);

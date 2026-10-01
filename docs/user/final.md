@@ -253,7 +253,7 @@ Az első fokozatszerzésed után a „Fokozat" panelen, a „Defend Thesis" gomb
 
 **Pörgetés közben** a vezérlők zárolva vannak, és a vásárlás/fokozatszerzés is szünetel. A bal oldali PhD-számláló a kerék megállásáig a régi értéket mutatja, hogy ne áruljon el semmit előre. Az eredmény (nyertél/vesztettél, az új PhD-készleted) a kerék megállása után jelenik meg, a „Spin again" gombbal pedig újra pörgethetsz.
 
-**Bejelentkezve** a pörgetés előtt a játék automatikusan elmenti az állapotodat, és az eredmény a szerveren is rögzül. Ha ugyanazt a fiókot egy másik lapon is használod, és ott pörgettél, ezen a lapon a következő mentés „a haladásod máshol megváltozott" értesítést kap, és a legfrissebb mentést tölti be. **Vendégként** a pörgetés csak a játékban él — a nyert vagy elvesztett PhD-k a többi haladásoddal együtt elvesznek, ha bezárod a lapot (az ablak ezt ki is írja).
+**Bejelentkezve** a pörgetés előtt a játék automatikusan elmenti az állapotodat, és az eredmény a szerveren is rögzül. Ha ugyanazt a fiókot egy másik lapon is használod, és ott pörgettél, ezen a lapon a következő mentés „a haladásod máshol megváltozott" értesítést kap, és a legfrissebb mentést tölti be. **Vendégként** a pörgetés csak a játékban él — a nyert vagy elvesztett PhD-k a többi haladásoddal együtt elvesznek, ha bezárod a lapot (az ablak ezt ki is írja). Ha vendégként pörgettél, majd bejelentkezel, a keréken nyert vagy elvesztett PhD-k **nem kerülnek át a fiókodba** (a játék értesít erről) — a fiókod haladása csak a fokozatszerzésből származó PhD-ket tartalmazza.
 
 A PhD-ranglista a *jelenlegi* PhD-készletedet mutatja, ezért az Upgrader közvetlenül befolyásolja a helyezésedet.
 

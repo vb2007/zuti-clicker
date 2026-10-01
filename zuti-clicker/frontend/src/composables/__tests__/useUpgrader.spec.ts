@@ -288,6 +288,96 @@ describe("useUpgrader", () => {
     });
   });
 
+  describe("a spin whose outcome is unknown", () => {
+    // A timeout / dropped connection / 5xx after the server committed: the client
+    // can't tell whether PhDs changed. It must not assume either way.
+    it.each([
+      ["a network error", () => new Error("network")],
+      ["a 502 from a proxy", () => new ApiError(502, "Bad gateway", {})],
+      ["an unreadable reply", () => new SyntaxError("Unexpected token <")]
+    ])("regression: %s says the outcome wasn't confirmed and reloads the server's state", async (_l, mk) => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 100;
+      vi.mocked(api.save.load).mockResolvedValue({
+        save: {
+          tokens: 0,
+          totalTokensEarned: 0,
+          totalClicks: 0,
+          elapsedSeconds: 0,
+          phdCount: 60,
+          upgraderSeq: 1,
+          units: [],
+          savedAt: new Date().toISOString()
+        }
+      });
+      vi.mocked(api.upgrader.spin).mockRejectedValue(mk());
+
+      expect(await mountUpgrader().spin(40, 2, trustedClick())).toBeNull();
+
+      await vi.waitFor(() => expect(api.save.load).toHaveBeenCalled());
+      // The server's word wins: the spin DID settle, and now the client knows.
+      await vi.waitFor(() => expect(game.phdCount).toBe(60));
+      expect(game.upgraderSeq).toBe(1);
+      expect(game.spinPending).toBe(false);
+      expect(useToastStore().toasts).toHaveLength(1);
+    });
+
+    it("a definite refusal (a 400/409) does NOT reload — nothing changed on the server", async () => {
+      loginAs();
+      useGameStore().phdCount = 100;
+      vi.mocked(api.upgrader.spin).mockRejectedValue(new ApiError(400, "bad", {}));
+      await mountUpgrader().spin(40, 2, trustedClick());
+      expect(api.save.load).not.toHaveBeenCalled();
+    });
+
+    it("regression: a save deleted while the server was answering never gets the old result written onto it", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 100;
+      vi.mocked(api.save.load).mockResolvedValue({ save: null });
+      vi.mocked(api.upgrader.spin).mockImplementation(async () => {
+        game.hardReset(); // the DELETE /save landed while the spin was in flight
+        return spinResponse({ phdCount: 250, upgraderSeq: 9 });
+      });
+
+      expect(await mountUpgrader().spin(40, 2, trustedClick())).toBeNull();
+
+      expect(game.phdCount).toBe(0);
+      expect(game.upgraderSeq).toBe(0);
+      expect(game.activeBoosters).toEqual([]);
+    });
+  });
+
+  describe("guest results do not carry over to an account", () => {
+    function stubRollLocal(rollPpm: number) {
+      vi.spyOn(crypto, "getRandomValues").mockImplementation(((arr: Uint32Array) => {
+        arr[0] = rollPpm;
+        return arr;
+      }) as typeof crypto.getRandomValues);
+    }
+
+    it("remembers each guest spin's net PhDs", async () => {
+      const game = useGameStore();
+      game.phdCount = 100;
+      stubRollLocal(449_999); // x2 win: +50
+      await mountUpgrader().spin(50, 2, trustedClick());
+      expect(game.guestUpgraderNet).toBe(50);
+      stubRollLocal(UPGRADER_PPM - 1); // loss: -30
+      await mountUpgrader().spin(30, 2, trustedClick());
+      expect(game.guestUpgraderNet).toBe(20);
+    });
+
+    it("a logged-in spin does not touch it", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 100;
+      vi.mocked(api.upgrader.spin).mockResolvedValue(spinResponse({ phdCount: 150, upgraderSeq: 1 }));
+      await mountUpgrader().spin(50, 2, trustedClick());
+      expect(game.guestUpgraderNet).toBe(0);
+    });
+  });
+
   describe("guard rails (any account)", () => {
     it("an untrusted click earns nothing and counts as an automation signal", async () => {
       loginAs();
@@ -349,7 +439,8 @@ describe("useUpgrader", () => {
 
       expect(out).toMatchObject({ won: true, rollPpm: 449_999, payout: 200, phdCount: 200 });
       expect(game.phdCount).toBe(200);
-      expect(game.upgraderSeq).toBe(1);
+      // A guest's counter stays put: it only means something against a server save.
+      expect(game.upgraderSeq).toBe(0);
       expect(api.save.store).not.toHaveBeenCalled();
       expect(api.upgrader.spin).not.toHaveBeenCalled();
     });

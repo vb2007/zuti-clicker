@@ -97,6 +97,13 @@ export const useGameStore = defineStore("game", () => {
   // stops. Display only — phdCount itself (and so every multiplier derived
   // from it) already reflects the spin, matching the server from that instant.
   const phdDisplayHold = ref<number | null>(null);
+  // A guest's wheel results (net PhDs won minus lost), which do NOT carry over to
+  // an account: the server has no record of them, so its plausibility envelope
+  // would read wheel-won PhDs as forged. Dropped by forfeitGuestSpins() at login.
+  const guestUpgraderNet = ref(0);
+  // Bumped by hardReset (delete save / reset). A spin that was in flight across a
+  // reset must not write its result onto the fresh game — see useUpgrader.
+  const resetEpoch = ref(0);
   const phdCountDisplay = computed(() => phdDisplayHold.value ?? phdCount.value);
 
   const unitStates = ref<UnitState[]>(UNIT_DEFINITIONS.map((d) => ({ id: d.id, owned: 0 })));
@@ -334,6 +341,23 @@ export const useGameStore = defineStore("game", () => {
     upgraderSeq.value = newUpgraderSeq;
   }
 
+  function recordGuestSpin(delta: number): void {
+    guestUpgraderNet.value += delta;
+  }
+
+  /**
+   * Undoes every wheel result made as a guest, returning the net that was
+   * removed (0 if there was none). Called when the player logs in, so the first
+   * save an account ever makes carries only PhDs that prestige explains.
+   */
+  function forfeitGuestSpins(): number {
+    const net = guestUpgraderNet.value;
+    if (net === 0) return 0;
+    phdCount.value -= net;
+    guestUpgraderNet.value = 0;
+    return net;
+  }
+
   function holdPhdDisplay(value: number): void {
     phdDisplayHold.value = value;
   }
@@ -376,6 +400,8 @@ export const useGameStore = defineStore("game", () => {
     prestigeCount.value = 0;
     upgraderSeq.value = 0;
     phdDisplayHold.value = null;
+    guestUpgraderNet.value = 0;
+    resetEpoch.value++;
     unitStates.value.forEach((u) => {
       u.owned = 0;
     });
@@ -392,6 +418,7 @@ export const useGameStore = defineStore("game", () => {
     prestigeCount.value = save.prestigeCount ?? 0;
     upgraderSeq.value = save.upgraderSeq ?? 0;
     phdDisplayHold.value = null;
+    guestUpgraderNet.value = 0;
     // A save with no run counters predates prestige, so it IS a single
     // un-prestiged run: run totals equal lifetime totals. `??` (not `||`) so a
     // genuine post-prestige 0 is preserved rather than re-seeded from lifetime.
@@ -443,6 +470,8 @@ export const useGameStore = defineStore("game", () => {
     prestigeCount,
     upgraderSeq,
     spinPending,
+    guestUpgraderNet,
+    resetEpoch,
     phdDisplayHold,
     phdCountDisplay,
     unitStates,
@@ -482,6 +511,8 @@ export const useGameStore = defineStore("game", () => {
     buyUpgrade,
     grantBooster,
     applySpinResult,
+    recordGuestSpin,
+    forfeitGuestSpins,
     holdPhdDisplay,
     releasePhdDisplay,
     tick,

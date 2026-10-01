@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { nextTick } from "vue";
 import { setActivePinia, createPinia } from "pinia";
 import { useSaveStore } from "@/stores/saveStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -197,6 +198,51 @@ describe("saveStore", () => {
     });
   });
 
+  describe("logging in after playing as a guest", () => {
+    // The server has no record of a guest's wheel results, so a first save carrying
+    // wheel-won PhDs would read as forged — and the guest's counter never matches 0.
+    it("regression: wheel results made as a guest are dropped at login, and the player is told", async () => {
+      const game = useGameStore();
+      const save = useSaveStore(); // the watcher lives in the store
+      void save;
+      game.phdCount = 150; // 100 earned + 50 won on the wheel as a guest
+      game.recordGuestSpin(50);
+
+      loginAs();
+      await nextTick();
+
+      expect(game.phdCount).toBe(100);
+      expect(game.guestUpgraderNet).toBe(0);
+      expect(useToastStore().toasts).toHaveLength(1);
+    });
+
+    it("says nothing when the guest never spun", async () => {
+      const game = useGameStore();
+      useSaveStore();
+      game.phdCount = 100;
+      loginAs();
+      await nextTick();
+      expect(game.phdCount).toBe(100);
+      expect(useToastStore().toasts).toHaveLength(0);
+    });
+  });
+
+  describe("a stale save whose reload also fails", () => {
+    it("regression: does not claim the progress was reloaded when it wasn't", async () => {
+      loginAs();
+      vi.mocked(api.save.store).mockRejectedValue(
+        new ApiError(409, "stale", { code: SAVE_STALE_CODE })
+      );
+      vi.mocked(api.save.load).mockRejectedValue(new Error("offline"));
+
+      const save = useSaveStore();
+      await save.sync();
+
+      expect(useToastStore().toasts).toHaveLength(0);
+      expect(save.syncError).toBe("stale");
+    });
+  });
+
   describe("withSyncLock()", () => {
     const ok = () => ({ message: "ok", savedAt: new Date().toISOString() });
 
@@ -315,6 +361,29 @@ describe("saveStore", () => {
       await locked;
       expect(api.save.store).toHaveBeenCalledTimes(2);
       expect(work).toHaveBeenCalledTimes(1);
+    });
+
+    it("regression: an in-flight sync that comes back stale aborts the spin instead of being swallowed", async () => {
+      loginAs();
+      let rejectFirst!: (e: unknown) => void;
+      const first = new Promise<never>((_, reject) => {
+        rejectFirst = reject;
+      });
+      vi.mocked(api.save.store).mockReturnValueOnce(first).mockResolvedValue(ok());
+      vi.mocked(api.save.load).mockResolvedValue({ save: null });
+      const work = vi.fn().mockResolvedValue("x");
+
+      const save = useSaveStore();
+      const inFlight = save.sync();
+      const locked = save.withSyncLock(work).catch((e: unknown) => e);
+
+      rejectFirst(new ApiError(409, "stale", { code: SAVE_STALE_CODE }));
+      await inFlight;
+      const err = await locked;
+
+      expect(err).toBeInstanceOf(SyncFlushError);
+      expect((err as SyncFlushError).stale).toBe(true);
+      expect(work).not.toHaveBeenCalled();
     });
 
     it("releases the lock when the work throws, so syncs resume", async () => {
