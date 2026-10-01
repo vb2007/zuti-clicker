@@ -134,6 +134,12 @@ function buy(e: MouseEvent) {
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
+  max-width: 100%;
+  /* Break/hyphenate a long word (<html lang> is kept in sync with the language
+     setting, so hyphens: auto uses the right dictionary) rather than let it
+     push the tile wider than its column. */
+  overflow-wrap: break-word;
+  hyphens: auto;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;

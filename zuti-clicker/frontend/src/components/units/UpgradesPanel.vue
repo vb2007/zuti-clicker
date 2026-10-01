@@ -248,7 +248,10 @@ const ownedGroups = computed(() =>
 
 .upgrade-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* minmax(0, 1fr), not 1fr: a bare 1fr is minmax(auto, 1fr), so one tile's
+     long unbreakable word (esp. Hungarian) forced its column — and the whole
+     grid — wider than the rail, scrolling it sideways. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -339,7 +342,14 @@ const ownedGroups = computed(() =>
 
 @media (max-width: 759px) {
   .upgrade-grid {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Four columns on a 320px phone make ~67px tiles — too narrow for a name. */
+@media (max-width: 380px) {
+  .upgrade-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 </style>
