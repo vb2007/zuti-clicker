@@ -24,6 +24,32 @@
   --header-h: 52px;
   --header-h-compact: 84px; /* header grows a second row (mini stats) below 760px */
   --mobile-tabbar-h: 60px;
+
+  /* Device safe areas (notch, rounded corners, home indicator). index.html
+     sets viewport-fit=cover, so content reaches under them unless a surface
+     pads itself by these. Tokens rather than raw env() so a test (or a
+     future user setting) can override them — Chromium can't emulate env(). */
+  --sai-top:    env(safe-area-inset-top, 0px);
+  --sai-right:  env(safe-area-inset-right, 0px);
+  --sai-bottom: env(safe-area-inset-bottom, 0px);
+  --sai-left:   env(safe-area-inset-left, 0px);
+
+  /* The tab bar's full footprint, including the home-indicator inset it pads
+     itself by. Everything positioned "above the tab bar" (mobile sheets,
+     scrim, toasts) must use this, not --mobile-tabbar-h alone, or it ends up
+     under the bar on devices with a bottom inset. */
+  --tabbar-total: calc(var(--mobile-tabbar-h) + var(--sai-bottom));
+}
+
+/* Phone landscape: a ~375px-tall viewport can't afford a two-row header and
+   a 60px tab bar (that left ~230px for the game). The header drops its
+   second row (AppHeader shows mini-stats inline) and the bar slims down.
+   Keep the width limit in sync with COMPACT_BREAKPOINT_PX. */
+@media (max-width: 759px) and (max-height: 500px) {
+  :root {
+    --header-h-compact: 52px;
+    --mobile-tabbar-h: 48px;
+  }
 }
 
 /* ── Dark theme ───────────────────────────────────────────── */

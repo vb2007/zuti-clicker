@@ -1,4 +1,4 @@
-import { onUnmounted, ref } from "vue";
+import { useMediaQuery } from "@/composables/useMediaQuery";
 
 // Below this, the fixed three-column shell (status rail | clicker | shop
 // rail) no longer fits: the clicker collapses to near-nothing between two
@@ -7,25 +7,10 @@ import { onUnmounted, ref } from "vue";
 export const COMPACT_BREAKPOINT_PX = 760;
 
 /**
- * Reactive `isCompact` (viewport narrower than COMPACT_BREAKPOINT_PX),
- * backed by `matchMedia` so it updates live on resize/rotation without a
- * resize-event listener. Falls back to `false` when `matchMedia` is
- * unavailable (very old browsers, some non-browser test environments) rather
- * than throwing — the desktop layout is always a safe default.
+ * Reactive `isCompact` (viewport narrower than COMPACT_BREAKPOINT_PX), a thin
+ * wrapper over useMediaQuery.
  */
 export function useBreakpoint(maxWidthPx: number = COMPACT_BREAKPOINT_PX) {
-  const query = typeof window !== "undefined" && "matchMedia" in window
-    ? window.matchMedia(`(max-width: ${maxWidthPx - 1}px)`)
-    : null;
-
-  const isCompact = ref(query?.matches ?? false);
-
-  function onChange(e: MediaQueryListEvent) {
-    isCompact.value = e.matches;
-  }
-
-  query?.addEventListener("change", onChange);
-  onUnmounted(() => query?.removeEventListener("change", onChange));
-
-  return { isCompact };
+  const { matches } = useMediaQuery(`(max-width: ${maxWidthPx - 1}px)`);
+  return { isCompact: matches };
 }
