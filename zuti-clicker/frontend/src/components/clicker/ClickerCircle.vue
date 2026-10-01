@@ -204,10 +204,13 @@ function handleClick(e: MouseEvent) {
 </template>
 
 <style scoped>
+/* --circle comes from ClickerArea (sized to the room it actually has); the
+   220px fallbacks are the original fixed size. Face, glow and rings are all
+   derived from it so they stay concentric at any size. */
 .circle-wrap {
   position: relative;
-  width: 220px;
-  height: 220px;
+  width: var(--circle, 220px);
+  height: var(--circle, 220px);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
@@ -223,16 +226,16 @@ function handleClick(e: MouseEvent) {
 
 .glow-layer {
   position: absolute;
-  width: 200px;
-  height: 200px;
+  width: calc(var(--circle, 220px) - 20px);
+  height: calc(var(--circle, 220px) - 20px);
   border-radius: 50%;
   pointer-events: none;
   animation: breathe 3.5s ease-in-out infinite;
 }
 
 .circle {
-  width: 200px;
-  height: 200px;
+  width: calc(var(--circle, 220px) - 20px);
+  height: calc(var(--circle, 220px) - 20px);
   border-radius: 50%;
   background: radial-gradient(circle at 38% 38%, var(--bg-elevated), var(--bg-card));
   border: 2px solid var(--accent);
@@ -301,12 +304,12 @@ function handleClick(e: MouseEvent) {
 }
 
 .ring-1 {
-  width: 224px;
-  height: 224px;
+  width: calc(var(--circle, 220px) + 4px);
+  height: calc(var(--circle, 220px) + 4px);
 }
 .ring-2 {
-  width: 250px;
-  height: 250px;
+  width: calc(var(--circle, 220px) + 30px);
+  height: calc(var(--circle, 220px) + 30px);
 }
 
 @media (hover: hover) {

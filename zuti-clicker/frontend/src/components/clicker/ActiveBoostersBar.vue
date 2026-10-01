@@ -72,6 +72,43 @@ function formatCountdown(secs: number): string {
   max-width: calc(100% - 24px);
 }
 
+/* A narrow area (phone portrait): three simultaneous boosters, each as wide as
+   "Name · effect  0:42", stack into three rows and land on the circle. Drop the
+   name (the effect is the useful part) and tighten up so two fit per row and the
+   bar stays above the circle. */
+@container (max-width: 420px) {
+  .boosters-bar {
+    gap: 4px;
+    top: 8px;
+  }
+  .booster-chip {
+    gap: 4px;
+    padding: 3px 8px;
+  }
+  .chip-label,
+  .chip-sep {
+    display: none;
+  }
+}
+
+/* Phone landscape: the circle fills the area's height, so a bar centred above
+   it would sit on top of it. Park the chips down the left side instead (there
+   is plenty of width), without the long effect text. */
+@media (max-height: 500px) {
+  .boosters-bar {
+    left: 12px;
+    transform: none;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+  .chip-effect,
+  .chip-sep {
+    display: none;
+  }
+}
+
 .booster-chip {
   display: flex;
   align-items: center;

@@ -152,6 +152,39 @@ function onCircleClick({ x, y }: { x: number; y: number }) {
   background: var(--bg-base);
   overflow: hidden;
   transition: background var(--transition-slow);
+  --circle: 220px;
+}
+
+/* The click circle is sized to the room this area actually has, not the
+   viewport: ~62% of its width, but never so tall that the hint and cps pill
+   under it (plus a booster chip bar above) no longer fit — which is what
+   clipped it in phone landscape (a 220px circle in ~275px of height) — and
+   capped so it doesn't look lost on a big monitor. The area becomes a size
+   container so cqw/cqh are its own dimensions; it is a grid item whose track
+   is sized by the layout (never by its content), so size containment is safe.
+   Browsers without container units keep the fixed 220px above. */
+@supports (width: 1cqw) {
+  .clicker-area {
+    container-type: size;
+    --circle: clamp(140px, min(62cqw, 100cqh - 140px), 280px);
+  }
+}
+
+/* Narrow areas (phone portrait): nudge the stack down a little so up to three
+   simultaneous booster chips (ActiveBoostersBar, two rows here) sit above the
+   circle instead of on it. The shift is constant — the circle never moves when
+   a booster starts or ends. */
+@container (max-width: 420px) {
+  .clicker-content {
+    margin-top: 40px;
+  }
+}
+
+/* Short areas (phone landscape) tighten the stack under the circle. */
+@container (max-height: 400px) {
+  .clicker-content {
+    gap: 12px;
+  }
 }
 
 .glow-bg {
