@@ -205,6 +205,21 @@ describe("UpgradeTile", () => {
       b.unmount();
     });
 
+    // Regression (review): nothing proved that lifting the finger cancels the pending preview —
+    // deleting the clearPress() in the pointerup handler passed every test, yet it would arm a
+    // pinned preview 500ms after any tap on a tile that doesn't buy (a locked one).
+    it("regression: lifting the finger cancels the pending preview — it never fires afterwards", async () => {
+      const wrapper = mount(UpgradeTile, { props: { upgradeId: "chalk" }, attachTo: document.body });
+      const tile = wrapper.find(".upgrade-tile").element; // locked: a tap here buys nothing
+      await press(tile, "pointerdown");
+      await vi.advanceTimersByTimeAsync(80);
+      await press(tile, "pointerup");
+      await dispatchTrusted(tile, "click");
+      await vi.advanceTimersByTimeAsync(LONG_PRESS_MS + 500); // well past when it would have fired
+      expect(body().find(".tooltip").exists()).toBe(false);
+      wrapper.unmount();
+    });
+
     it("a press that lifts just before the threshold is a tap, not a preview", async () => {
       const game = useGameStore();
       game.tokens = 200;

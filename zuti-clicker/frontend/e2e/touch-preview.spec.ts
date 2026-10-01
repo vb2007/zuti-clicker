@@ -102,6 +102,20 @@ test.describe("upgrade tiles on touch", () => {
     await expect(page.locator(".tooltip")).toBeVisible();
   });
 
+  // Regression (review): a quick tap on a tile that does not buy (a locked one) must not arm a
+  // *pinned* preview that pops up half a second later. (The tap itself focuses the tile, which
+  // legitimately shows its tooltip while focused — so blur first: only a pinned one survives.)
+  test("a quick tap on a locked tile does not arm a delayed preview", async ({ app, page }) => {
+    await openUpgrades(app, page);
+    await app.seed((s) => void (s.game.tokens = 0));
+    await expect(page.locator(".upgrade-tile[aria-disabled='true']").first()).toBeVisible();
+    const { x, y } = await center(page, ".upgrade-tile[aria-disabled='true']");
+    await humanTap(page, x, y);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.waitForTimeout(800); // longer than the long-press threshold
+    await expect(page.locator(".tooltip")).toHaveCount(0);
+  });
+
   test("tapping elsewhere dismisses the preview", async ({ app, page }) => {
     await openUpgrades(app, page);
     const { x, y } = await center(page, ".upgrade-tile");

@@ -134,6 +134,19 @@ describe("useAnchoredTooltip", () => {
       expect(api.visible.value).toBe(true);
     });
 
+    // Regression (review): on desktop, hovering for >350ms and then clicking the (i) closed the
+    // tooltip under the cursor (and Enter/Space on a focused (i) did the same).
+    it("regression: clicking after a plain hover does not close it from under the cursor", () => {
+      vi.useFakeTimers();
+      mountWithAnchor();
+      api.onEnter();
+      vi.advanceTimersByTime(2000);
+      api.toggle();
+      expect(api.visible.value).toBe(true);
+      api.onLeave(); // now pinned by the click: it outlives the pointer leaving
+      expect(api.visible.value).toBe(true);
+    });
+
     it("closes on a later tap", () => {
       vi.useFakeTimers();
       mountWithAnchor();
@@ -170,6 +183,21 @@ describe("useAnchoredTooltip", () => {
       expect(api.visible.value).toBe(false);
     });
 
+    // Regression (review): the tooltip is teleported to <body>, so Back/Escape closing the sheet
+    // that held its anchor left it floating over the game.
+    it("regression: closes on Back (popstate) and on Escape, but ignores other keys", () => {
+      mountWithAnchor();
+      api.open();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+      expect(api.visible.value).toBe(true);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      expect(api.visible.value).toBe(false);
+
+      api.open();
+      window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+      expect(api.visible.value).toBe(false);
+    });
+
     it("closes on scroll and on resize", () => {
       mountWithAnchor();
       api.open();
@@ -188,7 +216,7 @@ describe("useAnchoredTooltip", () => {
       wrapper = null;
       expect(removeDoc.mock.calls.map((c) => c[0])).toContain("pointerdown");
       expect(removeWin.mock.calls.map((c) => c[0])).toEqual(
-        expect.arrayContaining(["scroll", "resize"])
+        expect.arrayContaining(["scroll", "resize", "popstate", "keydown"])
       );
     });
   });

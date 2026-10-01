@@ -101,21 +101,20 @@ export function useAnchoredTooltip(width = 220, estimatedHeight = 190) {
   }
 
   /**
-   * A tap on the anchor: opens it, or — if it has been open a moment — closes it.
-   * (On touch the very same tap that focuses/hovers the anchor also clicks it;
-   * the grace period stops that click from closing what it just opened.)
+   * A tap on the anchor: pins it open, or — if a previous tap pinned it a moment ago —
+   * closes it. (On touch the very same tap that focuses/hovers the anchor also clicks
+   * it; the grace period stops that click from closing what it just opened.) Only a
+   * *pinned* tooltip is closed by a click: a mouse user whose hover opened it and who
+   * then clicks the anchor should not have it vanish from under the cursor.
    */
   function toggle(): void {
-    if (visible.value && Date.now() - openedAt > TOGGLE_GRACE_MS) {
+    if (pinned.value && Date.now() - openedAt > TOGGLE_GRACE_MS) {
       close();
       return;
     }
     open();
   }
 
-  // A capture-phase listener catches scrolling on an ancestor's own
-  // `overflow-y: auto` (the shop panel's list), which doesn't bubble to
-  // window the way a normal listener would need.
   function close(): void {
     hovered.value = false;
     focused.value = false;
@@ -130,12 +129,26 @@ export function useAnchoredTooltip(width = 220, estimatedHeight = 190) {
     close();
   }
 
+  // Escape dismisses a tooltip (WCAG 1.4.13), and so does Back: the tooltip is teleported
+  // to <body>, so it would otherwise outlive a mobile sheet that Back/Escape just closed.
+  // (Deliberately not an overlay-stack entry: it must not consume the Back press.)
+  function onKeydown(e: KeyboardEvent): void {
+    if (e.key === "Escape" && visible.value) close();
+  }
+
+  // A capture-phase scroll listener catches scrolling on an ancestor's own
+  // `overflow-y: auto` (the shop panel's list), which doesn't bubble to
+  // window the way a normal listener would need.
   window.addEventListener("scroll", close, true);
   window.addEventListener("resize", close);
+  window.addEventListener("popstate", close);
+  window.addEventListener("keydown", onKeydown);
   document.addEventListener("pointerdown", onOutsidePointerDown, true);
   onUnmounted(() => {
     window.removeEventListener("scroll", close, true);
     window.removeEventListener("resize", close);
+    window.removeEventListener("popstate", close);
+    window.removeEventListener("keydown", onKeydown);
     document.removeEventListener("pointerdown", onOutsidePointerDown, true);
   });
 
