@@ -27,7 +27,11 @@ const stats = computed(() => [
   { label: t("status.totalEarned"), value: formatNumber(game.totalTokensEarned), primary: false },
   { label: t("status.totalClicks"), value: formatNumber(game.totalClicks), primary: false },
   { label: t("status.timePlayed"), value: formatTime(game.elapsedSeconds), primary: false },
-  { label: t("status.phdCount"), value: formatNumber(game.phdCount), primary: game.phdCount > 0 }
+  {
+    label: t("status.phdCount"),
+    value: formatNumber(game.phdCountDisplay),
+    primary: game.phdCountDisplay > 0
+  }
 ]);
 
 const runStats = computed(() => [

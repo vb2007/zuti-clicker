@@ -1,5 +1,6 @@
 import { prisma } from "../prisma";
 import { withWriteConflictRetry } from "../retry";
+import type { GameSave } from "../../../generated/prisma/client";
 
 export interface UnitInput {
   unitId: string;
@@ -26,7 +27,15 @@ export interface SaveInput {
   // here means "leave whatever is already stored alone" — same
   // omitted-means-preserve rule as the prestige fields above.
   upgrades?: string[];
+  // The spin counter the client believes is current (GameSave.upgraderSeq,
+  // handed out by GET /save and POST /upgrader/spin). Never stored — it only
+  // guards the write: a save made before a later wheel spin must not be able
+  // to overwrite that spin's result (see upsertSave). Absent means 0, which
+  // is correct for any client/account that has never spun.
+  upgraderSeq?: number;
 }
+
+export type UpsertResult = { ok: true; save: GameSave } | { ok: false; reason: "stale" };
 
 // A player's active booster buffs are deliberately NOT part of SaveInput —
 // they can only be created/refreshed by POST /boosters/claim (see
@@ -46,7 +55,7 @@ export const getSave = async (userId: number) => {
   });
 };
 
-export const upsertSave = async (userId: number, data: SaveInput) => {
+export const upsertSave = async (userId: number, data: SaveInput): Promise<UpsertResult> => {
   const { tokens, totalTokensEarned, totalClicks, elapsedSeconds, units } = data;
   const now = new Date();
 
@@ -78,26 +87,43 @@ export const upsertSave = async (userId: number, data: SaveInput) => {
   // idempotent for a given payload. See database/retry.ts.
   return withWriteConflictRetry(() =>
     prisma.$transaction(async (tx) => {
-      const gameSave = await tx.gameSave.upsert({
-        where: { userId },
-        create: {
-          userId,
-          tokens,
-          totalTokensEarned,
-          totalClicks,
-          elapsedSeconds,
-          ...prestigeCreate,
-          savedAt: now
-        },
-        update: {
-          tokens,
-          totalTokensEarned,
-          totalClicks,
-          elapsedSeconds,
-          ...prestigeUpdate,
-          savedAt: now
-        }
-      });
+      // Create-or-update, spelled out (rather than prisma's upsert) because
+      // the UPDATE must be conditional: `upgraderSeq` in its WHERE is
+      // re-checked against the row's live value when the statement runs
+      // (InnoDB locks the row), so a save that was already in flight when a
+      // wheel spin committed matches 0 rows instead of overwriting the spin's
+      // PhD change. A first-ever save has nothing to be stale against. Two
+      // first-ever saves racing each other hit the unique userId constraint
+      // (P2002), which withWriteConflictRetry re-runs down the update path.
+      const existing = await tx.gameSave.findUnique({ where: { userId }, select: { id: true } });
+      let gameSave: GameSave;
+      if (!existing) {
+        gameSave = await tx.gameSave.create({
+          data: {
+            userId,
+            tokens,
+            totalTokensEarned,
+            totalClicks,
+            elapsedSeconds,
+            ...prestigeCreate,
+            savedAt: now
+          }
+        });
+      } else {
+        const updated = await tx.gameSave.updateMany({
+          where: { id: existing.id, upgraderSeq: data.upgraderSeq ?? 0 },
+          data: {
+            tokens,
+            totalTokensEarned,
+            totalClicks,
+            elapsedSeconds,
+            ...prestigeUpdate,
+            savedAt: now
+          }
+        });
+        if (updated.count === 0) return { ok: false, reason: "stale" } as const;
+        gameSave = await tx.gameSave.findUniqueOrThrow({ where: { id: existing.id } });
+      }
 
       await tx.unitSave.deleteMany({ where: { gameSaveId: gameSave.id } });
 
@@ -119,7 +145,7 @@ export const upsertSave = async (userId: number, data: SaveInput) => {
         }
       }
 
-      return gameSave;
+      return { ok: true, save: gameSave } as const;
     })
   );
 };

@@ -182,7 +182,8 @@ export default {
     neverSynced: "Not synced",
     deleteSave: "Delete save",
     logout: "Log out",
-    loginToSave: "Login to save"
+    loginToSave: "Login to save",
+    staleReloaded: "Your progress changed elsewhere (another tab?), so the latest save was loaded."
   },
   guest: {
     warningTitle: "Progress won't be saved",
@@ -201,6 +202,51 @@ export default {
     prestigeGuestWarning:
       "You're playing as a guest — your PhDs are lost when you close this tab. Log in to keep them.",
     prestigeConfirmBtn: "Defend Thesis"
+  },
+  upgrader: {
+    title: "Upgrader",
+    openBtn: "Upgrader",
+    owned: "You have {phd} PhD",
+    wheelAria: "Wheel: {pct}% chance to win",
+    stake: "Stake",
+    stakeChipAria: "Stake {pct}% of your PhDs",
+    stakeAllAria: "Stake all your PhDs",
+    stakeMax: "Max",
+    close: "Close",
+    multiplier: "Multiplier",
+    multiplierSlider: "Custom multiplier",
+    win: "Win",
+    lose: "Lose",
+    chanceCentre: "to win",
+    frenzyOnLoss: "{name} for {seconds}s",
+    noFrenzyOnLoss: "Stake too small for a {name}",
+    spin: "Spin",
+    spinAgain: "Spin again",
+    spinning: "Spinning…",
+    resultWin: "You won {gain} PhD.",
+    resultWinTotal: "You now have {total}.",
+    resultLose: "You lost {stake} PhD.",
+    resultFrenzy: "{name} is active for {seconds}s.",
+    problems: {
+      noPhd: "You need at least 1 PhD to spin.",
+      enterStake: "Enter how many PhDs to stake.",
+      tooMany: "You can stake at most {owned} PhD.",
+      tooSmall:
+        "At ×{mult} the stake must be at least {min} PhD, or the win pays no more than you put in.",
+      restricted: "This account is temporarily restricted."
+    },
+    finePrint:
+      "Over many spins you get back about {rtp}% of what you stake. The win chance never goes above {cap}%.",
+    guestNote: "You're a guest — PhDs won or lost here are not saved.",
+    guestSpinsDropped: "PhDs won or lost on the wheel as a guest don't carry over to your account.",
+    errors: {
+      unconfirmed: "We couldn't confirm that spin, so your progress was reloaded from the server.",
+      syncFailed: "Couldn't save your progress before spinning, so the spin didn't happen.",
+      insufficient: "You don't have that many PhDs to stake.",
+      limit: "That spin could push your PhD total past its limit.",
+      invalid: "That stake or multiplier isn't valid.",
+      generic: "The spin failed. Try again."
+    }
   },
   prestige: {
     title: "Prestige",

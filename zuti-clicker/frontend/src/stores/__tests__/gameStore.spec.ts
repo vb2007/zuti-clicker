@@ -556,4 +556,177 @@ describe("gameStore", () => {
       expect(game.tokens).toBeGreaterThan(0);
     });
   });
+  describe("upgrader (spin counter, pending freeze, display hold)", () => {
+    it("starts with no spins, nothing pending and no display hold", () => {
+      const game = useGameStore();
+      expect(game.upgraderSeq).toBe(0);
+      expect(game.spinPending).toBe(false);
+      expect(game.phdDisplayHold).toBeNull();
+      expect(game.phdCountDisplay).toBe(0);
+    });
+
+    it("applySpinResult sets the PhD balance and counter from the settled values (not a delta)", () => {
+      const game = useGameStore();
+      game.phdCount = 100;
+      game.applySpinResult(150, 3);
+      expect(game.phdCount).toBe(150);
+      expect(game.upgraderSeq).toBe(3);
+    });
+
+    it("applying a result immediately changes the production multiplier (it matches the server from that instant)", () => {
+      const game = useGameStore();
+      game.phdCount = 50;
+      expect(game.productionMultiplier).toBe(2);
+      game.applySpinResult(0, 1);
+      expect(game.productionMultiplier).toBe(1);
+    });
+
+    it("toSavePayload sends the counter; loadFromSave restores it", () => {
+      const game = useGameStore();
+      game.applySpinResult(10, 4);
+      const payload = game.toSavePayload();
+      expect(payload.upgraderSeq).toBe(4);
+
+      game.hardReset();
+      expect(game.upgraderSeq).toBe(0);
+      game.loadFromSave(payload);
+      expect(game.upgraderSeq).toBe(4);
+    });
+
+    it("a legacy save with no upgraderSeq loads as 0 (?? not ||)", () => {
+      const game = useGameStore();
+      game.upgraderSeq = 9;
+      game.loadFromSave({
+        tokens: 0,
+        totalTokensEarned: 0,
+        totalClicks: 0,
+        elapsedSeconds: 0,
+        units: []
+      });
+      expect(game.upgraderSeq).toBe(0);
+    });
+
+    it("prestige does not touch the counter", () => {
+      const game = useGameStore();
+      game.upgraderSeq = 2;
+      game.runTokensEarned = 4_000_000;
+      expect(game.prestige()).toBe(2);
+      expect(game.upgraderSeq).toBe(2);
+    });
+
+    // Why the freeze exists: the pre-spin save flush is what the server checks
+    // the pre-spin state against; spending at the old PhD discount after it
+    // would look like paying under the cheapest possible price.
+    it("regression: units, upgrades and prestige are refused while a spin is pending, and work again after", () => {
+      const game = useGameStore();
+      game.tokens = 1_000_000;
+      game.runTokensEarned = 4_000_000;
+      game.spinPending = true;
+
+      expect(game.buyUnit("alpha", 1)).toBe(false);
+      expect(game.buyUpgrade("chalk")).toBe(false);
+      expect(game.prestige()).toBe(0);
+      expect(game.tokens).toBe(1_000_000);
+      expect(game.unitStates[0]!.owned).toBe(0);
+      expect(game.ownedUpgrades).toEqual([]);
+      expect(game.phdCount).toBe(0);
+
+      game.spinPending = false;
+      expect(game.buyUnit("alpha", 1)).toBe(true);
+      expect(game.buyUpgrade("chalk")).toBe(true);
+      expect(game.prestige()).toBeGreaterThan(0);
+    });
+
+    it("the display hold shows the held value while phdCount already holds the real one", () => {
+      const game = useGameStore();
+      game.phdCount = 100;
+      game.holdPhdDisplay(100);
+      game.applySpinResult(0, 1);
+      expect(game.phdCount).toBe(0);
+      expect(game.phdCountDisplay).toBe(100);
+
+      game.releasePhdDisplay();
+      expect(game.phdCountDisplay).toBe(0);
+    });
+
+    it("a held value of 0 is honoured (?? not ||)", () => {
+      const game = useGameStore();
+      game.phdCount = 50;
+      game.holdPhdDisplay(0);
+      expect(game.phdCountDisplay).toBe(0);
+    });
+
+    it("loadFromSave and hardReset clear a display hold so a stale number can never stick", () => {
+      const game = useGameStore();
+      game.holdPhdDisplay(7);
+      game.loadFromSave({
+        tokens: 0,
+        totalTokensEarned: 0,
+        totalClicks: 0,
+        elapsedSeconds: 0,
+        units: [],
+        phdCount: 3
+      });
+      expect(game.phdDisplayHold).toBeNull();
+      expect(game.phdCountDisplay).toBe(3);
+
+      game.holdPhdDisplay(7);
+      game.hardReset();
+      expect(game.phdDisplayHold).toBeNull();
+    });
+  });
+
+  describe("guest wheel results and reset epoch", () => {
+    it("forfeitGuestSpins removes the guest's net, whichever way it went", () => {
+      const game = useGameStore();
+      game.phdCount = 150; // 100 earned + 50 won as a guest
+      game.recordGuestSpin(50);
+      expect(game.forfeitGuestSpins()).toBe(50);
+      expect(game.phdCount).toBe(100);
+      expect(game.guestUpgraderNet).toBe(0);
+
+      game.phdCount = 70; // 100 earned - 30 lost as a guest: the loss is undone too
+      game.recordGuestSpin(-30);
+      expect(game.forfeitGuestSpins()).toBe(-30);
+      expect(game.phdCount).toBe(100);
+    });
+
+    it("is a no-op when the player never spun as a guest", () => {
+      const game = useGameStore();
+      game.phdCount = 42;
+      expect(game.forfeitGuestSpins()).toBe(0);
+      expect(game.phdCount).toBe(42);
+    });
+
+    it("keeps PhDs earned by prestige after the spins (only the wheel's net is removed)", () => {
+      const game = useGameStore();
+      game.phdCount = 100;
+      game.recordGuestSpin(40);
+      game.applySpinResult(140, 0);
+      game.runTokensEarned = 4_000_000;
+      game.prestige(); // +2 PhD
+      expect(game.phdCount).toBe(142);
+      game.forfeitGuestSpins();
+      expect(game.phdCount).toBe(102);
+    });
+
+    it("a loaded server save and a hard reset both clear the guest net", () => {
+      const game = useGameStore();
+      game.recordGuestSpin(10);
+      game.loadFromSave({ tokens: 0, totalTokensEarned: 0, totalClicks: 0, elapsedSeconds: 0, units: [] });
+      expect(game.guestUpgraderNet).toBe(0);
+      game.recordGuestSpin(10);
+      game.hardReset();
+      expect(game.guestUpgraderNet).toBe(0);
+    });
+
+    it("hardReset bumps resetEpoch; a plain load does not", () => {
+      const game = useGameStore();
+      const before = game.resetEpoch;
+      game.loadFromSave({ tokens: 0, totalTokensEarned: 0, totalClicks: 0, elapsedSeconds: 0, units: [] });
+      expect(game.resetEpoch).toBe(before);
+      game.hardReset();
+      expect(game.resetEpoch).toBe(before + 1);
+    });
+  });
 });

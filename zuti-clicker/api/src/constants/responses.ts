@@ -65,6 +65,24 @@ export class Responses {
       status: 400,
       body: { error: "upgrades must be an array of known upgrade ids." }
     },
+    INVALID_UPGRADER_SEQ: {
+      status: 400,
+      body: { error: "upgraderSeq must be a non-negative integer when provided." }
+    },
+    // 409, not a strike: the save is well-formed and honest, it was simply
+    // made before a later wheel spin (another tab, or a save already in
+    // flight) and so doesn't know the current PhD balance. Nothing is written.
+    // `code` is what the client keys on (frontend/src/lib/api.ts's
+    // SAVE_STALE_CODE — keep in sync), since this and IMPLAUSIBLE share a status
+    // and only one of them is a rejection the player should be told about.
+    STALE: {
+      status: 409,
+      body: {
+        code: "save_stale",
+        error:
+          "Your progress changed since this save was made (a wheel spin elsewhere). Reload to continue from your current progress."
+      }
+    },
     NOT_FOUND: { status: 404, body: { save: null } },
     SAVE_SUCCESS: { status: 200, body: { message: "Save updated successfully." } },
     RESET_SUCCESS: { status: 200, body: { message: "Save reset successfully." } },
@@ -75,6 +93,33 @@ export class Responses {
     NO_SAVE: { status: 404, body: { error: "No save exists yet — sync your progress first." } },
     ON_COOLDOWN: { status: 409, body: { error: "No booster is available to claim yet." } },
     CLAIM_SUCCESS: { status: 200, body: { message: "Booster claimed." } },
+    INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
+  } as const;
+
+  static readonly UPGRADER = {
+    INVALID_STAKE: {
+      status: 400,
+      body: { error: "stake must be a whole number of PhDs between 1 and 2147483647." }
+    },
+    INVALID_MULTIPLIER: {
+      status: 400,
+      body: { error: "multiplier must be a number from 1.2 to 100 with at most 2 decimals." }
+    },
+    // quoteSpin's payout <= stake case: e.g. 1 PhD x1.5 floors back to 1, so a
+    // "win" would gain nothing.
+    NO_GAIN: {
+      status: 400,
+      body: { error: "stake x multiplier must pay out more PhDs than the stake." }
+    },
+    NO_SAVE: { status: 404, body: { error: "No save exists yet — sync your progress first." } },
+    // phdCount is appended dynamically by the caller: the balance the spin was
+    // actually checked against, so the client can correct a stale display.
+    INSUFFICIENT_PHD: { status: 409, body: { error: "You do not have that many PhDs to stake." } },
+    LIMIT_REACHED: {
+      status: 409,
+      body: { error: "This spin would overflow the stored PhD totals." }
+    },
+    SPIN_SUCCESS: { status: 200, body: { message: "Spin settled." } },
     INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
   } as const;
 

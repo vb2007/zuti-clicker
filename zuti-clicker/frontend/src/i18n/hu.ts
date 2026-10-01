@@ -182,7 +182,9 @@ export default {
     neverSynced: "Nincs mentve",
     deleteSave: "Mentés törlése",
     logout: "Kijelentkezés",
-    loginToSave: "Bejelentkezés a mentéshez"
+    loginToSave: "Bejelentkezés a mentéshez",
+    staleReloaded:
+      "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be."
   },
   guest: {
     warningTitle: "A haladásod nem kerül mentésre",
@@ -201,6 +203,53 @@ export default {
     prestigeGuestWarning:
       "Vendégként játszol — a PhD fokozataid elvesznek a lap bezárásakor. Jelentkezz be a megőrzésükhöz.",
     prestigeConfirmBtn: "Disszertáció megvédése"
+  },
+  upgrader: {
+    title: "Upgrader",
+    openBtn: "Upgrader",
+    owned: "{phd} PhD-d van",
+    wheelAria: "Kerék: {pct}% esély a nyerésre",
+    stake: "Tét",
+    stakeChipAria: "A PhD-id {pct}%-ának feltétele",
+    stakeAllAria: "Az összes PhD feltétele",
+    stakeMax: "Max",
+    close: "Bezárás",
+    multiplier: "Szorzó",
+    multiplierSlider: "Egyéni szorzó",
+    win: "Nyer",
+    lose: "Veszít",
+    chanceCentre: "a nyerésre",
+    frenzyOnLoss: "{name} {seconds} mp-ig",
+    noFrenzyOnLoss: "Túl kicsi tét ehhez: {name}",
+    spin: "Pörgetés",
+    spinAgain: "Újra",
+    spinning: "Pörög…",
+    resultWin: "Nyertél {gain} PhD-t.",
+    resultWinTotal: "Most {total} PhD-d van.",
+    resultLose: "Elvesztettél {stake} PhD-t.",
+    resultFrenzy: "{name} {seconds} mp-ig aktív.",
+    problems: {
+      noPhd: "A pörgetéshez legalább 1 PhD kell.",
+      enterStake: "Add meg, hány PhD-t teszel fel.",
+      tooMany: "Legfeljebb {owned} PhD-t tehetsz fel.",
+      tooSmall:
+        "×{mult} szorzónál a tét legalább {min} PhD legyen, különben a nyeremény nem több a tétnél.",
+      restricted: "A fiókod ideiglenesen korlátozott."
+    },
+    finePrint:
+      "Sok pörgetés alatt a tét kb. {rtp}%-át nyered vissza. A nyerési esély sosem haladja meg a {cap}%-ot.",
+    guestNote: "Vendég vagy — az itt nyert vagy elvesztett PhD-k nem mentődnek.",
+    guestSpinsDropped:
+      "Vendégként a keréken nyert vagy elvesztett PhD-k nem kerülnek át a fiókodba.",
+    errors: {
+      unconfirmed:
+        "Nem tudtuk megerősíteni a pörgetést, ezért újratöltöttük a haladásod a szerverről.",
+      syncFailed: "Nem sikerült elmenteni a haladásod pörgetés előtt, ezért a pörgetés elmaradt.",
+      insufficient: "Nincs ennyi PhD-d, amit feltehetnél.",
+      limit: "Ez a pörgetés a PhD-k felső korlátja fölé vinné az összeget.",
+      invalid: "Ez a tét vagy szorzó nem érvényes.",
+      generic: "A pörgetés nem sikerült. Próbáld újra."
+    }
   },
   prestige: {
     title: "Fokozat",

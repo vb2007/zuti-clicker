@@ -127,4 +127,54 @@ describe("PrestigePanel", () => {
       expect(wrapper.find(".btn-gain").text()).toBe("×1.20K");
     });
   });
+
+  describe("Upgrader entry button", () => {
+    function revealed() {
+      const game = useGameStore();
+      game.totalTokensEarned = 1_000_000;
+      return game;
+    }
+
+    it("is hidden until the player has prestiged at least once", () => {
+      revealed();
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".upgrader-btn").exists()).toBe(false);
+    });
+
+    it("appears after the first prestige and opens the Upgrader", async () => {
+      const game = revealed();
+      game.prestigeCount = 1;
+      const ui = useUiStore();
+      const wrapper = mount(PrestigePanel);
+
+      const btn = wrapper.find(".upgrader-btn");
+      expect(btn.exists()).toBe(true);
+      await btn.trigger("click");
+      expect(ui.upgraderOpen).toBe(true);
+    });
+
+    // A one-way discovery gate (CLAUDE.md): keyed to a lifetime counter, so
+    // spending or losing every PhD on the wheel never hides it again.
+    it("regression: stays visible with no PhDs left — it is gated on prestigeCount, not the balance", () => {
+      const game = revealed();
+      game.prestigeCount = 2;
+      game.phdCount = 0;
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".upgrader-btn").exists()).toBe(true);
+    });
+
+    it("the PhD count shows the held value while a spin is landing, then the real one", async () => {
+      const game = revealed();
+      game.prestigeCount = 1;
+      game.phdCount = 100;
+      game.holdPhdDisplay(100);
+      game.applySpinResult(0, 1);
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".phd-count").text()).toBe("100");
+
+      game.releasePhdDisplay();
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find(".phd-count").text()).toBe("0");
+    });
+  });
 });

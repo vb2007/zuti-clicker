@@ -23,6 +23,7 @@ interface SaveBody {
   runSeconds?: unknown;
   units?: unknown;
   upgrades?: unknown;
+  upgraderSeq?: unknown;
 }
 
 // Hardened as part of the anti-cheat save envelope (see
@@ -154,6 +155,10 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
         savedAt: save.savedAt,
         units: save.units.map((u) => ({ unitId: u.unitId, owned: u.owned })),
         upgrades: save.upgrades.map((u) => u.upgradeId),
+        // The upgrader's spin counter — the client echoes it back on PUT /save
+        // so a save made before a later spin can be told apart from a current
+        // one (see storeSave's stale check).
+        upgraderSeq: save.upgraderSeq,
         // Read-only — see SaveInput's comment on why PUT /save can't touch
         // this. remainingMs, never the row's absolute expiresAt: the client
         // anchors it to its own clock the instant it's loaded (gameStore's
@@ -198,7 +203,7 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *           Missing required fields; a present-but-invalid core field
  *           (negative/non-finite, or a fractional totalClicks); tokens
  *           exceeding totalTokensEarned; or invalid units, prestige fields,
- *           or upgrades.
+ *           upgrades, or upgraderSeq.
  *         content:
  *           application/json:
  *             schema:
@@ -214,7 +219,11 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *           last save (see docs/developer/final.md's "Anti-cheat modell"
  *           section). Nothing is written — GET /save still returns the last
  *           verified state. Never returned when ANTICHEAT_MODE is "off" or
- *           "monitor".
+ *           "monitor". ALSO returned (in every ANTICHEAT_MODE, and never a
+ *           strike, with code "save_stale") when upgraderSeq does not match
+ *           the account's current value — the save was made before a later
+ *           wheel spin (or from a copy of the game that predates the
+ *           save's current state), so the client must reload.
  *         content:
  *           application/json:
  *             schema:
@@ -243,7 +252,8 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       runClicks,
       runSeconds,
       units,
-      upgrades
+      upgrades,
+      upgraderSeq
     } = req.body as SaveBody;
 
     if (
@@ -312,6 +322,12 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       return;
     }
 
+    if (!isOptionalCount(upgraderSeq)) {
+      const r = Responses.SAVE.INVALID_UPGRADER_SEQ;
+      res.status(r.status).json(r.body);
+      return;
+    }
+
     // Everything below is the save plausibility envelope (see
     // services/saveValidator.ts) — the request body has passed every
     // stateless shape/bounds check above, but hasn't yet been checked
@@ -330,6 +346,18 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
 
     if (ANTICHEAT_MODE !== "off") {
       const previous = await getSave(userId);
+
+      // A save made before a later wheel spin carries a PhD balance the spin
+      // has since changed. This must be caught BEFORE the envelope: the
+      // envelope's PhD bound already reflects the spin, so a stale (higher)
+      // balance could be clamped or rejected — a false strike on an honest
+      // player. upsertSave re-checks the same condition atomically at write
+      // time to close the window between this read and that write.
+      if (previous && (upgraderSeq ?? 0) !== previous.upgraderSeq) {
+        const r = Responses.SAVE.STALE;
+        res.status(r.status).json(r.body);
+        return;
+      }
       // The same "omitted means preserve the stored value" resolution
       // upsertSave itself applies below — the envelope needs the REAL
       // after-state a write would produce, not the raw (possibly absent)
@@ -346,6 +374,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
             elapsedSeconds: previous.elapsedSeconds,
             phdCount: previous.phdCount,
             prestigeCount: previous.prestigeCount,
+            upgraderNet: previous.upgraderNet,
             savedAt: previous.savedAt,
             units: previous.units.map((u) => ({ unitId: u.unitId, owned: u.owned })),
             upgrades: previous.upgrades.map((u) => u.upgradeId)
@@ -422,7 +451,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       }
     }
 
-    const save = await upsertSave(userId, {
+    const written = await upsertSave(userId, {
       tokens: effectiveTokens,
       totalTokensEarned: effectiveTotalTokensEarned,
       totalClicks: effectiveTotalClicks,
@@ -433,11 +462,20 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       runClicks,
       runSeconds,
       units,
-      upgrades
+      upgrades,
+      upgraderSeq
     });
 
+    // Lost the race to a wheel spin between the check above and the write
+    // (or ANTICHEAT_MODE=off skipped that check): same outcome, same reply.
+    if (!written.ok) {
+      const r = Responses.SAVE.STALE;
+      res.status(r.status).json(r.body);
+      return;
+    }
+
     const r = Responses.SAVE.SAVE_SUCCESS;
-    res.status(r.status).json({ ...r.body, savedAt: save.savedAt });
+    res.status(r.status).json({ ...r.body, savedAt: written.save.savedAt });
   } catch (error) {
     console.error("Store save error:", error);
     const r = Responses.SAVE.INTERNAL_ERROR;

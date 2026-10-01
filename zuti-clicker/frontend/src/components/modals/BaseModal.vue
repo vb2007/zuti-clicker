@@ -11,6 +11,8 @@ const props = withDefaults(
     maxWidth?: number | string;
     zIndex?: number;
     centerContent?: boolean;
+    // Tighter padding, for a dense modal on a phone (see UpgraderModal.vue).
+    compact?: boolean;
   }>(),
   {
     title: undefined,
@@ -19,7 +21,8 @@ const props = withDefaults(
     dismissOnBackdrop: true,
     maxWidth: 420,
     zIndex: 1000,
-    centerContent: false
+    centerContent: false,
+    compact: false
   }
 );
 
@@ -130,7 +133,7 @@ function unlockScroll() {
       <div
         ref="modalRef"
         class="base-modal"
-        :class="{ 'center-content': centerContent }"
+        :class="{ 'center-content': centerContent, compact }"
         :style="{ maxWidth: maxWidthStyle }"
         :role="role"
         aria-modal="true"
@@ -180,5 +183,12 @@ function unlockScroll() {
 
 .base-modal.center-content {
   text-align: center;
+}
+
+.base-modal.compact {
+  padding: 18px 16px 16px;
+}
+.base-modal.compact .modal-title {
+  margin-bottom: 12px;
 }
 </style>
