@@ -368,6 +368,24 @@ jobs:
           done
           pnpm exec playwright install chromium
 
+      # Fail once, clearly, instead of ~800 identical launch errors: Playwright's own download
+      # needs system libraries (libnspr4, libnss3, ...) that a bare-metal runner may lack.
+      - name: Check the browser can launch
+        working-directory: zuti-clicker/frontend
+        run: |
+          node -e "
+            require('@playwright/test').chromium
+              .launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--no-sandbox'] })
+              .then((b) => b.close())
+              .catch((e) => {
+                console.error(e.message.split('\n').slice(0, 4).join('\n'));
+                process.exit(1);
+              });
+          " || {
+            echo "::error title=No launchable Chromium on this runner::Install one on the runner host (e.g. 'sudo apt-get install -y chromium'; this job then picks it up from PATH), or its shared libraries ('sudo pnpm exec playwright install-deps chromium')."
+            exit 1
+          }
+
       - name: Run e2e tests
         working-directory: zuti-clicker/frontend
         run: pnpm exec playwright test
