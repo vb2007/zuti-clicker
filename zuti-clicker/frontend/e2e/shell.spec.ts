@@ -164,3 +164,33 @@ test.describe("mobile sheets", () => {
     expect(g.btnBottom).toBeLessThanOrEqual(g.barBottom - 34 + 0.5);
   });
 });
+
+test.describe("closed mobile sheets", () => {
+  test.use({ loggedIn: true });
+
+  // Regression: a closed sheet was only parked off-canvas, so its upward box-shadow spilled
+  // over the clicker area on every load, and its controls stayed in the Tab order.
+  test("are hidden: no shadow band, and never reachable by Tab", async ({ app, page }) => {
+    test.skip(!isCompact(page), "mobile sheets only exist below 760px");
+    await app.open();
+    await app.dismissGuestWarning();
+
+    const closed = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".rail")].map((r) => getComputedStyle(r).visibility)
+    );
+    expect(closed).toEqual(["hidden", "hidden"]);
+
+    // Tab through the whole page: focus must never land inside a closed sheet.
+    await page.locator(".app-header button").first().focus();
+    for (let i = 0; i < 25; i++) {
+      await page.keyboard.press("Tab");
+      const inside = await page.evaluate(() => Boolean(document.activeElement?.closest(".rail")));
+      expect(inside, `Tab #${i + 1}`).toBe(false);
+    }
+
+    // Opening one makes it visible again (and only that one).
+    await page.locator(".mobile-tab-bar .tab-btn").nth(0).click();
+    await expect(page.locator("#mobile-sheet-stats")).toBeVisible();
+    await expect(page.locator("#mobile-sheet-units")).toBeHidden();
+  });
+});

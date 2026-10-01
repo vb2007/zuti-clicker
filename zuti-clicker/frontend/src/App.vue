@@ -209,13 +209,24 @@ async function onConfirmDelete() {
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
     transform: translateY(100%);
-    transition: transform var(--transition-base);
+    /* Closed = off-canvas AND hidden: without this the parked sheet's upward
+       shadow spilled over the clicker area on every load, and its buttons stayed
+       in the Tab order / accessibility tree. Visibility flips only once the
+       slide-out has finished (hence the delay), and at once on opening. */
+    visibility: hidden;
+    transition:
+      transform var(--transition-base),
+      visibility 0s linear var(--transition-base);
     animation: none; /* supersede the rail's own one-shot mount animation */
   }
 
   .game-layout.panel-stats-open .rail-stats,
   .game-layout.panel-units-open .rail-units {
     transform: translateY(0);
+    visibility: visible;
+    transition:
+      transform var(--transition-base),
+      visibility 0s;
   }
 }
 
