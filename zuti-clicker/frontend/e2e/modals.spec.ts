@@ -140,3 +140,140 @@ for (const language of ["en", "hu"] as const) {
     }
   });
 }
+
+test.describe("upgrader bet controls stay reachable", () => {
+  test.use({ loggedIn: true });
+
+  const CONTROLS = ["#upgrader-stake", ".slider", ".spin-btn"];
+
+  // Whatever is topmost at the control's centre must be the control itself: a
+  // sticky bar (or the header) sitting over it would fail this.
+  async function inViewAndUncovered(page: Page, sel: string) {
+    const vp = page.viewportSize()!;
+    const el = page.locator(sel);
+    const box = (await el.boundingBox())!;
+    const covered = await el.evaluate((node) => {
+      const r = node.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return !(top === node || node.contains(top));
+    });
+    return {
+      inView: box.y >= 0 && box.y + box.height <= vp.height,
+      covered
+    };
+  }
+
+  test("every control can be scrolled clear of the sticky bar and header", async ({ app, page }) => {
+    await app.open();
+    await app.seed((s) => {
+      s.game.phdCount = 50;
+      s.ui.upgraderOpen = true;
+    });
+    await expect(modalOf(page)).toBeVisible();
+    await app.settle();
+
+    for (const sel of CONTROLS) {
+      await page.locator(sel).evaluate((el) => el.scrollIntoView({ block: "center" }));
+      const r = await inViewAndUncovered(page, sel);
+      expect(r, sel).toEqual({ inView: true, covered: false });
+    }
+  });
+
+  test("phone landscape: the whole bet is in view with no scrolling", async ({ app, page }) => {
+    const vp = page.viewportSize()!;
+    test.skip(!(vp.height <= 500 && vp.width >= 560), "only applies to the two-column landscape layout");
+    await app.open();
+    await app.seed((s) => {
+      s.game.phdCount = 50;
+      s.ui.upgraderOpen = true;
+    });
+    await expect(modalOf(page)).toBeVisible();
+    await app.settle();
+
+    expect(await modalOf(page).evaluate((el) => el.scrollTop)).toBe(0);
+    for (const sel of CONTROLS) {
+      expect(await inViewAndUncovered(page, sel), sel).toEqual({ inView: true, covered: false });
+    }
+  });
+});
+
+// Alert-style modals ask a question, so they have explicit buttons rather than
+// a ✕ — but they must still fit, stay thumb-sized, and yield to Back.
+const ALERTS: { name: string; loggedIn: boolean; open: (app: AppHelper) => Promise<void> }[] = [
+  { name: "guest warning", loggedIn: false, open: async () => {} },
+  {
+    name: "delete-save confirm",
+    loggedIn: true,
+    open: (app) => app.seed((s) => void (s.ui.confirmDeleteOpen = true))
+  },
+  {
+    name: "prestige confirm",
+    loggedIn: false,
+    open: async (app) => {
+      await app.dismissGuestWarning();
+      await app.seed((s) => {
+        s.game.runTokensEarned = 1e18;
+        s.game.totalTokensEarned = 1e18;
+        s.ui.prestigeConfirmOpen = true;
+      });
+    }
+  },
+  {
+    name: "anti-cheat warning",
+    loggedIn: false,
+    open: async (app) => {
+      await app.dismissGuestWarning();
+      await app.seed((s) => {
+        s.antiCheat.isRestricted = true;
+        s.antiCheat.restrictedUntil = new Date(Date.now() + 600_000);
+        s.antiCheat.strikeCount = 3;
+      });
+    }
+  }
+];
+
+for (const language of ["en", "hu"] as const) {
+  for (const a of ALERTS) {
+    test.describe(`${a.name} (${language})`, () => {
+      test.use({ loggedIn: a.loggedIn, language });
+
+      test("fits, with 44px buttons on touch and none clipped", async ({ app, page }, info) => {
+        await app.open();
+        await a.open(app);
+        const dialog = page.getByRole("alertdialog");
+        await expect(dialog).toBeVisible();
+        await app.settle();
+
+        const vp = page.viewportSize()!;
+        const box = (await dialog.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
+        expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
+        expect(await app.horizontalOverflow([".base-modal"])).toEqual([]);
+
+        const buttons = dialog.getByRole("button");
+        const n = await buttons.count();
+        expect(n).toBeGreaterThan(0);
+        for (let i = 0; i < n; i++) {
+          const b = (await buttons.nth(i).boundingBox())!;
+          if (info.project.use.hasTouch) expect(b.height, `button ${i}`).toBeGreaterThanOrEqual(44);
+          // A label wrapping to a second line is the symptom of a squeezed row.
+          const lines = await buttons.nth(i).evaluate((el) => {
+            const lh = parseFloat(getComputedStyle(el).lineHeight) || 20;
+            return Math.round((el.getBoundingClientRect().height - 16) / lh);
+          });
+          expect(lines, `button ${i} wraps`).toBeLessThanOrEqual(1);
+        }
+      });
+
+      test("Back dismisses it", async ({ app, page }) => {
+        await app.open();
+        await a.open(app);
+        await expect(page.getByRole("alertdialog")).toBeVisible();
+        await page.goBack();
+        await expect(page.getByRole("alertdialog")).toHaveCount(0);
+        await expect(page.locator(".app")).toBeVisible();
+      });
+    });
+  }
+}

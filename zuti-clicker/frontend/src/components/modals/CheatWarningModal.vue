@@ -190,7 +190,19 @@ function dismiss() {
   font-weight: 700;
   transition: background var(--transition-fast);
 }
-.btn-primary:hover {
-  background: var(--accent-dim);
+@media (hover: hover) {
+  .btn-primary:hover {
+    background: var(--accent-dim);
+  }
+}
+@media (max-width: 480px), (pointer: coarse) {
+  .btn-primary {
+    min-height: 44px;
+  }
+}
+@media (max-width: 480px) {
+  .modal-actions .btn-primary {
+    width: 100%;
+  }
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted, nextTick, useId } from "vue";
+import { ref, computed, watch, onUnmounted, nextTick, useId } from "vue";
 import { useI18n } from "vue-i18n";
 import { useOverlay } from "@/composables/useOverlayStack";
 
@@ -47,7 +47,9 @@ useOverlay(
 const titleId = useId();
 const modalRef = ref<HTMLElement | null>(null);
 
-const maxWidthStyle = typeof props.maxWidth === "number" ? `${props.maxWidth}px` : props.maxWidth;
+const maxWidthStyle = computed(() =>
+  typeof props.maxWidth === "number" ? `${props.maxWidth}px` : props.maxWidth
+);
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';

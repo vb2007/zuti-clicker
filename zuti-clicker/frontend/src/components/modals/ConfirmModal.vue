@@ -57,7 +57,9 @@ const emit = defineEmits<{
   font-weight: 600;
   transition: all var(--transition-fast);
 }
-.btn-cancel:hover { border-color: var(--accent); color: var(--text-primary); }
+@media (hover: hover) {
+  .btn-cancel:hover { border-color: var(--accent); color: var(--text-primary); }
+}
 
 .btn-confirm {
   padding: 8px 16px;
@@ -68,5 +70,24 @@ const emit = defineEmits<{
   font-weight: 700;
   transition: background var(--transition-fast);
 }
-.btn-confirm:hover { background: #dc2626; }
+@media (hover: hover) {
+  .btn-confirm:hover { background: #dc2626; }
+}
+/* Phone: the two actions stack, full width, so neither wraps its label (the
+   Hungarian ones run long) and both are easy thumb targets. DOM order is kept
+   (cancel first) so the visual and Tab orders agree. */
+@media (max-width: 480px) {
+  .modal-actions {
+    flex-direction: column;
+  }
+  .modal-actions button {
+    width: 100%;
+  }
+}
+@media (max-width: 480px), (pointer: coarse) {
+  .modal-actions button {
+    min-height: 44px;
+  }
+}
+
 </style>

@@ -140,7 +140,9 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
   font-weight: 600;
   transition: all var(--transition-fast);
 }
-.btn-cancel:hover { border-color: var(--accent); color: var(--text-primary); }
+@media (hover: hover) {
+  .btn-cancel:hover { border-color: var(--accent); color: var(--text-primary); }
+}
 
 .btn-confirm {
   padding: 8px 16px;
@@ -151,10 +153,29 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
   font-weight: 700;
   transition: filter var(--transition-fast);
 }
-.btn-confirm:hover:not(:disabled) { filter: brightness(1.1); }
+@media (hover: hover) {
+  .btn-confirm:hover:not(:disabled) { filter: brightness(1.1); }
+}
 .btn-confirm:disabled {
   background: var(--btn-dis-bg);
   color: var(--btn-dis-text);
   cursor: not-allowed;
+}
+
+/* Phone: the two actions stack, full width, so neither wraps its label (the
+   Hungarian ones run long) and both are easy thumb targets. DOM order is kept
+   (cancel first) so the visual and Tab orders agree. */
+@media (max-width: 480px) {
+  .modal-actions {
+    flex-direction: column;
+  }
+  .modal-actions button {
+    width: 100%;
+  }
+}
+@media (max-width: 480px), (pointer: coarse) {
+  .modal-actions button {
+    min-height: 44px;
+  }
 }
 </style>

@@ -21,7 +21,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { useUpgrader } from "@/composables/useUpgrader";
-import { useBreakpoint } from "@/composables/useBreakpoint";
+import { useMediaQuery } from "@/composables/useMediaQuery";
 import {
   toHundredths,
   quoteSpin,
@@ -51,9 +51,16 @@ const auth = useAuthStore();
 const ui = useUiStore();
 const antiCheat = useAntiCheatStore();
 const upgrader = useUpgrader();
-// A phone: tighter modal padding so the whole bet fits above the fold.
-// Matches the @media (max-width: 480px) block below.
-const { isCompact: isPhone } = useBreakpoint(481);
+// A phone, held either way: tighter modal padding so the whole bet fits above
+// the fold. Matches the @media (max-width: 480px) / (max-height: 500px) blocks
+// below. Two single queries rather than one comma list, so the "or" lives in
+// JS where it can be tested.
+const { matches: isNarrow } = useMediaQuery("(max-width: 480px)");
+const { matches: isShort } = useMediaQuery("(max-height: 500px)");
+const isPhone = computed(() => isNarrow.value || isShort.value);
+// Short and wide enough for two columns (see the landscape block below).
+const { matches: isWide } = useMediaQuery("(min-width: 560px)");
+const isLandscapeSplit = computed(() => isShort.value && isWide.value);
 
 // idle: choosing · requesting: waiting on the server (the pre-spin save flush
 // plus the spin itself) · spinning: the wheel is turning · settled: result shown.
@@ -330,197 +337,203 @@ onBeforeUnmount(() => {
   <BaseModal
     :open="ui.upgraderOpen"
     :title="t('upgrader.title')"
-    :max-width="460"
+    :max-width="isLandscapeSplit ? 720 : 460"
     :z-index="1000"
     :compact="isPhone"
     closable
     @close="close"
   >
     <div class="upgrader">
-      <div class="wheel-stage" role="img" :aria-label="wheelAria">
-        <svg
-          ref="wheelEl"
-          class="wheel"
-          :class="{ animating: phase === 'spinning' }"
-          :style="{ transform: `rotate(${rotation}deg)` }"
-          viewBox="0 0 100 100"
-          aria-hidden="true"
-          @transitionend="onTransitionEnd"
-        >
-          <circle class="wheel-lose" cx="50" cy="50" r="40" fill="none" />
-          <circle
-            v-if="winDash > 0"
-            class="wheel-win"
-            cx="50"
-            cy="50"
-            r="40"
-            fill="none"
-            pathLength="100"
-            :stroke-dasharray="`${winDash} ${100 - winDash}`"
-            transform="rotate(-90 50 50)"
-          />
-          <circle class="wheel-rim" cx="50" cy="50" r="47.5" fill="none" />
-          <circle class="wheel-rim" cx="50" cy="50" r="32.5" fill="none" />
-        </svg>
-        <svg class="pointer" viewBox="0 0 20 16" aria-hidden="true">
-          <path d="M2 1 H18 L10 14 Z" />
-        </svg>
-        <div class="hub">
-          <span class="hub-pct">{{ winPct === null ? "—" : `${winPct}%` }}</span>
-          <span class="hub-sub">{{ t("upgrader.chanceCentre") }}</span>
+      <!-- col-a / col-b are layout-neutral (display: contents) until the
+           short-landscape block below turns them into two columns. -->
+      <div class="col-a">
+        <div class="wheel-stage" role="img" :aria-label="wheelAria">
+          <svg
+            ref="wheelEl"
+            class="wheel"
+            :class="{ animating: phase === 'spinning' }"
+            :style="{ transform: `rotate(${rotation}deg)` }"
+            viewBox="0 0 100 100"
+            aria-hidden="true"
+            @transitionend="onTransitionEnd"
+          >
+            <circle class="wheel-lose" cx="50" cy="50" r="40" fill="none" />
+            <circle
+              v-if="winDash > 0"
+              class="wheel-win"
+              cx="50"
+              cy="50"
+              r="40"
+              fill="none"
+              pathLength="100"
+              :stroke-dasharray="`${winDash} ${100 - winDash}`"
+              transform="rotate(-90 50 50)"
+            />
+            <circle class="wheel-rim" cx="50" cy="50" r="47.5" fill="none" />
+            <circle class="wheel-rim" cx="50" cy="50" r="32.5" fill="none" />
+          </svg>
+          <svg class="pointer" viewBox="0 0 20 16" aria-hidden="true">
+            <path d="M2 1 H18 L10 14 Z" />
+          </svg>
+          <div class="hub">
+            <span class="hub-pct">{{ winPct === null ? "—" : `${winPct}%` }}</span>
+            <span class="hub-sub">{{ t("upgrader.chanceCentre") }}</span>
+          </div>
+        </div>
+
+        <div class="outcomes">
+          <div
+            class="outcome win"
+            :class="{ hit: resultLine?.won === true, miss: resultLine?.won === false }"
+          >
+            <span class="outcome-head">
+              <span class="swatch" aria-hidden="true" />
+              <span class="outcome-label">{{ t("upgrader.win") }}</span>
+              <span v-if="winPct !== null" class="outcome-chance">{{ winPct }}%</span>
+            </span>
+            <span class="outcome-main">{{ shown ? `+${fmt(shown.gain)} PhD` : "—" }}</span>
+          </div>
+          <div
+            class="outcome lose"
+            :class="{ hit: resultLine?.won === false, miss: resultLine?.won === true }"
+          >
+            <span class="outcome-head">
+              <span class="swatch" aria-hidden="true" />
+              <span class="outcome-label">{{ t("upgrader.lose") }}</span>
+              <span v-if="losePct !== null" class="outcome-chance">{{ losePct }}%</span>
+            </span>
+            <span class="outcome-main">{{ shown ? `−${fmt(shown.stake)} PhD` : "—" }}</span>
+            <span v-if="shown" class="outcome-sub">
+              {{
+                shown.frenzyMs > 0
+                  ? t("upgrader.frenzyOnLoss", {
+                      name: frenzyName,
+                      seconds: Math.ceil(shown.frenzyMs / 1000)
+                    })
+                  : t("upgrader.noFrenzyOnLoss", { name: frenzyName })
+              }}
+            </span>
+          </div>
         </div>
       </div>
 
-      <div class="outcomes">
-        <div
-          class="outcome win"
-          :class="{ hit: resultLine?.won === true, miss: resultLine?.won === false }"
-        >
-          <span class="outcome-head">
-            <span class="swatch" aria-hidden="true" />
-            <span class="outcome-label">{{ t("upgrader.win") }}</span>
-            <span v-if="winPct !== null" class="outcome-chance">{{ winPct }}%</span>
-          </span>
-          <span class="outcome-main">{{ shown ? `+${fmt(shown.gain)} PhD` : "—" }}</span>
+      <div class="col-b">
+        <div class="field">
+          <div class="field-head">
+            <label class="field-label" for="upgrader-stake">{{ t("upgrader.stake") }}</label>
+            <span class="field-value">
+              {{ t("upgrader.owned", { phd: fmt(game.phdCountDisplay) }) }}
+            </span>
+          </div>
+          <div class="stake-row">
+            <input
+              id="upgrader-stake"
+              class="stake-input"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              :value="stakeText"
+              :disabled="busy"
+              @input="onStakeInput"
+              @keydown.enter.prevent="onSpin($event)"
+            />
+            <div class="seg-group" role="group" :aria-label="t('upgrader.stake')">
+              <button
+                v-for="p in STAKE_PERCENTS"
+                :key="p"
+                type="button"
+                class="seg-btn"
+                :disabled="busy || owned < 1"
+                :aria-label="
+                  p === 100
+                    ? t('upgrader.stakeAllAria')
+                    : t('upgrader.stakeChipAria', { pct: p })
+                "
+                @click="setStakePercent(p)"
+              >
+                {{ p === 100 ? t("upgrader.stakeMax") : `${p}%` }}
+              </button>
+            </div>
+          </div>
         </div>
-        <div
-          class="outcome lose"
-          :class="{ hit: resultLine?.won === false, miss: resultLine?.won === true }"
-        >
-          <span class="outcome-head">
-            <span class="swatch" aria-hidden="true" />
-            <span class="outcome-label">{{ t("upgrader.lose") }}</span>
-            <span v-if="losePct !== null" class="outcome-chance">{{ losePct }}%</span>
-          </span>
-          <span class="outcome-main">{{ shown ? `−${fmt(shown.stake)} PhD` : "—" }}</span>
-          <span v-if="shown" class="outcome-sub">
-            {{
-              shown.frenzyMs > 0
-                ? t("upgrader.frenzyOnLoss", {
-                    name: frenzyName,
-                    seconds: Math.ceil(shown.frenzyMs / 1000)
-                  })
-                : t("upgrader.noFrenzyOnLoss", { name: frenzyName })
-            }}
-          </span>
-        </div>
-      </div>
 
-      <div class="field">
-        <div class="field-head">
-          <label class="field-label" for="upgrader-stake">{{ t("upgrader.stake") }}</label>
-          <span class="field-value">
-            {{ t("upgrader.owned", { phd: fmt(game.phdCountDisplay) }) }}
-          </span>
-        </div>
-        <div class="stake-row">
-          <input
-            id="upgrader-stake"
-            class="stake-input"
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            :value="stakeText"
-            :disabled="busy"
-            @input="onStakeInput"
-            @keydown.enter.prevent="onSpin($event)"
-          />
-          <div class="seg-group" role="group" :aria-label="t('upgrader.stake')">
+        <div class="field">
+          <div class="field-head">
+            <span class="field-label">{{ t("upgrader.multiplier") }}</span>
+            <span class="field-value mult-value">×{{ formatMult(multiplier) }}</span>
+          </div>
+          <div class="seg-group" role="group" :aria-label="t('upgrader.multiplier')">
             <button
-              v-for="p in STAKE_PERCENTS"
-              :key="p"
+              v-for="m in UPGRADER_PRESET_MULTIPLIERS"
+              :key="m"
               type="button"
               class="seg-btn"
-              :disabled="busy || owned < 1"
-              :aria-label="
-                p === 100
-                  ? t('upgrader.stakeAllAria')
-                  : t('upgrader.stakeChipAria', { pct: p })
-              "
-              @click="setStakePercent(p)"
+              :class="{ active: multiplier === m }"
+              :aria-pressed="multiplier === m"
+              :disabled="busy"
+              @click="multiplier = m"
             >
-              {{ p === 100 ? t("upgrader.stakeMax") : `${p}%` }}
+              ×{{ m }}
             </button>
           </div>
-        </div>
-      </div>
-
-      <div class="field">
-        <div class="field-head">
-          <span class="field-label">{{ t("upgrader.multiplier") }}</span>
-          <span class="field-value mult-value">×{{ formatMult(multiplier) }}</span>
-        </div>
-        <div class="seg-group" role="group" :aria-label="t('upgrader.multiplier')">
-          <button
-            v-for="m in UPGRADER_PRESET_MULTIPLIERS"
-            :key="m"
-            type="button"
-            class="seg-btn"
-            :class="{ active: multiplier === m }"
-            :aria-pressed="multiplier === m"
+          <input
+            class="slider"
+            type="range"
+            min="0"
+            max="1000"
+            :step="SLIDER_STEP"
+            :value="sliderPosition"
             :disabled="busy"
-            @click="multiplier = m"
+            :aria-label="t('upgrader.multiplierSlider')"
+            :aria-valuetext="`×${formatMult(multiplier)}`"
+            @input="onSlider"
+          />
+          <div class="slider-ends" aria-hidden="true">
+            <span>×1.2</span>
+            <span>×100</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <!-- One line for whatever needs saying right now: the result of the spin
+               that just landed, or why the current bet can't be spun. Directly
+               above the button it concerns, and a fixed height so it appearing
+               never moves the button. -->
+          <div id="upgrader-status" class="status">
+            <!-- Only the result and the problem are announced; the standing fine
+                 print below is not re-read every time it reappears. -->
+            <div class="status-live" aria-live="polite">
+              <template v-if="resultLine">
+                <p class="status-main" :class="resultLine.won ? 'won' : 'lost'">
+                  {{ resultLine.main }}
+                </p>
+                <p v-if="statusSub" class="status-sub">{{ statusSub }}</p>
+              </template>
+              <p v-else-if="phase === 'idle' && problem" class="status-problem">{{ problem }}</p>
+            </div>
+            <p v-if="showFinePrint" class="status-fine">
+              {{
+                t("upgrader.finePrint", {
+                  rtp: Math.round(UPGRADER_RTP * 100),
+                  cap: Math.round(UPGRADER_WIN_CHANCE_CAP * 100)
+                })
+              }}
+            </p>
+          </div>
+          <!-- aria-disabled rather than disabled: a disabled button drops keyboard
+               focus, and the next Tab would leave the dialog. onSpin ignores the
+               click while the bet can't be spun. -->
+          <button
+            ref="spinBtn"
+            class="spin-btn"
+            type="button"
+            :aria-disabled="!canSpin"
+            aria-describedby="upgrader-status"
+            @click="onSpin($event)"
           >
-            ×{{ m }}
+            {{ spinLabel }}
           </button>
         </div>
-        <input
-          class="slider"
-          type="range"
-          min="0"
-          max="1000"
-          :step="SLIDER_STEP"
-          :value="sliderPosition"
-          :disabled="busy"
-          :aria-label="t('upgrader.multiplierSlider')"
-          :aria-valuetext="`×${formatMult(multiplier)}`"
-          @input="onSlider"
-        />
-        <div class="slider-ends" aria-hidden="true">
-          <span>×1.2</span>
-          <span>×100</span>
-        </div>
-      </div>
-
-      <div class="actions">
-        <!-- One line for whatever needs saying right now: the result of the spin
-             that just landed, or why the current bet can't be spun. Directly
-             above the button it concerns, and a fixed height so it appearing
-             never moves the button. -->
-        <div id="upgrader-status" class="status">
-          <!-- Only the result and the problem are announced; the standing fine
-               print below is not re-read every time it reappears. -->
-          <div class="status-live" aria-live="polite">
-            <template v-if="resultLine">
-              <p class="status-main" :class="resultLine.won ? 'won' : 'lost'">
-                {{ resultLine.main }}
-              </p>
-              <p v-if="statusSub" class="status-sub">{{ statusSub }}</p>
-            </template>
-            <p v-else-if="phase === 'idle' && problem" class="status-problem">{{ problem }}</p>
-          </div>
-          <p v-if="showFinePrint" class="status-fine">
-            {{
-              t("upgrader.finePrint", {
-                rtp: Math.round(UPGRADER_RTP * 100),
-                cap: Math.round(UPGRADER_WIN_CHANCE_CAP * 100)
-              })
-            }}
-          </p>
-        </div>
-        <!-- aria-disabled rather than disabled: a disabled button drops keyboard
-             focus, and the next Tab would leave the dialog. onSpin ignores the
-             click while the bet can't be spun. -->
-        <button
-          ref="spinBtn"
-          class="spin-btn"
-          type="button"
-          :aria-disabled="!canSpin"
-          aria-describedby="upgrader-status"
-          @click="onSpin($event)"
-        >
-          {{ spinLabel }}
-        </button>
       </div>
 
       <div class="notes">
@@ -535,6 +548,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.col-a,
+.col-b {
+  display: contents;
 }
 
 /* ── Wheel ───────────────────────────────────────────────── */
@@ -622,7 +640,8 @@ onBeforeUnmount(() => {
 /* ── Outcomes (also the wheel's legend) ──────────────────── */
 .outcomes {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …): a long PhD amount must wrap inside its tile, not widen the grid. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -685,6 +704,7 @@ onBeforeUnmount(() => {
 }
 
 .outcome-main {
+  overflow-wrap: anywhere;
   font-size: 16px;
   font-weight: 800;
   color: var(--text-primary);
@@ -753,9 +773,13 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
   transition: border-color var(--transition-fast);
 }
-.stake-input:hover:not(:disabled),
 .stake-input:focus {
   border-color: var(--accent);
+}
+@media (hover: hover) {
+  .stake-input:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
 }
 .stake-input:disabled {
   opacity: 0.6;
@@ -779,10 +803,12 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
   transition: all var(--transition-fast);
 }
-.seg-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent-text);
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .seg-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent-text);
+    background: var(--bg-hover);
+  }
 }
 .seg-btn.active {
   background: var(--accent);
@@ -934,8 +960,10 @@ onBeforeUnmount(() => {
   font-weight: 800;
   transition: filter var(--transition-fast);
 }
-.spin-btn:hover:not([aria-disabled="true"]) {
-  filter: brightness(1.1);
+@media (hover: hover) {
+  .spin-btn:hover:not([aria-disabled="true"]) {
+    filter: brightness(1.1);
+  }
 }
 .spin-btn[aria-disabled="true"] {
   background: var(--btn-dis-bg);
@@ -964,8 +992,8 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 759px) {
-  /* Touch-driven at this width — the compact desktop sizing is too small a target. */
+@media (max-width: 759px), (pointer: coarse) {
+  /* Touch-driven — the compact desktop sizing is too small a target. */
   .seg-btn {
     min-height: 44px;
   }
@@ -992,6 +1020,82 @@ onBeforeUnmount(() => {
   }
   .outcome-main {
     font-size: 15px;
+  }
+}
+
+/* Four 44px quick-picks take ~196px, leaving the input ~50px on a 320px phone —
+   too little to read a 4-digit stake. Put the chips on their own row instead. */
+@media (max-width: 360px) {
+  .stake-row {
+    flex-wrap: wrap;
+  }
+  .stake-row .stake-input {
+    flex: 1 0 100%;
+  }
+  .stake-row .seg-group {
+    flex: 1 0 100%;
+  }
+  .stake-row .seg-btn {
+    flex: 1 1 0;
+  }
+}
+
+/* A short screen (phone held sideways): the sticky Spin bar would cover about
+   half of what's visible, hiding the stake and multiplier controls entirely
+   until scrolled to. Let it scroll with the content instead. */
+@media (max-height: 500px) {
+  .actions {
+    position: static;
+    padding-top: 0;
+  }
+  .actions::before {
+    display: none;
+  }
+  .status {
+    min-height: 34px;
+  }
+  .upgrader {
+    gap: 10px;
+  }
+}
+
+/* …and when there's also width to spare, two columns: the odds (wheel and the two
+   outcomes) on the left, the bet (stake, multiplier, Spin) on the right, so the
+   whole bet is in view at once. Keep the query in sync with isLandscapeSplit. */
+@media (max-height: 500px) and (min-width: 560px) {
+  .upgrader {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    column-gap: 20px;
+    align-items: start;
+  }
+  .col-a,
+  .col-b {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .wheel-stage {
+    --wheel: clamp(104px, 34dvh, 150px);
+  }
+  /* Vertical room is the scarce thing sideways: trade a little target height
+     (still well above the 24px WCAG minimum) so Spin lands inside the fold. */
+  .col-b .field {
+    gap: 6px;
+  }
+  .col-b .seg-btn,
+  .col-b .stake-input {
+    min-height: 38px;
+  }
+  .col-b .slider {
+    height: 28px;
+  }
+  .col-b .slider-ends {
+    margin-top: -2px;
+  }
+  .notes {
+    grid-column: 1 / -1;
   }
 }
 
