@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/authStore";
 import { useSaveStore } from "@/stores/saveStore";
@@ -23,7 +23,7 @@ import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import { useGameLoop } from "@/composables/useGameLoop";
 import { useAntiCheat } from "@/composables/useAntiCheat";
 import { useBreakpoint } from "@/composables/useBreakpoint";
-import { useOverlay } from "@/composables/useOverlayStack";
+import { useOverlay, initOverlayStack } from "@/composables/useOverlayStack";
 import { QUICK_RESET_ENABLED, shouldQuickReset } from "@/utils/featureFlags";
 import CheatWarningModal from "@/components/modals/CheatWarningModal.vue";
 
@@ -47,6 +47,8 @@ watch(isCompact, (compact) => {
   if (!compact) ui.mobilePanel = "none";
 });
 
+initOverlayStack();
+
 // The open mobile sheet is an overlay like any modal: Escape and the browser/
 // Android Back button close it, but only when nothing sits above it (modals
 // register later, so they are always on top of it).
@@ -56,6 +58,21 @@ useOverlay(
     ui.mobilePanel = "none";
   },
   400 // the sheet's z-index (see .rail below): under every modal (>= 900)
+);
+
+// Closing a sheet while focus is inside it (its ✕, or Escape) would otherwise drop focus to
+// <body> once the closed sheet turns visibility: hidden. Hand it back to the tab that opened it.
+watch(
+  () => ui.mobilePanel,
+  async (panel, previous) => {
+    if (panel !== "none" || previous === "none") return;
+    const sheet = document.getElementById(`mobile-sheet-${previous}`);
+    if (!sheet?.contains(document.activeElement)) return;
+    await nextTick();
+    document
+      .querySelector<HTMLElement>(`.mobile-tab-bar [aria-controls="mobile-sheet-${previous}"]`)
+      ?.focus();
+  }
 );
 
 async function onKeydown(e: KeyboardEvent) {

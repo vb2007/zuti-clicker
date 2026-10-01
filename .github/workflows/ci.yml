@@ -3,9 +3,10 @@ name: PR Tests
 # Runs on every PR into main. Five test stages feed a shared JUnit -> HTML/ODS
 # report pipeline, aggregated and published by two further jobs. Four of the
 # five (typecheck, verify-migrations, frontend-tests, frontend-e2e) have no
-# interdependency between them - on this single self-hosted runner they still queue one after
-# another, but this keeps each stage's pass/fail visible on its own and keeps
-# the door open for more runners later. api-tests depends on verify-migrations
+# interdependency between them - on this single self-hosted runner they still
+# queue one after another, but this keeps each stage's pass/fail visible on its
+# own and keeps the door open for more runners later. api-tests depends on
+# verify-migrations
 # so it runs its test suite against an already-migrated, already-verified
 # database instead of re-applying migrations itself.
 on:

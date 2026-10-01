@@ -401,3 +401,25 @@ for (const language of ["en", "hu"] as const) {
     });
   });
 }
+
+test.describe("after a reload", () => {
+  test.use({ loggedIn: true });
+
+  // Regression (review): reloading with an overlay open leaves the history sentinel current
+  // (history.state survives a reload). For a logged-in player nothing opens at load, so it was
+  // never cleaned up and the first Back press did nothing visible.
+  test("one Back leaves the game: no stale sentinel swallows the first press", async ({
+    app,
+    page
+  }) => {
+    await app.open();
+    await app.seed((s) => void (s.ui.settingsModalOpen = true));
+    await expect(modalOf(page)).toBeVisible();
+    await page.reload();
+    await page.waitForSelector(".app");
+    await expect.poll(() => sentinelActive(page)).toBe(false);
+
+    await page.goBack();
+    await expect(page.locator(".app")).toHaveCount(0); // gone: one press left the game
+  });
+});

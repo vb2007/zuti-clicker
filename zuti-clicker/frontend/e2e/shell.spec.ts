@@ -256,3 +256,21 @@ test.describe("mobile sheet motion", () => {
     expect(open).toBe("0s");
   });
 });
+
+test.describe("focus when a sheet closes", () => {
+  test.use({ loggedIn: true });
+
+  // Regression (review): closing a sheet with focus inside it (its X, Escape) left focus on <body>
+  // once the closed sheet turned visibility: hidden — keyboard/screen-reader users lost their place.
+  test("returns to the tab that opened it", async ({ app, page }) => {
+    test.skip(!isCompact(page), "mobile sheets only exist below 760px");
+    await app.open();
+    const tab = page.locator(".mobile-tab-bar .tab-btn").nth(1);
+    await tab.click();
+    await expect(page.locator("#mobile-sheet-units")).toBeVisible();
+    await page.locator("#mobile-sheet-units .sheet-close").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#mobile-sheet-units")).toBeHidden();
+    await expect(tab).toBeFocused();
+  });
+});

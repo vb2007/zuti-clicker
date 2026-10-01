@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { defineComponent, nextTick, ref } from "vue";
 import { mount } from "@vue/test-utils";
 import {
+  initOverlayStack,
   registerOverlay,
   useOverlay,
   __resetOverlayStackForTests
@@ -176,6 +177,22 @@ describe("useOverlayStack", () => {
     popstate(); // its popstate arrives
     expect(pushState).toHaveBeenCalledTimes(1); // the open overlay now gets a fresh sentinel
     expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression (review): the step-off only ran when the first overlay opened, so a logged-in
+  // player (no overlay at load) had their first Back swallowed by the stale entry.
+  it("regression: initOverlayStack steps off a reload-stale sentinel with no overlay ever opened", () => {
+    vi.spyOn(window.history, "state", "get").mockReturnValue({ position: 2, zutiOverlay: true });
+    initOverlayStack();
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(pushState).not.toHaveBeenCalled(); // nothing is open, so no new sentinel either
+    initOverlayStack(); // idempotent
+    expect(back).toHaveBeenCalledTimes(1);
+
+    // its own popstate is swallowed (and does not close or arm anything)
+    vi.spyOn(window.history, "state", "get").mockReturnValue({ position: 1 });
+    popstate();
+    expect(pushState).not.toHaveBeenCalled();
   });
 
   // Regression (review): a held Escape auto-repeats; each repeat used to close the next

@@ -110,6 +110,16 @@ function ensureListening(): void {
   }
 }
 
+/**
+ * Attaches the listeners and steps off a sentinel left current by a reload, right at app
+ * start. Without this a logged-in player — for whom no overlay opens at load — would have
+ * the first Back press silently consumed by the stale entry. Idempotent; call it once
+ * from App.vue's setup.
+ */
+export function initOverlayStack(): void {
+  ensureListening();
+}
+
 export interface OverlayHandle {
   release: () => void;
 }
