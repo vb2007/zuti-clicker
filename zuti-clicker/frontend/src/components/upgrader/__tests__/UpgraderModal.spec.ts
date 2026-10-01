@@ -177,9 +177,9 @@ describe("UpgraderModal", () => {
       await preset.trigger("click");
       expect(preset.attributes("aria-pressed")).toBe("true");
       expect(text(".mult-value")).toBe("×5");
-      expect((q(".slider").element as HTMLInputElement).value).toBe(
-        String(Math.round(multiplierToSlider(5) * 1000))
-      );
+      // Positions snap to the slider's step (200 stops along the log scale).
+      const snapped = Math.round((multiplierToSlider(5) * 1000) / 5) * 5;
+      expect((q(".slider").element as HTMLInputElement).value).toBe(String(snapped));
     });
 
     it("moving the slider changes the multiplier and deselects every preset", async () => {
@@ -204,7 +204,8 @@ describe("UpgraderModal", () => {
 
   describe("why a bet can't be spun", () => {
     const status = () => text(".status");
-    const spinDisabled = () => q(".spin-btn").attributes("disabled") !== undefined;
+    // aria-disabled, not disabled: a disabled button would drop keyboard focus.
+    const spinDisabled = () => q(".spin-btn").attributes("aria-disabled") === "true";
 
     it("a stake whose payout wouldn't exceed it says so, with the smallest stake that works", async () => {
       await open(250);
@@ -249,7 +250,7 @@ describe("UpgraderModal", () => {
 
     it("a valid bet shows no problem and enables Spin", async () => {
       await open(250);
-      expect(status()).toBe("");
+      expect(q(".status-problem").exists()).toBe(false);
       expect(spinDisabled()).toBe(false);
     });
   });
@@ -316,7 +317,7 @@ describe("UpgraderModal", () => {
       await click(".spin-btn");
 
       expect(text(".spin-btn")).toBe("Spinning…");
-      expect(q(".spin-btn").attributes("disabled")).toBeDefined();
+      expect(q(".spin-btn").attributes("aria-disabled")).toBe("true");
       expect(q("#upgrader-stake").attributes("disabled")).toBeDefined();
       expect(q(".slider").attributes("disabled")).toBeDefined();
       expect(
@@ -356,6 +357,42 @@ describe("UpgraderModal", () => {
       expect(q(".status-main").exists()).toBe(false);
       expect(text(".spin-btn")).toBe("Spin");
       expect(q(".outcome.hit").exists()).toBe(false);
+    });
+
+    // Left at the landing angle, the redrawn arc could put the fixed pointer on
+    // an arc boundary, which reads as a prediction of the next spin.
+    it("regression: changing the bet after a result puts the wheel back at 12 o'clock", async () => {
+      stubRoll(100_000);
+      await open(250);
+      await click(".spin-btn");
+      await finishSpin();
+      expect(rotationOf()).not.toBe(0);
+
+      await setStake("30");
+      expect(rotationOf()).toBe(0);
+      expect(wheel().classes()).not.toContain("animating"); // an instant snap, no travel
+    });
+
+    it("spinning again WITHOUT changing the bet keeps turning from where it stopped", async () => {
+      stubRoll(100_000);
+      await open(250);
+      await click(".spin-btn");
+      const first = rotationOf();
+      await finishSpin();
+      await click(".spin-btn");
+      expect(rotationOf()).toBeGreaterThan(first);
+    });
+
+    it("opens with a fresh wheel", async () => {
+      stubRoll(100_000);
+      await open(250);
+      await click(".spin-btn");
+      await finishSpin();
+      useUiStore().upgraderOpen = false;
+      await nextTick();
+      useUiStore().upgraderOpen = true;
+      await nextTick();
+      expect(rotationOf()).toBe(0);
     });
 
     it("regression: a result describes the bet that was placed, not whatever the balance is now", async () => {
@@ -499,6 +536,219 @@ describe("UpgraderModal", () => {
       expect(rotationOf()).toBe(0);
       expect(text(".spin-btn")).toBe("Spin");
       expect(q("#upgrader-stake").attributes("disabled")).toBeUndefined();
+    });
+  });
+
+  describe("after a spin that leaves nothing to spin with", () => {
+    // Max, then lose: the Spin button goes inactive. It must say why, not just go grey.
+    it("regression: an all-in loss explains why Spin is inactive, and no longer offers 'Spin again'", async () => {
+      stubRoll(900_000);
+      const game = await open(250);
+      await click('.stake-row .seg-btn[aria-label*="all"]');
+      await click(".spin-btn");
+      await finishSpin();
+
+      expect(game.phdCount).toBe(0);
+      expect(text(".status-main")).toContain("250");
+      // The reason sits under the result (replacing the frenzy line) ...
+      expect(text(".status-sub")).toContain("1 PhD");
+      // ... the button no longer invites another go, and is tied to the reason.
+      expect(text(".spin-btn")).toBe("Spin");
+      expect(q(".spin-btn").attributes("aria-disabled")).toBe("true");
+      expect(q(".spin-btn").attributes("aria-describedby")).toBe("upgrader-status");
+      expect(q("#upgrader-status").exists()).toBe(true);
+    });
+
+    it("an inactive Spin ignores a click rather than spinning", async () => {
+      stubRoll(100_000);
+      const game = await open(250);
+      await setStake("");
+      await click(".spin-btn");
+      expect(game.phdCount).toBe(250);
+      expect(rotationOf()).toBe(0);
+    });
+
+    it("a valid bet after a win still offers 'Spin again'", async () => {
+      stubRoll(100_000);
+      await open(250);
+      await click(".spin-btn");
+      await finishSpin();
+      expect(text(".spin-btn")).toBe("Spin again");
+    });
+  });
+
+  describe("the return / cap fine print", () => {
+    // It belongs where the player decides: before the spin, in the status slot.
+    it("is shown while choosing a valid bet, with the real numbers", async () => {
+      await open(250);
+      expect(text(".status-fine")).toContain("90%");
+      expect(text(".status-fine")).toContain("80%");
+    });
+
+    it("gives way to the reason when the bet can't be spun, and to the result after a spin", async () => {
+      stubRoll(100_000);
+      await open(250);
+      await setStake("");
+      expect(q(".status-fine").exists()).toBe(false);
+      expect(q(".status-problem").exists()).toBe(true);
+
+      await setStake("25");
+      expect(q(".status-fine").exists()).toBe(true);
+      await click(".spin-btn");
+      await finishSpin();
+      expect(q(".status-fine").exists()).toBe(false);
+      expect(q(".status-main").exists()).toBe(true);
+
+      await setStake("30");
+      expect(q(".status-fine").exists()).toBe(true);
+    });
+
+    it("is outside the live region, so it isn't announced every time it reappears", async () => {
+      await open(250);
+      expect(q(".status-live").element.contains(q(".status-fine").element)).toBe(false);
+      expect(q(".status-live").attributes("aria-live")).toBe("polite");
+    });
+
+    it("is not repeated in the notes below", async () => {
+      await open(250);
+      expect(body().findAll(".notes .note").every((n) => !n.text().includes("90%"))).toBe(true);
+    });
+  });
+
+  describe("keyboard and screen readers", () => {
+    // A disabled element loses focus, and the dialog's Tab trap only wraps from
+    // its first/last control: from <body> the next Tab would leave the dialog.
+    it("regression: focus stays on the Spin button (inside the dialog) while the controls lock", async () => {
+      stubRoll(100_000);
+      await open(250);
+      (q("#upgrader-stake").element as HTMLElement).focus();
+      expect(document.activeElement?.id).toBe("upgrader-stake");
+
+      const e = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+      Object.defineProperty(e, "isTrusted", { value: true });
+      q("#upgrader-stake").element.dispatchEvent(e);
+      await flushPromises();
+
+      // The stake input is now disabled, but focus did not fall to <body>.
+      expect(q("#upgrader-stake").attributes("disabled")).toBeDefined();
+      expect(document.activeElement).toBe(q(".spin-btn").element);
+    });
+
+    it("regression: opening puts focus in the stake field, not on the close button", async () => {
+      await open(250);
+      await nextTick();
+      expect(document.activeElement?.id).toBe("upgrader-stake");
+    });
+
+    it("the quick-pick chips say what they stake, not just '10%'", async () => {
+      await open(250);
+      const labels = body()
+        .findAll(".stake-row .seg-btn")
+        .map((b) => b.attributes("aria-label"));
+      expect(labels).toEqual([
+        "Stake 10% of your PhDs",
+        "Stake 25% of your PhDs",
+        "Stake 50% of your PhDs",
+        "Stake all your PhDs"
+      ]);
+    });
+
+    it("the stake field is named by its visible label alone (no redundant aria-label)", async () => {
+      await open(250);
+      expect(q("#upgrader-stake").attributes("aria-label")).toBeUndefined();
+      expect(q('label[for="upgrader-stake"]').exists()).toBe(true);
+    });
+
+    it("has a labelled close button that closes the modal", async () => {
+      await open(250);
+      const close = q(".modal-close");
+      expect(close.attributes("aria-label")).toBe("Close");
+      await close.trigger("click");
+      expect(useUiStore().upgraderOpen).toBe(false);
+    });
+
+    it("shows where the multiplier slider starts and ends", async () => {
+      await open(250);
+      expect(text(".slider-ends")).toContain("×1.2");
+      expect(text(".slider-ends")).toContain("×100");
+    });
+  });
+
+  describe("a refused re-spin shows the odds that are real now", () => {
+    // Without clearing the last result when a spin starts, a refused "Spin again"
+    // left the wheel and tiles on the PREVIOUS bet's odds even after the controls moved.
+    it("regression: after a win then a failed re-spin, the wheel follows the controls again", async () => {
+      useAuthStore().user = { id: 1, username: "u", email: "u@example.com" };
+      const { ApiError } = await import("@/lib/api");
+      vi.mocked(api.upgrader.spin).mockResolvedValueOnce({
+        message: "Spin settled.",
+        won: true,
+        rollPpm: 100_000,
+        winPpm: 450_000,
+        payout: 50,
+        phdCount: 275,
+        upgraderSeq: 1
+      });
+      await open(250);
+      await click(".spin-btn");
+      await finishSpin();
+      expect(text(".hub-pct")).toBe("45%");
+
+      vi.mocked(api.upgrader.spin).mockRejectedValueOnce(new ApiError(400, "bad", {}));
+      await click(".spin-btn"); // "Spin again" — refused
+      expect(text(".spin-btn")).toBe("Spin");
+
+      const slider = q(".slider");
+      (slider.element as HTMLInputElement).value = "1000";
+      await slider.trigger("input");
+      // x100 on the same stake is 0.9%, and that is what the wheel must say.
+      expect(text(".hub-pct")).toBe("0.9%");
+      expect(text(".outcome.win .outcome-main")).not.toBe("+25 PhD");
+    });
+  });
+
+  describe("PhD amounts are shown exactly", () => {
+    // formatNumber abbreviates from 1,000 ("1.99K"), but a stake is a whole number
+    // the player types and is checked against exactly.
+    it("regression: a limit of 1,999 is not shown as 2.00K (a stake of 2,000 would be refused)", async () => {
+      await open(1999);
+      await setStake("2000");
+      expect(text(".status")).toContain("1,999");
+      expect(text(".status")).not.toContain("K");
+    });
+
+    it("the balance and the tiles use whole numbers too", async () => {
+      await open(1999);
+      await setStake("1234");
+      expect(text(".field-value")).toContain("1,999");
+      expect(text(".outcome.lose .outcome-main")).toBe("−1,234 PhD");
+    });
+  });
+
+  describe("the settle fallback", () => {
+    // transitionend can fail to fire (a hidden tab, an interrupted transition): the
+    // result must still arrive.
+    it("settles on its timer when the browser never reports the wheel stopping", async () => {
+      vi.useFakeTimers();
+      try {
+        stubRoll(100_000);
+        const game = await open(250);
+        q(".spin-btn").element.dispatchEvent(
+          Object.defineProperty(new MouseEvent("click", { bubbles: true }), "isTrusted", {
+            value: true
+          })
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        await flushPromises();
+        expect(q(".status-main").exists()).toBe(false);
+        expect(game.phdCountDisplay).toBe(250);
+
+        await vi.advanceTimersByTimeAsync(3600);
+        expect(text(".status-main")).toContain("25");
+        expect(game.phdCountDisplay).toBe(275);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

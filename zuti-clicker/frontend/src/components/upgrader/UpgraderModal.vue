@@ -31,7 +31,7 @@ import {
   multiplierToSlider,
   type SpinOutcome
 } from "@/utils/upgrader";
-import { formatNumber, formatChancePpm } from "@/utils/formatters";
+import { formatChancePpm } from "@/utils/formatters";
 import {
   UPGRADER_PPM,
   UPGRADER_RTP,
@@ -41,7 +41,11 @@ import {
 } from "@/utils/gameConstants";
 import BaseModal from "@/components/modals/BaseModal.vue";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+// PhDs are whole numbers being staked and compared against, so they are shown
+// exactly ("1,999"), never abbreviated ("2.00K" would read as 2,000 — a stake the
+// player can't actually place).
+const fmt = (n: number): string => n.toLocaleString(locale.value);
 const game = useGameStore();
 const auth = useAuthStore();
 const ui = useUiStore();
@@ -70,6 +74,7 @@ const outcome = ref<SpinOutcome | null>(null);
 const placed = ref<{ stake: number; gain: number; frenzyMs: number } | null>(null);
 const rotation = ref(0);
 const wheelEl = ref<SVGSVGElement | null>(null);
+const spinBtn = ref<HTMLButtonElement | null>(null);
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
 const owned = computed(() => game.phdCount);
@@ -90,11 +95,11 @@ const problem = computed<string | null>(() => {
   if (owned.value < 1) return t("upgrader.problems.noPhd");
   if (!(stake.value >= 1)) return t("upgrader.problems.enterStake");
   if (stake.value > owned.value) {
-    return t("upgrader.problems.tooMany", { owned: formatNumber(owned.value) });
+    return t("upgrader.problems.tooMany", { owned: fmt(owned.value) });
   }
   if (quote.value === null) {
     return t("upgrader.problems.tooSmall", {
-      min: formatNumber(minStake(hundredths.value ?? 120)),
+      min: fmt(minStake(hundredths.value ?? 120)),
       mult: formatMult(multiplier.value)
     });
   }
@@ -136,7 +141,28 @@ const frenzyName = computed(() =>
   t(`boosters.names.${UPGRADER_CONSOLATION_BOOSTER_ID}` as Parameters<typeof t>[0])
 );
 const wheelAria = computed(() => t("upgrader.wheelAria", { pct: winPct.value ?? "0" }));
-const sliderPosition = computed(() => Math.round(multiplierToSlider(multiplier.value) * 1000));
+// 200 steps along the log scale, not 1000: a keyboard user gets a usable stride
+// (about 0.9% of the multiplier per key press) instead of hundreds of presses.
+const SLIDER_STEP = 5;
+const sliderPosition = computed(
+  () => Math.round((multiplierToSlider(multiplier.value) * 1000) / SLIDER_STEP) * SLIDER_STEP
+);
+
+// What sits under the result: the reason the bet can't be spun again, if there
+// is one (all PhDs lost, the stake now above what's left), else the frenzy line.
+// Without this the button would just go grey with no explanation.
+// The return / cap disclosure fills the status slot whenever there is nothing
+// more urgent to say — which is exactly the moment before a spin, when it matters.
+const showFinePrint = computed(
+  () => resultLine.value === null && !(phase.value === "idle" && problem.value !== null)
+);
+
+const statusSub = computed(() => problem.value ?? resultLine.value?.sub ?? "");
+
+const spinLabel = computed(() => {
+  if (busy.value) return t("upgrader.spinning");
+  return phase.value === "settled" && canSpin.value ? t("upgrader.spinAgain") : t("upgrader.spin");
+});
 
 const resultLine = computed(() => {
   const o = outcome.value;
@@ -145,13 +171,13 @@ const resultLine = computed(() => {
   if (o.won) {
     return {
       won: true,
-      main: t("upgrader.resultWin", { gain: formatNumber(p.gain) }),
-      sub: t("upgrader.resultWinTotal", { total: formatNumber(o.phdCount) })
+      main: t("upgrader.resultWin", { gain: fmt(p.gain) }),
+      sub: t("upgrader.resultWinTotal", { total: fmt(o.phdCount) })
     };
   }
   return {
     won: false,
-    main: t("upgrader.resultLose", { stake: formatNumber(p.stake) }),
+    main: t("upgrader.resultLose", { stake: fmt(p.stake) }),
     sub: o.consolation
       ? t("upgrader.resultFrenzy", {
           name: frenzyName.value,
@@ -229,7 +255,14 @@ async function onSpin(e: Event): Promise<void> {
     gain: quote.value.payout - stake.value,
     frenzyMs: consolationMs(stake.value, owned.value)
   };
+  // Forget the previous bet: if this spin is refused, the wheel and tiles must
+  // fall back to what the controls say NOW, not keep showing the last spin's odds.
+  outcome.value = null;
+  placed.value = null;
   phase.value = "requesting";
+  // The controls are about to lock; move focus onto the (still focusable) Spin
+  // button first, so keyboard focus can't fall out of the dialog onto the page.
+  spinBtn.value?.focus();
   const result = await upgrader.spin(bet.stake, multiplier.value, e);
   if (!result) {
     phase.value = "idle";
@@ -252,6 +285,9 @@ function reset(): void {
   phase.value = "idle";
   outcome.value = null;
   placed.value = null;
+  // Not animating while idle, so this is an instant snap: a fresh wheel always
+  // starts with its win arc at 12 o'clock and the pointer on the arc's leading edge.
+  rotation.value = 0;
   stakeText.value = defaultStake();
 }
 
@@ -278,6 +314,9 @@ watch([stakeText, multiplier], () => {
     phase.value = "idle";
     outcome.value = null;
     placed.value = null;
+    // The arc is redrawn for the new bet; left at the old angle the fixed pointer
+    // could sit on an arc boundary and read as a prediction.
+    rotation.value = 0;
   }
 });
 
@@ -341,7 +380,7 @@ onBeforeUnmount(() => {
             <span class="outcome-label">{{ t("upgrader.win") }}</span>
             <span v-if="winPct !== null" class="outcome-chance">{{ winPct }}%</span>
           </span>
-          <span class="outcome-main">{{ shown ? `+${formatNumber(shown.gain)} PhD` : "—" }}</span>
+          <span class="outcome-main">{{ shown ? `+${fmt(shown.gain)} PhD` : "—" }}</span>
         </div>
         <div
           class="outcome lose"
@@ -352,7 +391,7 @@ onBeforeUnmount(() => {
             <span class="outcome-label">{{ t("upgrader.lose") }}</span>
             <span v-if="losePct !== null" class="outcome-chance">{{ losePct }}%</span>
           </span>
-          <span class="outcome-main">{{ shown ? `−${formatNumber(shown.stake)} PhD` : "—" }}</span>
+          <span class="outcome-main">{{ shown ? `−${fmt(shown.stake)} PhD` : "—" }}</span>
           <span v-if="shown" class="outcome-sub">
             {{
               shown.frenzyMs > 0
@@ -370,7 +409,7 @@ onBeforeUnmount(() => {
         <div class="field-head">
           <label class="field-label" for="upgrader-stake">{{ t("upgrader.stake") }}</label>
           <span class="field-value">
-            {{ t("upgrader.owned", { phd: formatNumber(game.phdCountDisplay) }) }}
+            {{ t("upgrader.owned", { phd: fmt(game.phdCountDisplay) }) }}
           </span>
         </div>
         <div class="stake-row">
@@ -382,7 +421,6 @@ onBeforeUnmount(() => {
             autocomplete="off"
             :value="stakeText"
             :disabled="busy"
-            :aria-label="t('upgrader.stakeAria')"
             @input="onStakeInput"
             @keydown.enter.prevent="onSpin($event)"
           />
@@ -393,6 +431,11 @@ onBeforeUnmount(() => {
               type="button"
               class="seg-btn"
               :disabled="busy || owned < 1"
+              :aria-label="
+                p === 100
+                  ? t('upgrader.stakeAllAria')
+                  : t('upgrader.stakeChipAria', { pct: p })
+              "
               @click="setStakePercent(p)"
             >
               {{ p === 100 ? t("upgrader.stakeMax") : `${p}%` }}
@@ -425,13 +468,17 @@ onBeforeUnmount(() => {
           type="range"
           min="0"
           max="1000"
-          step="1"
+          :step="SLIDER_STEP"
           :value="sliderPosition"
           :disabled="busy"
           :aria-label="t('upgrader.multiplierSlider')"
           :aria-valuetext="`×${formatMult(multiplier)}`"
           @input="onSlider"
         />
+        <div class="slider-ends" aria-hidden="true">
+          <span>×1.2</span>
+          <span>×100</span>
+        </div>
       </div>
 
       <div class="actions">
@@ -439,31 +486,51 @@ onBeforeUnmount(() => {
              that just landed, or why the current bet can't be spun. Directly
              above the button it concerns, and a fixed height so it appearing
              never moves the button. -->
-        <div class="status" aria-live="polite">
-          <template v-if="resultLine">
-            <p class="status-main" :class="resultLine.won ? 'won' : 'lost'">{{ resultLine.main }}</p>
-            <p v-if="resultLine.sub" class="status-sub">{{ resultLine.sub }}</p>
-          </template>
-          <p v-else-if="phase === 'idle' && problem" class="status-problem">{{ problem }}</p>
+        <div id="upgrader-status" class="status">
+          <!-- Only the result and the problem are announced; the standing fine
+               print below is not re-read every time it reappears. -->
+          <div class="status-live" aria-live="polite">
+            <template v-if="resultLine">
+              <p class="status-main" :class="resultLine.won ? 'won' : 'lost'">
+                {{ resultLine.main }}
+              </p>
+              <p v-if="statusSub" class="status-sub">{{ statusSub }}</p>
+            </template>
+            <p v-else-if="phase === 'idle' && problem" class="status-problem">{{ problem }}</p>
+          </div>
+          <p v-if="showFinePrint" class="status-fine">
+            {{
+              t("upgrader.finePrint", {
+                rtp: Math.round(UPGRADER_RTP * 100),
+                cap: Math.round(UPGRADER_WIN_CHANCE_CAP * 100)
+              })
+            }}
+          </p>
         </div>
-        <button class="spin-btn" type="button" :disabled="!canSpin" @click="onSpin($event)">
-          {{
-            busy
-              ? t("upgrader.spinning")
-              : phase === "settled"
-                ? t("upgrader.spinAgain")
-                : t("upgrader.spin")
-          }}
+        <!-- aria-disabled rather than disabled: a disabled button drops keyboard
+             focus, and the next Tab would leave the dialog. onSpin ignores the
+             click while the bet can't be spun. -->
+        <button
+          ref="spinBtn"
+          class="spin-btn"
+          type="button"
+          :aria-disabled="!canSpin"
+          aria-describedby="upgrader-status"
+          @click="onSpin($event)"
+        >
+          {{ spinLabel }}
         </button>
+      </div>
+
+      <!-- Last in the DOM on purpose: BaseModal focuses the first focusable element
+           on open, and that should be the stake field, not this. It is positioned
+           absolutely, so it still sits at the top right. -->
+      <button class="modal-close" type="button" :aria-label="t('upgrader.close')" @click="close">
+        ✕
+      </button>
+
+      <div class="notes">
         <p v-if="!auth.isLoggedIn" class="note">{{ t("upgrader.guestNote") }}</p>
-        <p class="note">
-          {{
-            t("upgrader.finePrint", {
-              rtp: Math.round(UPGRADER_RTP * 100),
-              cap: Math.round(UPGRADER_WIN_CHANCE_CAP * 100)
-            })
-          }}
-        </p>
       </div>
     </div>
   </BaseModal>
@@ -555,7 +622,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 /* ── Outcomes (also the wheel's legend) ──────────────────── */
@@ -573,9 +640,7 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   box-shadow: inset 0 0 0 1px transparent;
-  transition:
-    opacity var(--transition-base),
-    box-shadow var(--transition-base);
+  transition: box-shadow var(--transition-base);
 }
 
 .outcome.hit.win {
@@ -584,8 +649,13 @@ onBeforeUnmount(() => {
 .outcome.hit.lose {
   box-shadow: inset 0 0 0 1px var(--danger);
 }
-.outcome.miss {
-  opacity: 0.45;
+/* The outcome that didn't happen steps back, but stays readable: a win that was
+   missed is still worth re-reading. Only the swatch and the amount recede. */
+.outcome.miss .swatch {
+  opacity: 0.4;
+}
+.outcome.miss .outcome-main {
+  color: var(--text-secondary);
 }
 
 .outcome-head {
@@ -596,7 +666,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .swatch {
@@ -653,7 +723,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .field-value {
@@ -730,8 +800,8 @@ onBeforeUnmount(() => {
   opacity: 0.55;
 }
 
-/* Native range, restyled to the same tokens. The 44px input box is the touch
-   target; the 6px track and 20px thumb are what's drawn. */
+/* Native range, restyled to the same tokens. The input box (32px, 40px on a
+   phone) is the touch target; the 6px track and 20px thumb are what's drawn. */
 .slider {
   appearance: none;
   -webkit-appearance: none;
@@ -775,6 +845,16 @@ onBeforeUnmount(() => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
+.slider-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Actions ─────────────────────────────────────────────── */
 /* Always in view: when the modal is taller than the screen, the status line and
    Spin stay put while the rest scrolls, so tapping Spin never scrolls the wheel
@@ -790,16 +870,31 @@ onBeforeUnmount(() => {
   background: var(--bg-surface);
 }
 
+/* When the controls scroll under the bar, a soft fade says there is more above. */
+.actions::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -26px;
+  height: 26px;
+  background: linear-gradient(to top, var(--bg-surface), transparent);
+  pointer-events: none;
+}
+
 /* The result of a spin, or why the bet can't be spun. */
 .status {
-  min-height: 38px;
+  /* Tall enough for the three-line fine print on a phone, so swapping it for a
+     result (or back) never moves the Spin button. */
+  min-height: 46px;
   text-align: center;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 
-.status > * {
+.status-live > *,
+.status-fine {
   animation: fadeScaleIn 200ms ease both;
 }
 
@@ -826,6 +921,14 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
 }
 
+/* The honesty line (long-run return, win-chance cap): real information, so the
+   readable secondary colour, not the faint muted one. */
+.status-fine {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 .spin-btn {
   width: 100%;
   min-height: 44px;
@@ -837,20 +940,44 @@ onBeforeUnmount(() => {
   font-weight: 800;
   transition: filter var(--transition-fast);
 }
-.spin-btn:hover:not(:disabled) {
+.spin-btn:hover:not([aria-disabled="true"]) {
   filter: brightness(1.1);
 }
-.spin-btn:disabled {
+.spin-btn[aria-disabled="true"] {
   background: var(--btn-dis-bg);
   color: var(--btn-dis-text);
   cursor: not-allowed;
 }
 
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .note {
   font-size: 11px;
   line-height: 1.5;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-align: center;
+}
+
+/* Positioned against the modal box itself (.upgrader is not positioned), like
+   AuthModal's close button. */
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  min-width: 32px;
+  min-height: 32px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  border-radius: var(--radius-xs);
+  transition: color var(--transition-fast);
+}
+.modal-close:hover {
+  color: var(--text-primary);
 }
 
 /* A shorter screen gives the wheel less of it, so the controls and Spin stay in
@@ -890,9 +1017,11 @@ onBeforeUnmount(() => {
   .outcome-main {
     font-size: 15px;
   }
-  .note {
-    font-size: 10.5px;
-    line-height: 1.4;
+  .modal-close {
+    top: 4px;
+    right: 4px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 
