@@ -70,7 +70,8 @@ nyelv- és a témaváltó gomb, hogy minden más elférjen — mindkettő továb
 elérhető a Beállítások ablakban. Fekvő telefonon a fejléc egy sorba tömörül, és
 a Kattintó kisebb, hogy a felirata és a számláló is a képernyőn maradjon. A
 Kattintó körének mérete egyébként a rendelkezésre álló helyhez igazodik: nagy
-monitoron nagyobb, mint korábban.
+monitoron (kb. 1200px szélesség fölött) nagyobb, mint korábban, telefonon és
+tipikus ablakméretnél az eredeti méretű.
 
 ### Ablakok bezárása
 

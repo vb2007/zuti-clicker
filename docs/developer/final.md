@@ -271,7 +271,8 @@ tartsd szinkronban a megfelelő CSS-sel.
 
 | Feltétel | Mit változtat |
 |---|---|
-| `max-width: 759px` és `max-height: 500px` (telefon fekvő) | A fejléc egysoros (`--header-h-compact: 52px`, a statisztika a fejlécben inline), a fülsáv 48px; a lapok teljes magasságot kapnak (nincs `--sheet-gap`); az `ActiveBoostersBar` chipjei bal oldalt, függőlegesen állnak. |
+| `max-width: 759px` és `max-height: 500px` (keskeny telefon fekvő) | A fejléc egysoros (`--header-h-compact: 52px`, a statisztika a fejlécben inline), a fülsáv 48px; a lapok teljes magasságot kapnak (nincs `--sheet-gap`). |
+| `max-height: 500px` (bármilyen szélesség — egy fekvő telefon 844×390-nel már 760px fölött van, és az asztali háromoszlopos elrendezést kapja) | Az `ActiveBoostersBar` chipjei bal oldalt, függőlegesen állnak, és csak a kör melletti helyet használhatják (az effekt-szöveg `…`-re vágódik, az idő mindig látszik); az Upgrader kompakt belső margót kap, 640px szélességtől két oszlopra bomlik, 360px magasságtól alacsonyabban az ×1,2/×100 felirat is elmarad. |
 | `max-width: 399px` | A fejlécből eltűnik a nyelv- és témagomb (a Beállításokban megvannak). Egy bejelentkezett fejléc ~355px-t igényel, e fölött fér el egy sorban. |
 | `max-height: 500px` és `min-width: 640px` | Az Upgrader két oszlopra bomlik (kerék + kimenetek \| tét, szorzó, Spin). 640px alatt egy oszlop marad, mert különben a tét mezője ~70px-re szűkülne. |
 | (szélességtől független) | A fejlesztések rácsa `repeat(auto-fill, minmax(68px, 1fr))`: annyi oszlop, amennyi még olvasható csempeszélességgel elfér (a keskenyített tablet-panelen 2, 1280px-es asztalon 3, telefonon 3–5), a csempenév legfeljebb 3 soros. A `minmax(0, …)`-jellegű minimum az, ami megakadályozza, hogy egy hosszú szó kitolja az oszlopot. |
@@ -284,7 +285,7 @@ A `viewport-fit=cover` miatt a tartalom a bevágás (notch) és a kezdőképerny
 
 #### A Kattintó körének mérete és a booster pickup
 
-A `ClickerArea.vue` méret-konténer (`container-type: size`), és egyetlen `--circle` változót ad ki: a szélességének ~62%-a, de nem nagyobb, mint ami mellett a felirat, a cps-pill és a booster-sáv még elfér; 140–280px közé szorítva. A kör arca, fénye és mindkét gyűrűje ebből származik (`ClickerCircle.vue`). A tartalék érték (`220px`) a konténer-egységeket nem ismerő böngészőknek van. A `ClickerArea` a területét és a kört a pickup megjelenésekor méri le, és a `utils/boosterPlacement.ts` tiszta, pixel-alapú függvénye választ pozíciót: teljesen a területen belül, és a kör + a pickup sugarától távol — a korábbi, százalékos szabály 320px-es telefonon (96px) a kör sugaránál (110px) kisebb volt.
+A `ClickerArea.vue` méret-konténer (`container-type: size`), és egyetlen `--circle` változót ad ki: a szélességének ~62%-a, de nem nagyobb, mint ami mellett a felirat, a cps-pill és a booster-sáv még elfér; felülről `clamp(220px, 18vw, 300px)` korlátozza (telefonon és tipikus asztali ablakban így marad az eredeti 220px, csak nagy monitoron nő), alulról 140px. A kör arca, fénye és mindkét gyűrűje ebből származik (`ClickerCircle.vue`). A tartalék érték (`220px`) a konténer-egységeket nem ismerő böngészőknek van. A `ClickerArea` a területét és a kört a pickup megjelenésekor méri le, és a `utils/boosterPlacement.ts` tiszta, pixel-alapú függvénye választ pozíciót: teljesen a területen belül, és a kör + a pickup sugarától távol — a korábbi, százalékos szabály 320px-es telefonon (96px) a kör sugaránál (110px) kisebb volt.
 
 #### Overlayek és a Vissza gomb
 
