@@ -205,3 +205,54 @@ test.describe("closed mobile sheets", () => {
     await expect(page.locator("#mobile-sheet-units")).toBeHidden();
   });
 });
+
+test.describe("mobile sheet motion", () => {
+  test.use({ loggedIn: true });
+
+  // Regression (review): `visibility 0s linear var(--transition-base)` expands to two easing
+  // functions, which invalidates the whole declaration — the slide-OUT silently had no animation
+  // (computed transition-duration 0s), while only the slide-in worked.
+  test("a closed sheet has a real slide-out transition (not an invalid declaration)", async ({
+    app,
+    page
+  }) => {
+    test.skip(!isCompact(page), "mobile sheets only exist below 760px");
+    await app.open();
+    const closed = await page.evaluate(() => {
+      const cs = getComputedStyle(document.querySelector("#mobile-sheet-units")!);
+      return { props: cs.transitionProperty, durations: cs.transitionDuration };
+    });
+    expect(closed.props).toContain("transform");
+    expect(closed.durations).toContain("0.22s");
+  });
+
+  test("closing is animated: the sheet is still visible a moment after it is closed", async ({
+    app,
+    page
+  }) => {
+    test.skip(!isCompact(page), "mobile sheets only exist below 760px");
+    await app.open();
+    await page.locator(".mobile-tab-bar .tab-btn").nth(1).click();
+    await expect(page.locator("#mobile-sheet-units")).toBeVisible();
+    await app.settle();
+    await page.locator("#mobile-sheet-units .sheet-close").click();
+    // visibility flips only after the 220ms slide-out
+    const vis = await page.evaluate(
+      () => getComputedStyle(document.querySelector("#mobile-sheet-units")!).visibility
+    );
+    expect(vis).toBe("visible");
+    await expect(page.locator("#mobile-sheet-units")).toBeHidden();
+  });
+
+  test("reduced motion: no slide at all, in either direction", async ({ app, page }) => {
+    test.skip(!isCompact(page), "mobile sheets only exist below 760px");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await app.open();
+    await page.locator(".mobile-tab-bar .tab-btn").nth(1).click();
+    await expect(page.locator("#mobile-sheet-units")).toBeVisible();
+    const open = await page.evaluate(
+      () => getComputedStyle(document.querySelector("#mobile-sheet-units")!).transitionDuration
+    );
+    expect(open).toBe("0s");
+  });
+});

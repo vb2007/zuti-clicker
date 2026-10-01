@@ -193,6 +193,11 @@ async function onConfirmDelete() {
 @media (max-width: 759px) {
   .game-layout {
     --sheet-gap: 56px;
+    /* A bare duration: --transition-base is "220ms ease" (duration AND easing), so it
+       cannot sit in "visibility 0s linear <delay>" — a second easing function makes the
+       whole declaration invalid and the slide-out silently loses its animation.
+       Keep in sync with --transition-base's duration. */
+    --sheet-ms: 220ms;
     grid-template-columns: 1fr;
   }
 
@@ -216,8 +221,8 @@ async function onConfirmDelete() {
        slide-out has finished (hence the delay), and at once on opening. */
     visibility: hidden;
     transition:
-      transform var(--transition-base),
-      visibility 0s linear var(--transition-base);
+      transform var(--sheet-ms) ease,
+      visibility 0s linear var(--sheet-ms);
     animation: none; /* supersede the rail's own one-shot mount animation */
   }
 
@@ -226,7 +231,7 @@ async function onConfirmDelete() {
     transform: translateY(0);
     visibility: visible;
     transition:
-      transform var(--transition-base),
+      transform var(--sheet-ms) ease,
       visibility 0s;
   }
 }
@@ -243,8 +248,12 @@ async function onConfirmDelete() {
   }
 }
 
+/* The open-state rule above is more specific than .rail, so it must be listed too or
+   reduced-motion users still get the slide-in. */
 @media (max-width: 759px) and (prefers-reduced-motion: reduce) {
-  .game-layout .rail {
+  .game-layout .rail,
+  .game-layout.panel-stats-open .rail-stats,
+  .game-layout.panel-units-open .rail-units {
     transition: none;
   }
 }
