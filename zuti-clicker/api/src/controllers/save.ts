@@ -220,9 +220,10 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *           section). Nothing is written — GET /save still returns the last
  *           verified state. Never returned when ANTICHEAT_MODE is "off" or
  *           "monitor". ALSO returned (in every ANTICHEAT_MODE, and never a
- *           strike) when upgraderSeq is behind the account's current value —
- *           the save was made before a later wheel spin, so the client
- *           must reload.
+ *           strike, with code "save_stale") when upgraderSeq does not match
+ *           the account's current value — the save was made before a later
+ *           wheel spin (or from a copy of the game that predates the
+ *           save's current state), so the client must reload.
  *         content:
  *           application/json:
  *             schema:

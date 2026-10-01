@@ -2,10 +2,11 @@ import { describe, it, beforeAll, expect } from "@jest/globals";
 import request from "supertest";
 import { TestData } from "../constants/test-data.js";
 import { Responses } from "../constants/responses.js";
+import { consolationMs } from "../services/upgrader.js";
 import {
   UPGRADER_PPM,
   UPGRADER_WIN_CHANCE_CAP,
-  UPGRADER_CONSOLATION_MIN_MS,
+  UPGRADER_CONSOLATION_MIN_GRANT_MS,
   UPGRADER_CONSOLATION_MAX_REMAINING_MS
 } from "../constants/upgrader.js";
 
@@ -137,8 +138,10 @@ describe("Upgrader endpoint - settlement", () => {
 
     for (let i = 0; i < 40; i++) {
       // Alternate a likely win (x1.2, 75%) and a likely loss (x100, ~0.9%).
+      // 20,000 of ~1M PhDs is a 2% stake: a long enough consolation to be granted.
       const multiplier = i % 2 === 0 ? 1.2 : 100;
-      const stake = 100;
+      const stake = 20_000;
+      const balanceBefore = balance;
       const res = await spin(cookie, { stake, multiplier });
       expect(res.status).toBe(200);
       expect(res.body.message).toBe(Responses.UPGRADER.SPIN_SUCCESS.body.message);
@@ -159,11 +162,23 @@ describe("Upgrader endpoint - settlement", () => {
         expect(res.body.consolation).toBeUndefined();
       } else {
         losses++;
-        expect(res.body.consolation.boosterId).toBe("frenzy");
-        expect(res.body.consolation.remainingMs).toBeGreaterThanOrEqual(UPGRADER_CONSOLATION_MIN_MS);
-        expect(res.body.consolation.remainingMs).toBeLessThanOrEqual(
-          UPGRADER_CONSOLATION_MAX_REMAINING_MS
-        );
+        // The shared maths is the oracle for whether, and how long, a buff is
+        // granted — in BOTH directions: an occasional lucky x100 win can swell
+        // the balance until a stake is under the grant threshold, and a loss
+        // then correctly earns nothing.
+        const expected = consolationMs(stake, balanceBefore);
+        if (expected === 0) {
+          expect(res.body.consolation).toBeUndefined();
+        } else {
+          expect(expected).toBeGreaterThanOrEqual(UPGRADER_CONSOLATION_MIN_GRANT_MS);
+          expect(res.body.consolation.boosterId).toBe("frenzy");
+          expect(res.body.consolation.remainingMs).toBeGreaterThanOrEqual(
+            Math.min(expected, UPGRADER_CONSOLATION_MAX_REMAINING_MS) - 50
+          );
+          expect(res.body.consolation.remainingMs).toBeLessThanOrEqual(
+            UPGRADER_CONSOLATION_MAX_REMAINING_MS
+          );
+        }
       }
     }
     // Both branches really ran (x1.2 wins 75% of 20, x100 loses ~99% of 20).
@@ -177,9 +192,13 @@ describe("Upgrader endpoint - settlement", () => {
   it("a loss shows up as an active frenzy booster on GET /save", async () => {
     const cookie = await userWithPhds(10_000);
     let lost = false;
+    let balance = 10_000;
+    // Half the current stack each time: a 30s consolation on a loss.
     for (let i = 0; i < 10 && !lost; i++) {
-      const res = await spin(cookie, { stake: 100, multiplier: 100 });
-      lost = res.status === 200 && !res.body.won;
+      const res = await spin(cookie, { stake: Math.floor(balance / 2), multiplier: 100 });
+      expect(res.status).toBe(200);
+      balance = res.body.phdCount;
+      lost = !res.body.won;
     }
     expect(lost).toBe(true);
     const save = await api.get("/save").set("Cookie", cookie);
@@ -212,15 +231,19 @@ describe("Upgrader endpoint - settlement", () => {
     expect(maxRemaining).toBeGreaterThan(UPGRADER_CONSOLATION_MAX_REMAINING_MS - 5000);
   });
 
-  it("does not lengthen the buff for tiny stakes beyond the floor", async () => {
+  // The review finding this guards: with a minimum buff length, staking 1 PhD
+  // over and over bought a full buff each time, so a player with many PhDs could
+  // keep frenzy (x7 production) up almost for free.
+  it("regression: a tiny stake earns no frenzy at all — there is no minimum to farm", async () => {
     const cookie = await userWithPhds(1_000_000);
     let res = await spin(cookie, { stake: 10, multiplier: 100 });
     for (let i = 0; i < 5 && res.body.won; i++) {
       res = await spin(cookie, { stake: 10, multiplier: 100 });
     }
     expect(res.body.won).toBe(false);
-    // 10 / 1,000,000 of the base is far below the floor.
-    expect(res.body.consolation.remainingMs).toBe(UPGRADER_CONSOLATION_MIN_MS);
+    expect(res.body.consolation).toBeUndefined();
+    const save = await api.get("/save").set("Cookie", cookie);
+    expect(save.body.save.activeBoosters).toEqual([]);
   });
 });
 
@@ -244,10 +267,16 @@ describe("Upgrader endpoint - concurrent spins (race condition)", () => {
       const stake = 100;
       const cookie = await userWithPhds(stake);
       const results = await Promise.all(
-        Array.from({ length: 20 }, () => spin(cookie, { stake, multiplier: 1.2 }))
+        Array.from({ length: 12 }, () => spin(cookie, { stake, multiplier: 1.2 }))
       );
 
       for (const r of results) expect([200, 409]).toContain(r.status);
+      // A racer that loses is told the TRUE reason and the real balance — not an
+      // overflow error, which a stale in-transaction re-read used to produce.
+      for (const r of results.filter((x) => x.status === 409)) {
+        expect(r.body.error).toBe(Responses.UPGRADER.INSUFFICIENT_PHD.body.error);
+        expect(r.body.phdCount).toBeLessThan(stake);
+      }
       const ok = results
         .filter((r) => r.status === 200)
         .sort((a, b) => a.body.upgraderSeq - b.body.upgraderSeq);
@@ -269,6 +298,45 @@ describe("Upgrader endpoint - concurrent spins (race condition)", () => {
       expect(balance).toBeGreaterThanOrEqual(0);
     }
   );
+});
+
+describe("Upgrader endpoint - overflow guard", () => {
+  // phdCount is a signed 32-bit Int column. The check happens before the roll,
+  // so the answer never depends on luck, and no out-of-range value reaches the DB.
+  it("refuses a spin whose win could overflow the balance: 409 LIMIT_REACHED, nothing changes", async () => {
+    const cookie = await userWithPhds(2_000_000_000);
+    // A win would be 2e9 - 1e9 + 2e9 = 3e9 PhDs, above 2^31 - 1.
+    const res = await spin(cookie, { stake: 1_000_000_000, multiplier: 2 });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe(Responses.UPGRADER.LIMIT_REACHED.body.error);
+
+    const save = await api.get("/save").set("Cookie", cookie);
+    expect(save.body.save.phdCount).toBe(2_000_000_000);
+    expect(save.body.save.upgraderSeq).toBe(0);
+  });
+
+  it("still allows a spin at the same balance whose win fits", async () => {
+    const cookie = await userWithPhds(2_000_000_000);
+    const res = await spin(cookie, { stake: 1000, multiplier: 2 });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("Upgrader endpoint - concurrent losers are told the truth", () => {
+  it("every refused racer gets INSUFFICIENT_PHD with the real balance (never a stale or wrong error)", async () => {
+    const cookie = await userWithPhds(100);
+    // x100 loses ~99% of the time, so nearly every run has one winner of the
+    // PhDs and five racers that must be refused.
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => spin(cookie, { stake: 100, multiplier: 100 }))
+    );
+    for (const r of results.filter((x) => x.status !== 200)) {
+      expect(r.status).toBe(409);
+      expect(r.body.error).toBe(Responses.UPGRADER.INSUFFICIENT_PHD.body.error);
+      expect(typeof r.body.phdCount).toBe("number");
+      expect(r.body.phdCount).toBeLessThan(100);
+    }
+  });
 });
 
 describe("Upgrader endpoint - save integration (spin counter / stale-write guard)", () => {
@@ -321,6 +389,9 @@ describe("Upgrader endpoint - save integration (spin counter / stale-write guard
       .send(saveBody({ tokens: 999, upgraderSeq: 0 }));
     expect(stale.status).toBe(409);
     expect(stale.body.error).toBe(Responses.SAVE.STALE.body.error);
+    // Machine-readable, so the client tells it from the envelope's own 409
+    // without matching English text.
+    expect(stale.body.code).toBe(Responses.SAVE.STALE.body.code);
 
     const save = await api.get("/save").set("Cookie", cookie);
     expect(save.body.save.phdCount).toBe(res.body.phdCount);

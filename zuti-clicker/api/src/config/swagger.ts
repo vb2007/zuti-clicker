@@ -175,7 +175,7 @@ export const buildSwaggerSpec = (): object => {
                 type: "integer",
                 minimum: 0,
                 description:
-                  "The spin counter last received from GET /save or POST /upgrader/spin. Never stored — a value behind the account's current one means this save predates a wheel spin and is refused with 409 (omit = 0, correct for an account that has never spun).",
+                  "The spin counter last received from GET /save or POST /upgrader/spin. Never stored — a value that does not match the account's current one means this save was made before a later wheel spin and is refused with 409 and code save_stale (omit = 0, correct for an account that has never spun).",
                 example: 0
               }
             }
@@ -356,6 +356,22 @@ export const buildSwaggerSpec = (): object => {
               }
             ]
           },
+          InsufficientPhdResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/ErrorResponse" },
+              {
+                type: "object",
+                properties: {
+                  phdCount: {
+                    type: "integer",
+                    minimum: 0,
+                    description: "The balance the spin was actually checked against",
+                    example: 40
+                  }
+                }
+              }
+            ]
+          },
           SpinRequest: {
             type: "object",
             required: ["stake", "multiplier"],
@@ -419,7 +435,7 @@ export const buildSwaggerSpec = (): object => {
                   },
                   consolation: {
                     type: "object",
-                    description: "Present on a loss only: the consolation booster",
+                    description: "Present on a loss that earned one only: the consolation booster",
                     properties: {
                       boosterId: { type: "string", example: "frenzy" },
                       remainingMs: {

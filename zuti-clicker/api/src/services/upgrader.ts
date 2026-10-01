@@ -15,7 +15,7 @@ import {
   UPGRADER_MAX_MULTIPLIER_HUNDREDTHS,
   UPGRADER_PPM,
   UPGRADER_CONSOLATION_BASE_MS,
-  UPGRADER_CONSOLATION_MIN_MS
+  UPGRADER_CONSOLATION_MIN_GRANT_MS
 } from "../constants/upgrader";
 
 // Integer forms of the two ratio constants, derived once so quoteSpin never
@@ -72,17 +72,19 @@ export function quoteSpin(stake: number, multiplierHundredths: number): SpinQuot
 }
 
 /**
- * How long a losing spin's consolation frenzy lasts, in ms: proportional to
- * the share of the player's PhDs that was put up, with a floor so even a tiny
- * stake feels acknowledged. (stake <= phdBefore always holds for a valid
- * spin, so the share never exceeds the base.)
+ * How long a losing spin's consolation frenzy lasts, in ms: strictly
+ * proportional to the share of the player's PhDs that was put up, or 0 when
+ * that is under the grant threshold. There is no minimum on purpose — see
+ * constants/upgrader.ts for why a floor would make frenzy farmable.
+ * (stake <= phdBefore always holds for a valid spin, so the share never
+ * exceeds the base.)
  */
 export function consolationMs(stake: number, phdBefore: number): number {
-  if (phdBefore <= 0) return UPGRADER_CONSOLATION_MIN_MS;
+  if (stake <= 0 || phdBefore <= 0) return 0;
   const proportional = Number(
     (BigInt(stake) * BigInt(UPGRADER_CONSOLATION_BASE_MS)) / BigInt(phdBefore)
   );
-  return Math.max(UPGRADER_CONSOLATION_MIN_MS, proportional);
+  return proportional >= UPGRADER_CONSOLATION_MIN_GRANT_MS ? proportional : 0;
 }
 
 /** True when a roll in [0, UPGRADER_PPM) wins at the given chance. */

@@ -15,7 +15,7 @@ import {
   UPGRADER_MAX_MULTIPLIER_HUNDREDTHS,
   UPGRADER_PPM,
   UPGRADER_CONSOLATION_BASE_MS,
-  UPGRADER_CONSOLATION_MIN_MS,
+  UPGRADER_CONSOLATION_MIN_GRANT_MS,
   UPGRADER_CONSOLATION_MAX_REMAINING_MS
 } from "@/utils/gameConstants";
 
@@ -72,16 +72,17 @@ export function quoteSpin(stake: number, multiplierHundredths: number): SpinQuot
 }
 
 /**
- * How long a losing spin's consolation frenzy lasts, in ms: proportional to the
- * share of the player's PhDs that was put up, with a floor so even a tiny stake
- * feels acknowledged.
+ * How long a losing spin's consolation frenzy lasts, in ms: strictly
+ * proportional to the share of the player's PhDs that was put up, or 0 when that
+ * is under the grant threshold. There is no minimum on purpose — a floor would
+ * let a player with many PhDs keep frenzy up almost for free with tiny stakes.
  */
 export function consolationMs(stake: number, phdBefore: number): number {
-  if (phdBefore <= 0) return UPGRADER_CONSOLATION_MIN_MS;
+  if (stake <= 0 || phdBefore <= 0) return 0;
   const proportional = Number(
     (BigInt(stake) * BigInt(UPGRADER_CONSOLATION_BASE_MS)) / BigInt(phdBefore)
   );
-  return Math.max(UPGRADER_CONSOLATION_MIN_MS, proportional);
+  return proportional >= UPGRADER_CONSOLATION_MIN_GRANT_MS ? proportional : 0;
 }
 
 /** True when a roll in [0, UPGRADER_PPM) wins at the given chance. */
@@ -96,7 +97,7 @@ export interface SpinOutcome {
   payout: number;
   /** The PhD balance after the spin. */
   phdCount: number;
-  /** Present on a loss only: the consolation frenzy, relative to now. */
+  /** Present on a loss that earned one only: the consolation frenzy, relative to now. */
   consolation?: { boosterId: string; remainingMs: number };
 }
 
@@ -120,8 +121,10 @@ export function settleSpin(
   const base = { won, rollPpm, winPpm: quote.winPpm, payout: quote.payout };
   if (won) return { ...base, phdCount: phdBefore + quote.payout - stake };
 
+  const lengthMs = consolationMs(stake, phdBefore);
+  if (lengthMs === 0) return { ...base, phdCount: phdBefore - stake };
   const extended = Math.min(
-    Math.max(0, frenzyRemainingMs) + consolationMs(stake, phdBefore),
+    Math.max(0, frenzyRemainingMs) + lengthMs,
     UPGRADER_CONSOLATION_MAX_REMAINING_MS
   );
   return {

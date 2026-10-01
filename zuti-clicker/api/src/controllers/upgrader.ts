@@ -16,8 +16,10 @@ import { Responses } from "../constants/responses";
  *       much to stake and at what multiplier, so it can neither pick its own
  *       outcome nor skip a loss. A win pays floor(stake x multiplier) PhDs in
  *       place of the stake; a loss forfeits the stake and grants a
- *       consolation frenzy booster. The win chance is min(80%, 90% x stake /
- *       payout), so the wheel never returns more than 90% on average.
+ *       consolation frenzy booster whose length is strictly proportional to
+ *       the share of the player's PhDs that was staked (none if under a
+ *       second). The win chance is min(80%, 90% x stake / payout), so the
+ *       wheel never returns more than 90% on average.
  *       The returned upgraderSeq must be echoed back on PUT /save.
  *     security:
  *       - cookieAuth: []
@@ -53,11 +55,14 @@ import { Responses } from "../constants/responses";
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  *       '409':
- *         description: Not enough PhDs, or the spin would overflow the stored totals
+ *         description: >
+ *           Not enough PhDs (the body carries the real balance), or a win
+ *           would overflow the stored totals (decided before the roll, so it
+ *           never depends on luck)
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *               $ref: '#/components/schemas/InsufficientPhdResponse'
  *       '500':
  *         $ref: '#/components/responses/InternalError'
  */

@@ -4,7 +4,7 @@ import {
   UPGRADER_PPM,
   UPGRADER_RTP,
   UPGRADER_WIN_CHANCE_CAP,
-  UPGRADER_CONSOLATION_MIN_MS,
+  UPGRADER_CONSOLATION_MIN_GRANT_MS,
   UPGRADER_CONSOLATION_BASE_MS
 } from "../constants/upgrader.js";
 
@@ -100,13 +100,39 @@ describe("isWinningRoll", () => {
 });
 
 describe("consolationMs", () => {
-  it("scales with the share of PhDs put up, with a floor", () => {
+  it("scales with the share of PhDs put up", () => {
     expect(consolationMs(100, 100)).toBe(UPGRADER_CONSOLATION_BASE_MS);
     expect(consolationMs(50, 100)).toBe(UPGRADER_CONSOLATION_BASE_MS / 2);
-    expect(consolationMs(1, 1000)).toBe(UPGRADER_CONSOLATION_MIN_MS);
   });
 
-  it("never divides by zero", () => {
-    expect(consolationMs(5, 0)).toBe(UPGRADER_CONSOLATION_MIN_MS);
+  // The review finding this guards: with a minimum length, 1 PhD staked over and
+  // over bought the same buff as a big stake, so a player with many PhDs could
+  // keep frenzy (x7 production) up almost for free.
+  it("regression: has no minimum — a tiny stake earns nothing rather than a floor", () => {
+    expect(consolationMs(1, 1_000_000)).toBe(0);
+    expect(consolationMs(1, 1000)).toBe(0);
+    expect(consolationMs(10, 1_000_000)).toBe(0);
+  });
+
+  it("regression: the PhD price of a second of frenzy does not depend on the stake (nothing to farm)", () => {
+    const phd = 100_000;
+    // Expected PhDs lost per second of frenzy bought = stake / seconds granted.
+    // Strictly proportional means it is the same whatever the stake is.
+    const pricePerSecond = (stake: number) => stake / (consolationMs(stake, phd) / 1000);
+    const reference = pricePerSecond(50_000);
+    for (const stake of [2000, 5000, 12_345, 20_000, 99_999]) {
+      expect(Math.abs(pricePerSecond(stake) / reference - 1)).toBeLessThan(0.01);
+    }
+  });
+
+  it("grants nothing below the grant threshold and exactly the threshold at it", () => {
+    // 1 / 60 of the base is exactly the threshold; 1 / 61 is just under it.
+    expect(consolationMs(1, 60)).toBe(UPGRADER_CONSOLATION_MIN_GRANT_MS);
+    expect(consolationMs(1, 61)).toBe(0);
+  });
+
+  it("never divides by zero or grants on a non-positive stake", () => {
+    expect(consolationMs(5, 0)).toBe(0);
+    expect(consolationMs(0, 100)).toBe(0);
   });
 });

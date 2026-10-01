@@ -109,12 +109,14 @@ export const UPGRADER_MIN_MULTIPLIER_HUNDREDTHS = 120;
 export const UPGRADER_MAX_MULTIPLIER_HUNDREDTHS = 10_000;
 // Win chance resolution: a roll in [0, PPM) wins when roll < winPpm.
 export const UPGRADER_PPM = 1_000_000;
-// A lost spin grants the existing "frenzy" booster, scaled by the share of the
-// player's PhDs that was put up; a loss can extend a running frenzy only up to
-// the cap on remaining time.
+// A lost spin grants the existing "frenzy" booster, strictly proportional to the
+// share of the player's PhDs that was put up (no minimum — see
+// api/src/constants/upgrader.ts for why a floor would make it farmable); a buff
+// under the grant threshold is not granted. A loss can extend a running frenzy
+// only up to the cap on remaining time.
 export const UPGRADER_CONSOLATION_BOOSTER_ID = "frenzy";
 export const UPGRADER_CONSOLATION_BASE_MS = 60_000;
-export const UPGRADER_CONSOLATION_MIN_MS = 10_000;
+export const UPGRADER_CONSOLATION_MIN_GRANT_MS = 1_000;
 export const UPGRADER_CONSOLATION_MAX_REMAINING_MS = 120_000;
 // UI only (no server counterpart): the quick-pick multipliers next to the slider.
 export const UPGRADER_PRESET_MULTIPLIERS = [1.5, 2, 3, 5, 10] as const;

@@ -12,7 +12,7 @@ import {
   UPGRADER_PPM,
   UPGRADER_RTP,
   UPGRADER_WIN_CHANCE_CAP,
-  UPGRADER_CONSOLATION_MIN_MS,
+  UPGRADER_CONSOLATION_MIN_GRANT_MS,
   UPGRADER_CONSOLATION_MAX_REMAINING_MS,
   UPGRADER_PRESET_MULTIPLIERS
 } from "@/utils/gameConstants";
@@ -81,9 +81,25 @@ describe("settleSpin (guest-mode settlement)", () => {
     expect(settleSpin(0, 200, 500, 0)).toBeNull();
   });
 
-  it("a tiny stake still gets at least the floor", () => {
+  // The review finding: a minimum buff length let a player with many PhDs keep
+  // frenzy up almost for free by staking 1 PhD repeatedly.
+  it("regression: a tiny stake earns no frenzy at all — there is no minimum to farm", () => {
     const out = settleSpin(1, 200, 1_000_000, 999_999)!;
-    expect(out.consolation!.remainingMs).toBe(UPGRADER_CONSOLATION_MIN_MS);
+    expect(out.won).toBe(false);
+    expect(out.phdCount).toBe(999_999);
+    expect(out.consolation).toBeUndefined();
+  });
+
+  it("a stake just under the grant threshold earns nothing; at it, exactly the threshold", () => {
+    expect(settleSpin(1, 200, 61, 999_999)!.consolation).toBeUndefined();
+    expect(settleSpin(1, 200, 60, 999_999)!.consolation!.remainingMs).toBe(
+      UPGRADER_CONSOLATION_MIN_GRANT_MS
+    );
+  });
+
+  it("a loss with no consolation leaves a running frenzy exactly as it was", () => {
+    const out = settleSpin(1, 200, 1_000_000, 999_999, 45_000)!;
+    expect(out.consolation).toBeUndefined();
   });
 
   it("a loss extends a running frenzy but never past the cap, and never shortens it", () => {

@@ -72,9 +72,13 @@ export class Responses {
     // 409, not a strike: the save is well-formed and honest, it was simply
     // made before a later wheel spin (another tab, or a save already in
     // flight) and so doesn't know the current PhD balance. Nothing is written.
+    // `code` is what the client keys on (frontend/src/lib/api.ts's
+    // SAVE_STALE_CODE — keep in sync), since this and IMPLAUSIBLE share a status
+    // and only one of them is a rejection the player should be told about.
     STALE: {
       status: 409,
       body: {
+        code: "save_stale",
         error:
           "Your progress changed since this save was made (a wheel spin elsewhere). Reload to continue from your current progress."
       }
