@@ -58,8 +58,10 @@ const upgrader = useUpgrader();
 const { matches: isNarrow } = useMediaQuery("(max-width: 480px)");
 const { matches: isShort } = useMediaQuery("(max-height: 500px)");
 const isPhone = computed(() => isNarrow.value || isShort.value);
-// Short and wide enough for two columns (see the landscape block below).
-const { matches: isWide } = useMediaQuery("(min-width: 560px)");
+// Short and wide enough for two columns (see the landscape block below). 640px, not
+// less: narrower and the right column leaves the stake input ~70px — too little for a
+// 6-digit stake — so those screens keep one column and scroll.
+const { matches: isWide } = useMediaQuery("(min-width: 640px)");
 const isLandscapeSplit = computed(() => isShort.value && isWide.value);
 
 // idle: choosing · requesting: waiting on the server (the pre-spin save flush
@@ -1062,7 +1064,7 @@ onBeforeUnmount(() => {
 /* …and when there's also width to spare, two columns: the odds (wheel and the two
    outcomes) on the left, the bet (stake, multiplier, Spin) on the right, so the
    whole bet is in view at once. Keep the query in sync with isLandscapeSplit. */
-@media (max-height: 500px) and (min-width: 560px) {
+@media (max-height: 500px) and (min-width: 640px) {
   .upgrader {
     display: grid;
     grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);

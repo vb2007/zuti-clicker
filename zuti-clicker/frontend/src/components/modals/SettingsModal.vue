@@ -354,7 +354,9 @@ async function handleDone() {
   font-weight: 600;
   transition: all var(--transition-fast);
 }
-.btn-cancel:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+@media (hover: hover) {
+  .btn-cancel:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+}
 .btn-cancel:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-close {
@@ -367,6 +369,8 @@ async function handleDone() {
   font-weight: 700;
   transition: all var(--transition-fast);
 }
-.btn-close:hover:not(:disabled) { filter: brightness(1.1); }
+@media (hover: hover) {
+  .btn-close:hover:not(:disabled) { filter: brightness(1.1); }
+}
 .btn-close:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>
