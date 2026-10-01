@@ -167,6 +167,10 @@ const {
   gap: 10px;
   padding: 11px 14px;
   border-bottom: 1px solid var(--border-subtle);
+  /* Always present (transparent until affordable): adding the accent border only
+     when a unit became affordable shifted the whole card 2px sideways each time,
+     which happens constantly as tokens tick up. */
+  border-left: 2px solid transparent;
   transition: background var(--transition-fast);
 }
 
@@ -177,7 +181,7 @@ const {
 }
 
 .unit-card.affordable {
-  border-left: 2px solid var(--accent);
+  border-left-color: var(--accent);
 }
 
 @media (hover: hover) {
