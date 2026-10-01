@@ -323,6 +323,11 @@ function unlockScroll() {
   .modal-head {
     margin-bottom: 12px;
   }
+  /* The 44px ✕ sets this row's height; trim the padding around it. */
+  .modal-head.closable {
+    padding-block: 2px;
+    margin-bottom: 4px;
+  }
 }
 
 /* Keyboard focus moving into a tall modal must not land under the sticky header. */

@@ -1091,8 +1091,12 @@ onBeforeUnmount(() => {
   }
   /* Vertical room is the scarce thing sideways: trade a little target height
      (still well above the 24px WCAG minimum) so Spin lands inside the fold. */
-  .col-b .field {
+  .col-a,
+  .col-b {
     gap: 6px;
+  }
+  .col-b .field {
+    gap: 4px;
   }
   .col-b .seg-btn,
   .col-b .stake-input {
@@ -1106,6 +1110,14 @@ onBeforeUnmount(() => {
   }
   .notes {
     grid-column: 1 / -1;
+  }
+}
+
+/* Very short (an iPhone held sideways in a browser is ~342px tall): the ×1.2/×100 end
+   labels are the one thing left to drop; the slider still announces its value. */
+@media (max-height: 360px) and (min-width: 640px) {
+  .col-b .slider-ends {
+    display: none;
   }
 }
 

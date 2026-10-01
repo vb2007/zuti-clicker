@@ -91,9 +91,11 @@ function formatCountdown(secs: number): string {
   }
 }
 
-/* Phone landscape: the circle fills the area's height, so a bar centred above
-   it would sit on top of it. Park the chips down the left side instead (there
-   is plenty of width), without the long effect text. */
+/* Short screen (phone landscape): the circle fills the area's height, so a bar centred
+   above it would sit on top of it. Park the chips down the left side instead, and let
+   them use only the room beside the circle — the effect text is ellipsized to fit
+   (the time always stays), rather than a long Hungarian effect reaching the circle. The
+   name is dropped; the effect is the useful part. */
 @media (max-height: 500px) {
   .boosters-bar {
     left: 12px;
@@ -102,10 +104,23 @@ function formatCountdown(secs: number): string {
     flex-wrap: nowrap;
     align-items: flex-start;
     justify-content: flex-start;
+    max-width: max(64px, calc((100% - var(--circle, 220px)) / 2 - 20px));
   }
-  .chip-effect,
+  .booster-chip {
+    max-width: 100%;
+  }
+  .chip-label,
   .chip-sep {
     display: none;
+  }
+  .chip-effect {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chip-icon,
+  .chip-time {
+    flex: none;
   }
 }
 

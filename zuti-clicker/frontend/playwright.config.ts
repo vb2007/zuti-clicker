@@ -49,6 +49,17 @@ export default defineConfig({
       name: "phone-landscape",
       use: { viewport: { width: 667, height: 375 }, hasTouch: true, isMobile: true }
     },
+    // Real landscape phones: an iPhone 13 is 844x390 (750x342 inside Safari's chrome), a Pixel 7
+    // 915x412 — the first is wider than the 760px breakpoint, so it gets the desktop three-column
+    // shell at ~390px tall, a case 667x375 never exercised.
+    {
+      name: "phone-landscape-wide",
+      use: { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }
+    },
+    {
+      name: "phone-landscape-short",
+      use: { viewport: { width: 750, height: 342 }, hasTouch: true, isMobile: true }
+    },
     {
       name: "tablet",
       use: { viewport: { width: 768, height: 1024 }, hasTouch: true, isMobile: true }
