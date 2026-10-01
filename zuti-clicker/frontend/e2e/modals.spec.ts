@@ -107,7 +107,40 @@ test.describe("closable modals", () => {
 
     await page.goBack();
     await expect(modalOf(page)).toHaveCount(0);
+    // …and that second Back was swallowed by the re-armed sentinel: without it the
+    // browser would have left the game (to about:blank), which also has no modals.
+    await expect(page.locator(".app")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/");
   });
+
+  // Regression: an overlay opened between our own history.back() being requested and it
+  // landing was never given a sentinel, so Back left the game. Delays straddle the window.
+  for (const delay of [0, 1, 5, 20]) {
+    test(`Back still works when an overlay opens ${delay}ms after another closed`, async ({ app, page }) => {
+      await app.open();
+      await app.seed((s) => void (s.ui.settingsModalOpen = true));
+      await expect(modalOf(page)).toBeVisible();
+      await page.evaluate(
+        (d) =>
+          new Promise<void>((resolve) => {
+            const ui = (document.querySelector("#app") as any).__vue_app__.config.globalProperties.$pinia._s.get("ui");
+            ui.settingsModalOpen = false;
+            setTimeout(() => {
+              ui.leaderboardModalOpen = true;
+              resolve();
+            }, d);
+          }),
+        delay
+      );
+      await expect(modalOf(page)).toBeVisible();
+      await page.waitForTimeout(150); // let our own history traversal land
+
+      await page.goBack();
+      await expect(modalOf(page)).toHaveCount(0);
+      await expect(page.locator(".app")).toBeVisible();
+      expect(new URL(page.url()).pathname).toBe("/");
+    });
+  }
 });
 
 // Hungarian strings run longer than English — check the layout in both.
@@ -181,7 +214,7 @@ test.describe("upgrader bet controls stay reachable", () => {
 
   test("phone landscape: the whole bet is in view with no scrolling", async ({ app, page }) => {
     const vp = page.viewportSize()!;
-    test.skip(!(vp.height <= 500 && vp.width >= 560), "only applies to the two-column landscape layout");
+    test.skip(!(vp.height <= 500 && vp.width >= 640), "only applies to the two-column landscape layout");
     await app.open();
     await app.seed((s) => {
       s.game.phdCount = 50;
@@ -285,3 +318,22 @@ for (const language of ["en", "hu"] as const) {
     });
   }
 }
+
+// Regression (review): the two-column split started at 560px wide, where the right column
+// left the stake input ~70px — clipping a 6-digit stake. Below 640px the modal stays one column.
+test.describe("upgrader stake input is never too narrow to read", () => {
+  test.use({ loggedIn: true });
+  test("a 7-digit stake is fully visible in the input", async ({ app, page }) => {
+    await app.open();
+    await app.seed((s) => {
+      s.game.phdCount = 2_000_000;
+      s.ui.upgraderOpen = true;
+    });
+    await expect(modalOf(page)).toBeVisible();
+    await app.settle();
+    const input = page.locator("#upgrader-stake");
+    await input.fill("1999999");
+    const clipped = await input.evaluate((el: HTMLInputElement) => el.scrollWidth > el.clientWidth + 1);
+    expect(clipped).toBe(false);
+  });
+});

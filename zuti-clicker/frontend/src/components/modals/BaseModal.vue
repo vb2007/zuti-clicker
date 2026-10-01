@@ -41,7 +41,10 @@ const { t } = useI18n();
 // overlay stack so only the top-most overlay reacts (see useOverlayStack.ts).
 useOverlay(
   () => props.open,
-  () => emit("close")
+  () => emit("close"),
+  // The z-index is the stacking order the player sees, so it is also the order
+  // Escape/Back dismiss in (the guest warning, z 900, can register after a z 1000 modal).
+  props.zIndex
 );
 
 const titleId = useId();

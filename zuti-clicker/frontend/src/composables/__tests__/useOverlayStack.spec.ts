@@ -118,14 +118,103 @@ describe("useOverlayStack", () => {
     expect(pushState).not.toHaveBeenCalled();
   });
 
-  it("steps back off a stale sentinel reached via Forward with nothing open", () => {
+  // The module listens lazily (on first registration). A player who has opened
+  // and closed something earlier in the session has listeners attached and the
+  // sentinel consumed; reproduce that state explicitly.
+  async function attachAndSettle() {
+    registerOverlay(() => {}).release();
+    await flush(); // consumes the sentinel -> history.back()
+    popstate(); // our own back()'s popstate
+    pushState.mockClear();
+    back.mockClear();
+  }
+
+  it("steps back off a stale sentinel reached via Forward with nothing open", async () => {
+    await attachAndSettle();
     popstate({ zutiOverlay: true });
     expect(back).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores an ordinary popstate with nothing open", () => {
+  it("ignores an ordinary popstate with nothing open", async () => {
+    await attachAndSettle();
     popstate({ position: 1 });
     expect(back).not.toHaveBeenCalled();
+  });
+
+  // Regression (review): close the last overlay, open another a moment later but before
+  // our own history.back() has landed. The new overlay's pushState would have been popped
+  // by that queued traversal, leaving `armed` true over a non-sentinel entry — so Back
+  // left the game (and the next ✕ called back() again).
+  it("regression: an overlay opened while our own back() is in flight is armed once it lands", async () => {
+    const a = registerOverlay(() => {});
+    a.release();
+    await flush(); // back() requested, its popstate not yet delivered
+    expect(back).toHaveBeenCalledTimes(1);
+    pushState.mockClear();
+
+    registerOverlay(() => {});
+    expect(pushState).not.toHaveBeenCalled(); // would be popped by the queued traversal
+
+    popstate(); // …the traversal lands
+    expect(pushState).toHaveBeenCalledTimes(1); // now it is armed
+    expect(pushState.mock.calls[0]![0]).toMatchObject({ zutiOverlay: true });
+  });
+
+  // Regression (review): history.state survives a reload, so a sentinel left current
+  // while an overlay was open is stale — nothing is open now — and cost an extra Back.
+  it("regression: a sentinel left current by a reload is stepped off on first use", async () => {
+    vi.spyOn(window.history, "state", "get").mockReturnValue({ position: 2, zutiOverlay: true });
+    registerOverlay(() => {});
+    expect(back).toHaveBeenCalledTimes(1); // stepping off the stale entry
+    expect(pushState).not.toHaveBeenCalled(); // not yet: that back() is still in flight
+
+    vi.spyOn(window.history, "state", "get").mockReturnValue({ position: 1 });
+    popstate(); // its popstate arrives
+    expect(pushState).toHaveBeenCalledTimes(1); // the open overlay now gets a fresh sentinel
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression (review): a held Escape auto-repeats; each repeat used to close the next
+  // overlay down, peeling the whole stack (and Settings' close reverts unsaved changes).
+  it("regression: a held (auto-repeating) Escape closes one overlay, not the whole stack", () => {
+    const lower = vi.fn();
+    const upper = vi.fn();
+    registerOverlay(lower);
+    registerOverlay(upper);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", repeat: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", repeat: true }));
+    expect(upper).toHaveBeenCalledTimes(1);
+    expect(lower).not.toHaveBeenCalled();
+  });
+
+  it("Escape during IME composition is not an overlay close", () => {
+    const close = vi.fn();
+    registerOverlay(close);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true }));
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  // Regression (review): top-ness was registration order, so the guest warning (z 900, it
+  // registers only once /auth/me returns) could take Escape/Back from a visible z-1000 modal.
+  it("regression: a higher-priority overlay stays on top even when a lower one registers later", () => {
+    const settings = vi.fn(); // z 1000, already open
+    const guest = vi.fn(); // z 900, registers afterwards
+    registerOverlay(settings, 1000);
+    registerOverlay(guest, 900);
+    escape();
+    expect(settings).toHaveBeenCalledTimes(1);
+    expect(guest).not.toHaveBeenCalled();
+  });
+
+  it("equal priority: the most recently registered is on top", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    registerOverlay(first, 1000);
+    registerOverlay(second, 1000);
+    escape();
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
   });
 
   it("release is idempotent", async () => {

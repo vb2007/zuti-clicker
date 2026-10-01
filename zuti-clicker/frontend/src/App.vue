@@ -54,7 +54,8 @@ useOverlay(
   () => ui.mobilePanel !== "none",
   () => {
     ui.mobilePanel = "none";
-  }
+  },
+  400 // the sheet's z-index (see .rail below): under every modal (>= 900)
 );
 
 async function onKeydown(e: KeyboardEvent) {

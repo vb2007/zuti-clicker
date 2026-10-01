@@ -43,7 +43,8 @@ useOverlay(
   () => true,
   () => {
     if (settled.value) dismissCeremony();
-  }
+  },
+  2000 // keep in sync with .ceremony-backdrop's z-index — it covers everything
 );
 
 onUnmounted(() => {

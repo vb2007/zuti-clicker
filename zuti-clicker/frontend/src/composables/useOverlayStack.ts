@@ -18,10 +18,16 @@ import { nextTick, getCurrentScope, onScopeDispose, watch } from "vue";
  *
  * The sentinel copies the current history.state: vue-router (mounted with no
  * routes) stores its own bookkeeping there and reads it on every popstate.
+ *
+ * Which overlay is "top" is decided by priority first (modals pass their
+ * z-index, so Back/Escape always reach the one the player can actually see on
+ * top), then by registration order. A modal that mounts late — the guest
+ * warning, only once the session check returns — must not jump the queue.
  */
 
 interface Entry {
   close: () => void;
+  priority: number;
 }
 
 const SENTINEL_KEY = "zutiOverlay";
@@ -32,6 +38,12 @@ let armed = false;
 // popstate events caused by our own history.back() calls, to be ignored.
 let pendingBack = 0;
 let listening = false;
+
+// `history.state` survives a reload: a sentinel left current by a reload with an
+// overlay open is stale (nothing is open any more) and has to be stepped off.
+function stateIsSentinel(): boolean {
+  return Boolean((history.state as Record<string, unknown> | null)?.[SENTINEL_KEY]);
+}
 
 function arm(): void {
   history.pushState({ ...(history.state ?? {}), [SENTINEL_KEY]: true }, "");
@@ -58,6 +70,10 @@ function closeTop(): void {
 function onPopState(e: PopStateEvent): void {
   if (pendingBack > 0) {
     pendingBack--;
+    // An overlay opened while our own history.back() was still in flight could not
+    // arm (the queued traversal would have popped the entry it pushed); now that the
+    // traversal has landed, give it the sentinel it was denied.
+    if (pendingBack === 0 && stack.length > 0 && !armed) arm();
     return;
   }
   if (stack.length > 0) {
@@ -72,6 +88,9 @@ function onPopState(e: PopStateEvent): void {
 }
 
 function onKeydown(e: KeyboardEvent): void {
+  // A held Escape auto-repeats: without this it would peel the whole stack in one
+  // press (Settings' close even reverts its unsaved changes).
+  if (e.repeat || e.isComposing) return;
   if (e.key === "Escape" && stack.length > 0) {
     closeTop();
     void rearmIfNeeded();
@@ -83,18 +102,32 @@ function ensureListening(): void {
   listening = true;
   window.addEventListener("popstate", onPopState);
   window.addEventListener("keydown", onKeydown);
+  // Left current by a reload with an overlay open: step off it (our own back(),
+  // so its popstate is swallowed) rather than make the player press Back for it.
+  if (stateIsSentinel()) {
+    pendingBack++;
+    history.back();
+  }
 }
 
 export interface OverlayHandle {
   release: () => void;
 }
 
-/** Registers `close` as the newest (top-most) overlay. Idempotent release. */
-export function registerOverlay(close: () => void): OverlayHandle {
+/**
+ * Registers `close` as an overlay. The top-most is the highest `priority`, ties
+ * going to the most recently registered. Idempotent release.
+ */
+export function registerOverlay(close: () => void, priority = 0): OverlayHandle {
   ensureListening();
-  const entry: Entry = { close };
-  stack.push(entry);
-  if (!armed) arm();
+  const entry: Entry = { close, priority };
+  // Insert after every entry of equal-or-lower priority (stable by registration).
+  let at = stack.length;
+  while (at > 0 && stack[at - 1]!.priority > priority) at--;
+  stack.splice(at, 0, entry);
+  // While our own history.back() is still in flight, a push now would be popped by it;
+  // onPopState arms once it has landed.
+  if (!armed && pendingBack === 0) arm();
 
   let released = false;
   return {
@@ -116,12 +149,12 @@ export function registerOverlay(close: () => void): OverlayHandle {
  * Component helper: keeps `close` registered for as long as `isOpen()` is true.
  * Must be called from setup().
  */
-export function useOverlay(isOpen: () => boolean, close: () => void): void {
+export function useOverlay(isOpen: () => boolean, close: () => void, priority = 0): void {
   let handle: OverlayHandle | null = null;
   watch(
     isOpen,
     (open) => {
-      if (open && !handle) handle = registerOverlay(close);
+      if (open && !handle) handle = registerOverlay(close, priority);
       else if (!open && handle) {
         handle.release();
         handle = null;
@@ -137,9 +170,14 @@ export function useOverlay(isOpen: () => boolean, close: () => void): void {
   }
 }
 
-/** Test helper: drops all registrations and listeners' state. */
+/** Test helper: drops all registrations and detaches the listeners (they re-attach on next use). */
 export function __resetOverlayStackForTests(): void {
   stack.length = 0;
   armed = false;
   pendingBack = 0;
+  if (listening) {
+    window.removeEventListener("popstate", onPopState);
+    window.removeEventListener("keydown", onKeydown);
+    listening = false;
+  }
 }

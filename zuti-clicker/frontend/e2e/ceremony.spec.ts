@@ -53,6 +53,26 @@ for (const language of ["en", "hu"] as const) {
   });
 }
 
+// Regression: Continue used to be v-if'd in after the count-up, which changed the content
+// height. It must occupy its space from the start (so nothing jumps, and a short screen
+// scrolls to the same extent) while staying invisible — and untabbable — until offered.
+test("Continue is laid out but hidden during the count-up, then shown", async ({ app, page }) => {
+  await app.open();
+  await app.dismissGuestWarning();
+  await app.seed((s) => {
+    s.ui.lastPrestigeGain = 9_999_999; // long enough that it can't have settled yet
+    s.ui.prestigeCeremonyOpen = true;
+  });
+  const cont = page.locator(".continue-btn");
+  const early = await cont.evaluate((el) => ({
+    visibility: getComputedStyle(el).visibility,
+    height: el.getBoundingClientRect().height
+  }));
+  expect(early.visibility).toBe("hidden");
+  expect(early.height).toBeGreaterThanOrEqual(44);
+  await expect(cont).toBeVisible();
+});
+
 test("Back continues past the ceremony (once offered) and stays in the game", async ({ app, page }) => {
   await app.open();
   await app.dismissGuestWarning();
