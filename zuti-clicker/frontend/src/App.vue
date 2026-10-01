@@ -23,6 +23,7 @@ import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import { useGameLoop } from "@/composables/useGameLoop";
 import { useAntiCheat } from "@/composables/useAntiCheat";
 import { useBreakpoint } from "@/composables/useBreakpoint";
+import { useOverlay } from "@/composables/useOverlayStack";
 import { QUICK_RESET_ENABLED, shouldQuickReset } from "@/utils/featureFlags";
 import CheatWarningModal from "@/components/modals/CheatWarningModal.vue";
 
@@ -46,14 +47,22 @@ watch(isCompact, (compact) => {
   if (!compact) ui.mobilePanel = "none";
 });
 
+// The open mobile sheet is an overlay like any modal: Escape and the browser/
+// Android Back button close it, but only when nothing sits above it (modals
+// register later, so they are always on top of it).
+useOverlay(
+  () => ui.mobilePanel !== "none",
+  () => {
+    ui.mobilePanel = "none";
+  }
+);
+
 async function onKeydown(e: KeyboardEvent) {
   if (shouldQuickReset(e, QUICK_RESET_ENABLED)) {
     e.preventDefault();
     await save.resetSave();
     await auth.logout();
   }
-
-  if (e.key === "Escape" && ui.mobilePanel !== "none") ui.mobilePanel = "none";
 }
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
@@ -160,6 +169,9 @@ async function onConfirmDelete() {
   flex: 1;
   overflow: hidden;
   position: relative;
+  /* Landscape on a notched phone: keep the rails out from under the notch. */
+  padding-left: var(--sai-left);
+  padding-right: var(--sai-right);
 }
 
 /* Tablet / narrow desktop: keep the three-column shell, but the fixed rails
@@ -172,22 +184,30 @@ async function onConfirmDelete() {
 }
 
 /* Mobile: the clicker takes the full width; the two rails become slide-up
-   sheets over it, opened by MobileTabBar and closed by the scrim, Escape, or
-   tapping the active tab again. The rail components themselves are never
+   sheets over it, opened by MobileTabBar and closed by their ✕, the scrim (the
+   dimmed strip left above the sheet), Escape/Back, or tapping the active tab
+   again. The rail components themselves are never
    unmounted — only re-parented visually via this class — so their own
    mount-in animations (slideInLeft/Right) don't replay on every open. */
 @media (max-width: 759px) {
   .game-layout {
+    --sheet-gap: 56px;
     grid-template-columns: 1fr;
   }
 
   .game-layout .rail {
     position: fixed;
-    left: 0;
-    right: 0;
-    top: var(--header-h-compact);
-    bottom: var(--mobile-tabbar-h);
+    left: var(--sai-left);
+    right: var(--sai-right);
+    /* --sheet-gap leaves a strip of the scrim uncovered above the sheet: a
+       sheet that exactly covered the scrim (as it used to) made "tap outside to
+       close" impossible — the scrim was never reachable. */
+    top: calc(var(--header-h-compact) + var(--sheet-gap));
+    /* The bar's full footprint, home-indicator inset included. */
+    bottom: var(--tabbar-total);
     z-index: 400;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
     transform: translateY(100%);
     transition: transform var(--transition-base);
     animation: none; /* supersede the rail's own one-shot mount animation */
@@ -196,6 +216,18 @@ async function onConfirmDelete() {
   .game-layout.panel-stats-open .rail-stats,
   .game-layout.panel-units-open .rail-units {
     transform: translateY(0);
+  }
+}
+
+/* Phone landscape has no height to spare: the sheet takes it all, and the ✕,
+   Back/Escape and the tab button are the ways out. */
+@media (max-width: 759px) and (max-height: 500px) {
+  .game-layout {
+    --sheet-gap: 0px;
+  }
+  .game-layout .rail {
+    border-radius: 0;
+    box-shadow: none;
   }
 }
 
@@ -213,7 +245,7 @@ async function onConfirmDelete() {
   .mobile-scrim {
     display: block;
     position: fixed;
-    inset: var(--header-h-compact) 0 var(--mobile-tabbar-h) 0;
+    inset: var(--header-h-compact) 0 var(--tabbar-total) 0;
     background: rgba(0, 0, 0, 0.45);
     z-index: 300;
     animation: fadeIn var(--transition-base);

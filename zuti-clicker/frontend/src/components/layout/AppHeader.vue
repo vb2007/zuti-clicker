@@ -32,13 +32,15 @@ function toggleLanguage() {
     <SaveBar />
 
     <div class="controls">
-      <button class="ctrl-btn" @click="toggleLanguage" :title="t('settings.language')">
+      <!-- lang-btn / theme-btn are dropped below 400px (see the media query):
+           both are one tap away in Settings, and the row has no room for them. -->
+      <button class="ctrl-btn lang-btn" @click="toggleLanguage" :title="t('settings.language')">
         <span class="flag">{{ language === "en" ? "🇬🇧" : "🇭🇺" }}</span>
         <span class="lang-code">{{ language.toUpperCase() }}</span>
       </button>
 
       <button
-        class="ctrl-btn icon-btn"
+        class="ctrl-btn icon-btn theme-btn"
         @click="settings.toggleTheme"
         :title="t('settings.toggleTheme')"
       >
@@ -83,7 +85,7 @@ function toggleLanguage() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 max(20px, var(--sai-right)) 0 max(20px, var(--sai-left));
   height: var(--header-h);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
@@ -158,7 +160,7 @@ function toggleLanguage() {
     flex-wrap: wrap;
     align-content: center;
     row-gap: 4px;
-    padding: 8px 14px;
+    padding: 8px max(14px, var(--sai-right)) 8px max(14px, var(--sai-left));
   }
 
   /* Real estate is too tight below 760px for the full brand name alongside
@@ -195,6 +197,40 @@ function toggleLanguage() {
 
   .mini-tps.boosted {
     color: var(--booster);
+  }
+}
+
+/* A logged-in header needs ~355px for brand + Sync + account + four 44px
+   buttons; below 400px that wrapped onto a third row and spilled out of the
+   fixed header height. Language and theme are both in Settings, so they go. */
+@media (max-width: 399px) {
+  .lang-btn,
+  .theme-btn {
+    display: none;
+  }
+}
+
+/* Phone landscape: no room for a second row — mini-stats move inline between
+   the account buttons and the controls, and the header slims to one row. */
+@media (max-width: 759px) and (max-height: 500px) {
+  .app-header {
+    flex-wrap: nowrap;
+    padding-block: 4px;
+    column-gap: 10px;
+  }
+  .brand {
+    flex: none;
+  }
+  .mini-stats {
+    width: auto;
+    order: 2;
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .controls {
+    order: 3;
+    flex: none;
   }
 }
 </style>
