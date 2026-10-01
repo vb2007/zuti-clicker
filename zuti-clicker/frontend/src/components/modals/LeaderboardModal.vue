@@ -57,6 +57,7 @@ function close() {
     :title="t('leaderboard.title')"
     :max-width="420"
     :z-index="1000"
+    closable
     @close="close"
   >
     <div class="seg-group" role="group">
@@ -111,12 +112,13 @@ function close() {
 <style scoped>
 .seg-group {
   display: flex;
+  flex-wrap: wrap; /* four metrics don't fit one row on a 320px phone (or in Hungarian) */
   gap: 4px;
   margin-bottom: 16px;
 }
 
 .seg-btn {
-  flex: 1;
+  flex: 1 1 auto;
   padding: 6px 10px;
   border-radius: var(--radius-xs);
   border: 1px solid var(--border);
@@ -126,9 +128,23 @@ function close() {
   font-weight: 700;
   transition: all var(--transition-fast);
 }
-.seg-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-text);
+@media (hover: hover) {
+  .seg-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+}
+@media (pointer: coarse), (max-width: 759px) {
+  .seg-btn {
+    min-height: 44px;
+  }
+}
+/* A 3+1 wrap looks accidental — on the narrowest phones lay the four metrics out as 2×2. */
+@media (max-width: 360px) {
+  .seg-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
 }
 .seg-btn.active {
   background: var(--accent);

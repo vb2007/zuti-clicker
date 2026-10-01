@@ -106,6 +106,23 @@ export class AppHelper {
     ) as Promise<T>;
   }
 
+  /**
+   * Waits for one-shot CSS animations (modal fade-scale-in etc.) to finish, so
+   * geometry assertions don't measure a mid-transform box. Infinite ambient
+   * animations are ignored.
+   */
+  async settle() {
+    await this.page.waitForFunction(() =>
+      document
+        .getAnimations()
+        .every(
+          (a) =>
+            a.playState !== "running" ||
+            (a.effect?.getComputedTiming().iterations ?? 1) === Infinity
+        )
+    );
+  }
+
   async dismissGuestWarning() {
     await this.seed((s) => {
       s.ui.guestWarningDismissed = true;

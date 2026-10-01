@@ -51,10 +51,9 @@ async function submit() {
     :aria-label="t('auth.modalAriaLabel')"
     :max-width="400"
     :z-index="1000"
+    closable
     @close="close"
   >
-    <button class="modal-close" @click="close" aria-label="Close">✕</button>
-
     <div class="modal-tabs">
       <button
         :class="['tab-btn', { active: tab === 'login' }]"
@@ -112,19 +111,6 @@ async function submit() {
 </template>
 
 <style scoped>
-.modal-close {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 14px;
-  padding: 4px 6px;
-  border-radius: var(--radius-xs);
-  transition: color var(--transition-fast);
-}
-.modal-close:hover { color: var(--text-primary); }
-
 .modal-tabs {
   display: flex;
   gap: 4px;

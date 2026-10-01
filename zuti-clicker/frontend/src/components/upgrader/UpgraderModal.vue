@@ -333,6 +333,7 @@ onBeforeUnmount(() => {
     :max-width="460"
     :z-index="1000"
     :compact="isPhone"
+    closable
     @close="close"
   >
     <div class="upgrader">
@@ -521,13 +522,6 @@ onBeforeUnmount(() => {
           {{ spinLabel }}
         </button>
       </div>
-
-      <!-- Last in the DOM on purpose: BaseModal focuses the first focusable element
-           on open, and that should be the stake field, not this. It is positioned
-           absolutely, so it still sits at the top right. -->
-      <button class="modal-close" type="button" :aria-label="t('upgrader.close')" @click="close">
-        ✕
-      </button>
 
       <div class="notes">
         <p v-if="!auth.isLoggedIn" class="note">{{ t("upgrader.guestNote") }}</p>
@@ -962,24 +956,6 @@ onBeforeUnmount(() => {
   text-align: center;
 }
 
-/* Positioned against the modal box itself (.upgrader is not positioned), like
-   AuthModal's close button. */
-.modal-close {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  min-width: 32px;
-  min-height: 32px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 14px;
-  border-radius: var(--radius-xs);
-  transition: color var(--transition-fast);
-}
-.modal-close:hover {
-  color: var(--text-primary);
-}
-
 /* A shorter screen gives the wheel less of it, so the controls and Spin stay in
    reach without scrolling. */
 @media (max-height: 820px) {
@@ -1016,12 +992,6 @@ onBeforeUnmount(() => {
   }
   .outcome-main {
     font-size: 15px;
-  }
-  .modal-close {
-    top: 4px;
-    right: 4px;
-    min-width: 44px;
-    min-height: 44px;
   }
 }
 

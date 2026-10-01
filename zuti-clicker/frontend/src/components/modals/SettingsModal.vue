@@ -108,6 +108,7 @@ async function handleDone() {
     :max-width="420"
     :z-index="1000"
     :dismiss-on-backdrop="false"
+    closable
     @close="handleCancel"
   >
     <div class="section">
@@ -253,7 +254,8 @@ async function handleDone() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap; /* a long label (esp. Hungarian) and its control stack instead of colliding */
+  gap: 6px 12px;
   padding: 6px 0;
 }
 
@@ -265,7 +267,10 @@ async function handleDone() {
 
 .seg-group {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+  margin-left: auto;
 }
 
 .seg-btn {
@@ -278,9 +283,11 @@ async function handleDone() {
   font-weight: 700;
   transition: all var(--transition-fast);
 }
-.seg-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent-text);
+@media (hover: hover) {
+  .seg-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
 }
 .seg-btn.active {
   background: var(--accent);
@@ -303,6 +310,22 @@ async function handleDone() {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+/* Touch: 44px minimum targets (the desktop sizes above are mouse-sized). */
+@media (pointer: coarse), (max-width: 759px) {
+  .seg-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .toggle-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .btn-cancel,
+  .btn-close {
+    min-height: 44px;
+  }
 }
 
 .version-line {

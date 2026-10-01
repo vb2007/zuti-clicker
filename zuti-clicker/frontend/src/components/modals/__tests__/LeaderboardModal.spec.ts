@@ -149,4 +149,20 @@ describe("LeaderboardModal", () => {
     const body = new DOMWrapper(document.body);
     expect(body.find(".hidden-note").exists()).toBe(true);
   });
+
+  // Regression: the leaderboard had no close control at all — on a phone the
+  // only way out was the 20px backdrop gutter (no Escape key either), so
+  // players had to refresh the page to get the game back.
+  it("regression: has a labelled close button that closes it", async () => {
+    openModal();
+    await nextTick();
+
+    const body = new DOMWrapper(document.body);
+    const close = body.find(".modal-close");
+    expect(close.exists()).toBe(true);
+    expect(close.attributes("aria-label")).toBe("Close");
+
+    await close.trigger("click");
+    expect(useUiStore().leaderboardModalOpen).toBe(false);
+  });
 });
