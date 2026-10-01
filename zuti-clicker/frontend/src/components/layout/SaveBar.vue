@@ -129,7 +129,11 @@ async function logout() {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
   white-space: nowrap;
 }
 @media (hover: hover) {
@@ -180,7 +184,9 @@ async function logout() {
   font-weight: 500;
   background: transparent;
   color: var(--text-secondary);
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 @media (hover: hover) {
   .dropdown-item:hover { background: var(--bg-hover); color: var(--text-primary); }

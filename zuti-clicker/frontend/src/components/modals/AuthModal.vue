@@ -128,7 +128,9 @@ async function submit() {
   font-weight: 600;
   background: transparent;
   color: var(--text-secondary);
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 .tab-btn.active { background: var(--accent); color: #fff; }
 @media (hover: hover) {

@@ -230,6 +230,11 @@ function handleClick(e: MouseEvent) {
   height: calc(var(--circle, 220px) - 20px);
   border-radius: 50%;
   pointer-events: none;
+  /* Static glow; `breathe` fades its opacity (animating the shadow itself repaints
+     every frame — see animations.css). */
+  box-shadow:
+    0 0 40px var(--accent-glow),
+    0 0 72px var(--accent-glow);
   animation: breathe 3.5s ease-in-out infinite;
 }
 

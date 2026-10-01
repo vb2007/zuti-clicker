@@ -803,7 +803,10 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 @media (hover: hover) {
   .seg-btn:hover:not(:disabled) {

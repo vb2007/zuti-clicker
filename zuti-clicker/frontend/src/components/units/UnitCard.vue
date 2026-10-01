@@ -294,7 +294,12 @@ const {
   border-radius: var(--radius-sm);
   background: var(--btn-buy-bg);
   color: var(--btn-buy-text);
-  transition: all var(--transition-fast);
+  transition:
+    filter var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
   flex-shrink: 0;
 }
 

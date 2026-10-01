@@ -46,7 +46,10 @@ function label(m: Multiplier): string {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.2px;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 @media (hover: hover) {

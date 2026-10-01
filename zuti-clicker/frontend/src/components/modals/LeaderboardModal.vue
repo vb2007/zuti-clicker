@@ -126,7 +126,10 @@ function close() {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 @media (hover: hover) {
   .seg-btn:hover {

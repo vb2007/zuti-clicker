@@ -55,7 +55,9 @@ const emit = defineEmits<{
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
-  transition: all var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 @media (hover: hover) {
   .btn-cancel:hover { border-color: var(--accent); color: var(--text-primary); }

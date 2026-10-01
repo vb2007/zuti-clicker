@@ -281,7 +281,10 @@ async function handleDone() {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 @media (hover: hover) {
   .seg-btn:hover {
@@ -304,7 +307,10 @@ async function handleDone() {
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 .toggle-btn.active {
   background: var(--accent);
@@ -352,7 +358,10 @@ async function handleDone() {
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
-  transition: all var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
 }
 @media (hover: hover) {
   .btn-cancel:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
@@ -367,7 +376,9 @@ async function handleDone() {
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 700;
-  transition: all var(--transition-fast);
+  transition:
+    filter var(--transition-fast),
+    opacity var(--transition-fast);
 }
 @media (hover: hover) {
   .btn-close:hover:not(:disabled) { filter: brightness(1.1); }
