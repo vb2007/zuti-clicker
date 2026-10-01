@@ -49,6 +49,20 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data;
 }
 
+// PUT /save's 409 for a save made before a later wheel spin. Distinguished from
+// the plausibility envelope's 409 (a real rejection and strike) by a
+// machine-readable `code`, not by matching the English error text.
+// Keep the value in sync with api/src/constants/responses.ts's SAVE.STALE.
+export const SAVE_STALE_CODE = "save_stale";
+
+export function isStaleSaveError(e: unknown): boolean {
+  return (
+    e instanceof ApiError &&
+    e.status === 409 &&
+    (e.body as { code?: string } | undefined)?.code === SAVE_STALE_CODE
+  );
+}
+
 export interface RegisterResponse {
   message: string;
   userId: number;
@@ -85,6 +99,11 @@ export interface SavePayload {
   // Optional on the wire for the same reason (predates the upgrades system);
   // every entry must be a known upgrade id or the whole request 400s.
   upgrades?: string[];
+  // The spin counter last received from GET /save or POST /upgrader/spin.
+  // Never stored by the server — a value behind the account's current one
+  // marks this save as made before a later wheel spin and it is refused with a
+  // 409 STALE (see isStaleSaveError). Absent means 0.
+  upgraderSeq?: number;
 }
 
 export interface ActiveBoosterEntry {
@@ -120,6 +139,22 @@ export interface ClaimBoosterResponse {
   // How long until the next claim could succeed — used to precisely
   // re-seed the client's local spawn schedule (see composables/useBoosters.ts).
   nextAvailableInMs: number;
+}
+
+export interface SpinResponse {
+  message: string;
+  won: boolean;
+  // The server's roll and this spin's win chance, in parts per million: the
+  // spin won exactly when rollPpm < winPpm, and the wheel lands on rollPpm.
+  rollPpm: number;
+  winPpm: number;
+  payout: number;
+  // The PhD balance and spin counter AFTER this spin — applied to the store
+  // as-is, never recomputed locally.
+  phdCount: number;
+  upgraderSeq: number;
+  // Present on a loss only.
+  consolation?: { boosterId: string; remainingMs: number };
 }
 
 export interface SettingsPayload {
@@ -210,6 +245,13 @@ export const api = {
     // not yet elapsed) still carries nextAvailableInMs on the thrown
     // ApiError's `body`.
     claim: () => request<ClaimBoosterResponse>("POST", "/boosters/claim")
+  },
+  upgrader: {
+    // The server alone rolls and settles the spin — the client only says how
+    // much to stake and at what multiplier. A 409 means not enough PhDs (its
+    // body carries the real balance) or an overflow; both leave the state untouched.
+    spin: (stake: number, multiplier: number) =>
+      request<SpinResponse>("POST", "/upgrader/spin", { stake, multiplier })
   },
   anticheat: {
     // Fixed heartbeat + immediate-on-local-detection — see

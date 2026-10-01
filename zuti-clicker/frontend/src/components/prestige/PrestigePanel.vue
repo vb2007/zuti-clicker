@@ -40,7 +40,7 @@ const progressLabel = computed(() =>
 
     <div class="panel-body">
       <div class="phd-row">
-        <span class="phd-count">{{ formatNumber(game.phdCount) }}</span>
+        <span class="phd-count">{{ formatNumber(game.phdCountDisplay) }}</span>
         <span class="phd-label">{{ t("prestige.phdOwned") }}</span>
       </div>
 

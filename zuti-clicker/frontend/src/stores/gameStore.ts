@@ -44,6 +44,9 @@ export interface GameSaveInput {
   prestigeCount?: number;
   // Absent on saves written before the upgrades system existed.
   upgrades?: string[];
+  // The upgrader's spin counter (see utils/upgrader.ts / POST /upgrader/spin).
+  // Absent on saves written before it existed, which is the same as 0.
+  upgraderSeq?: number;
 }
 
 // GET /save additionally carries read-only booster state that is NEVER part
@@ -77,6 +80,24 @@ export const useGameStore = defineStore("game", () => {
   // Prestige — survives prestige, cleared only by hardReset.
   const phdCount = ref(0);
   const prestigeCount = ref(0);
+
+  // Upgrader (the PhD wheel). upgraderSeq is the server's spin counter, echoed
+  // back on every PUT /save so a save made before a later spin is told apart
+  // from a current one (see saveStore). It only changes through
+  // applySpinResult/loadFromSave — never by the player's own actions.
+  const upgraderSeq = ref(0);
+  // True from the moment a spin starts (before its pre-spin save flush) until
+  // its result is applied. Purchases and prestige are refused meanwhile: the
+  // flush is what the server validates the pre-spin state against, so
+  // spending at the old PhD discount after it and before the result lands
+  // would look, to the server, like paying less than the cheapest price.
+  const spinPending = ref(false);
+  // While set, the PhD readouts show this instead of phdCount, so the number
+  // behind the wheel's backdrop doesn't give away the result before the wheel
+  // stops. Display only — phdCount itself (and so every multiplier derived
+  // from it) already reflects the spin, matching the server from that instant.
+  const phdDisplayHold = ref<number | null>(null);
+  const phdCountDisplay = computed(() => phdDisplayHold.value ?? phdCount.value);
 
   const unitStates = ref<UnitState[]>(UNIT_DEFINITIONS.map((d) => ({ id: d.id, owned: 0 })));
 
@@ -210,7 +231,7 @@ export const useGameStore = defineStore("game", () => {
   }
 
   function buyUnit(unitId: string, multiplier: Multiplier): boolean {
-    if (antiCheat.isRestricted) return false;
+    if (antiCheat.isRestricted || spinPending.value) return false;
     const def = UNIT_DEFINITIONS.find((d) => d.id === unitId);
     if (!def) return false;
     const state = unitStates.value.find((u) => u.id === unitId);
@@ -249,7 +270,7 @@ export const useGameStore = defineStore("game", () => {
 
   /** One-time purchase. Returns false (and mutates nothing) if unknown, already owned, or unaffordable. */
   function buyUpgrade(upgradeId: string): boolean {
-    if (antiCheat.isRestricted) return false;
+    if (antiCheat.isRestricted || spinPending.value) return false;
     const def = UPGRADE_DEFINITIONS.find((d) => d.id === upgradeId);
     if (!def || isUpgradeOwned(upgradeId)) return false;
     if (tokens.value < def.cost) return false;
@@ -303,9 +324,27 @@ export const useGameStore = defineStore("game", () => {
     return totalTokensEarned.value >= (def?.baseCost ?? Infinity) * UNIT_REVEAL_FRACTION;
   }
 
+  /**
+   * Applies a settled spin: the server's (or, for a guest, the local) PhD
+   * balance and spin counter. Takes the resulting values rather than a delta so
+   * the client can never drift from what the server actually stored.
+   */
+  function applySpinResult(newPhdCount: number, newUpgraderSeq: number): void {
+    phdCount.value = newPhdCount;
+    upgraderSeq.value = newUpgraderSeq;
+  }
+
+  function holdPhdDisplay(value: number): void {
+    phdDisplayHold.value = value;
+  }
+
+  function releasePhdDisplay(): void {
+    phdDisplayHold.value = null;
+  }
+
   /** Banks PhDs and starts a new run. Returns the PhDs gained, or 0 if refused. */
   function prestige(): number {
-    if (antiCheat.isRestricted) return 0;
+    if (antiCheat.isRestricted || spinPending.value) return 0;
     const gained = phdGain.value; // MUST be read before any reset below
     if (gained < 1) return 0;
     phdCount.value += gained;
@@ -335,6 +374,8 @@ export const useGameStore = defineStore("game", () => {
     runSeconds.value = 0;
     phdCount.value = 0;
     prestigeCount.value = 0;
+    upgraderSeq.value = 0;
+    phdDisplayHold.value = null;
     unitStates.value.forEach((u) => {
       u.owned = 0;
     });
@@ -349,6 +390,8 @@ export const useGameStore = defineStore("game", () => {
     elapsedSeconds.value = save.elapsedSeconds;
     phdCount.value = save.phdCount ?? 0;
     prestigeCount.value = save.prestigeCount ?? 0;
+    upgraderSeq.value = save.upgraderSeq ?? 0;
+    phdDisplayHold.value = null;
     // A save with no run counters predates prestige, so it IS a single
     // un-prestiged run: run totals equal lifetime totals. `??` (not `||`) so a
     // genuine post-prestige 0 is preserved rather than re-seeded from lifetime.
@@ -383,7 +426,8 @@ export const useGameStore = defineStore("game", () => {
       phdCount: phdCount.value,
       prestigeCount: prestigeCount.value,
       units: unitStates.value.map((u) => ({ unitId: u.id, owned: u.owned })),
-      upgrades: ownedUpgrades.value.slice()
+      upgrades: ownedUpgrades.value.slice(),
+      upgraderSeq: upgraderSeq.value
     };
   }
 
@@ -397,6 +441,10 @@ export const useGameStore = defineStore("game", () => {
     runSeconds,
     phdCount,
     prestigeCount,
+    upgraderSeq,
+    spinPending,
+    phdDisplayHold,
+    phdCountDisplay,
     unitStates,
     ownedUpgrades,
     activeBoosters,
@@ -433,6 +481,9 @@ export const useGameStore = defineStore("game", () => {
     canAffordUpgrade,
     buyUpgrade,
     grantBooster,
+    applySpinResult,
+    holdPhdDisplay,
+    releasePhdDisplay,
     tick,
     isUnitRevealed,
     prestige,

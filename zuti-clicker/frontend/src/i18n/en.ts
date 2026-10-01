@@ -182,7 +182,8 @@ export default {
     neverSynced: "Not synced",
     deleteSave: "Delete save",
     logout: "Log out",
-    loginToSave: "Login to save"
+    loginToSave: "Login to save",
+    staleReloaded: "Your progress changed elsewhere (another tab?), so the latest save was loaded."
   },
   guest: {
     warningTitle: "Progress won't be saved",

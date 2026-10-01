@@ -182,7 +182,8 @@ export default {
     neverSynced: "Nincs mentve",
     deleteSave: "Mentés törlése",
     logout: "Kijelentkezés",
-    loginToSave: "Bejelentkezés a mentéshez"
+    loginToSave: "Bejelentkezés a mentéshez",
+    staleReloaded: "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be."
   },
   guest: {
     warningTitle: "A haladásod nem kerül mentésre",
