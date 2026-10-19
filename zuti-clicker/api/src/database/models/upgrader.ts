@@ -1,6 +1,6 @@
 import { randomInt } from "crypto";
-import { prisma } from "../prisma";
 import { withWriteConflictRetry } from "../retry";
+import { withSaveTransaction } from "../saveTransaction";
 import { isWinningRoll, consolationMs, type SpinQuote } from "../../services/upgrader";
 import {
   PHD_MAX,
@@ -48,7 +48,7 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
   // Retrying re-rolls, which is safe: a rolled-back transaction committed
   // nothing and the client never saw the first roll.
   return withWriteConflictRetry(() =>
-    prisma.$transaction(async (tx) => {
+    withSaveTransaction(userId, async (tx, saveId) => {
       const now = new Date();
 
       // A LOCKING read, not a plain findUnique: it takes the row lock up front,
@@ -56,9 +56,11 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
       // the balance the one before it left. A plain read would use the
       // transaction's original snapshot, which cannot see a concurrent
       // commit — a losing racer would then be told the wrong thing (and the
-      // balance it reported would be stale).
+      // balance it reported would be stale). Locked by id, never by userId
+      // (see database/saveTransaction.ts).
+      if (saveId === null) return { ok: false, reason: "no_save" } as const;
       const rows = await tx.$queryRaw<LockedSave[]>`
-        SELECT id, phdCount, phdInvested, upgraderNet FROM GameSave WHERE userId = ${userId} FOR UPDATE
+        SELECT id, phdCount, phdInvested, upgraderNet FROM GameSave WHERE id = ${saveId} FOR UPDATE
       `;
       const save = rows[0];
       if (!save) return { ok: false, reason: "no_save" } as const;

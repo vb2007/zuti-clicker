@@ -1,5 +1,6 @@
 import { prisma } from "../prisma";
 import { withWriteConflictRetry } from "../retry";
+import { withSaveTransaction } from "../saveTransaction";
 import type { GameSave } from "../../../generated/prisma/client";
 import { CAREER_WINDOW_RUN_GRACE_SECS } from "../../constants/career";
 import { PHD_MAX } from "../../constants/upgrader";
@@ -112,7 +113,7 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
   // here rather than surfaced as a 500, since the transaction itself is
   // idempotent for a given payload. See database/retry.ts.
   return withWriteConflictRetry(() =>
-    prisma.$transaction(async (tx) => {
+    withSaveTransaction(userId, async (tx, saveId) => {
       // Create-or-update, spelled out (rather than prisma's upsert) because
       // the UPDATE must be conditional: `upgraderSeq` in its WHERE is
       // re-checked against the row's live value when the statement runs, so
@@ -127,11 +128,18 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
       // open a career purchase window — by comparing against the row's stored
       // prestigeCount, and sets phdTotal from the row's phdInvested. Both must
       // be the live values, not a snapshot a concurrent purchase could move.
-      // Raw rows come back with BOOLEAN as 0/1 (verified against MariaDB).
-      const rows = await tx.$queryRaw<LockedSaveRow[]>`
-        SELECT id, prestigeCount, phdCount, phdInvested, upgraderSeq, careerWindowOpen, careerWindowId
-        FROM GameSave WHERE userId = ${userId} FOR UPDATE
-      `;
+      // Locked by id, and a first-ever save takes no lock at all (see
+      // database/saveTransaction.ts — a userId lock on a missing row would
+      // gap-lock other users' inserts). Raw rows come back with BOOLEAN as
+      // 0/1 (verified against MariaDB).
+      const rows =
+        saveId === null
+          ? []
+          : await tx.$queryRaw<LockedSaveRow[]>`
+              SELECT id, prestigeCount, phdCount, phdInvested, upgraderSeq,
+                     careerWindowOpen, careerWindowId
+              FROM GameSave WHERE id = ${saveId} FOR UPDATE
+            `;
       const existing = rows[0];
       let gameSave: GameSave;
       let career: CareerWindowState;

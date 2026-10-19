@@ -1,4 +1,4 @@
-import { prisma } from "../prisma";
+import { withSaveTransaction } from "../saveTransaction";
 import { WINDFALL_BOOSTER_ID, type AnyBoosterId } from "../../constants/boosters";
 import {
   buildBoosterPool,
@@ -33,15 +33,17 @@ export type ClaimResult =
 export async function claimBooster(userId: number): Promise<ClaimResult> {
   const now = new Date();
 
-  return prisma.$transaction(async (tx) => {
+  return withSaveTransaction(userId, async (tx, saveId) => {
     // Lock the row first (GameSave before any child row, like every other
-    // writer). Besides serialising concurrent claims, it means the read below
-    // takes its snapshot only after any PUT /save holding the lock (a
-    // prestige, say) has committed — so a windfall is always computed from
-    // the live units and PhDs, never an older snapshot of them.
-    await tx.$queryRaw`SELECT id FROM GameSave WHERE userId = ${userId} FOR UPDATE`;
+    // writer) — by id, never by userId (see database/saveTransaction.ts).
+    // Besides serialising concurrent claims, it means the read below takes
+    // its snapshot only after any PUT /save holding the lock (a prestige,
+    // say) has committed — so a windfall is always computed from the live
+    // units and PhDs, never an older snapshot of them.
+    if (saveId === null) return { ok: false, reason: "no_save" };
+    await tx.$queryRaw`SELECT id FROM GameSave WHERE id = ${saveId} FOR UPDATE`;
     const save = await tx.gameSave.findUnique({
-      where: { userId },
+      where: { id: saveId },
       include: { upgrades: true, units: true, careerNodes: true }
     });
     if (!save) return { ok: false, reason: "no_save" };

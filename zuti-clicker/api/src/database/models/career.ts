@@ -1,5 +1,5 @@
-import { prisma } from "../prisma";
 import { withWriteConflictRetry } from "../retry";
+import { withSaveTransaction } from "../saveTransaction";
 import type { Prisma } from "../../../generated/prisma/client";
 import {
   CAREER_NODES_BY_ID,
@@ -87,11 +87,13 @@ type Tx = Prisma.TransactionClient;
 // /save or wheel spin, which lock the same row first) queue here and each sees
 // the balance and owned set the one before it left. Every writer locks
 // GameSave before touching CareerNodeSave, so the lock order is consistent.
-// Raw rows carry BOOLEAN as 0/1 (verified against MariaDB) — normalised here.
-async function lockSave(tx: Tx, userId: number) {
+// Locked by id, never by userId (see database/saveTransaction.ts). Raw rows
+// carry BOOLEAN as 0/1 (verified against MariaDB) — normalised here.
+async function lockSave(tx: Tx, saveId: number | null) {
+  if (saveId === null) return null;
   const rows = await tx.$queryRaw<LockedRow[]>`
     SELECT id, phdCount, phdInvested, careerWindowOpen, careerWindowId
-    FROM GameSave WHERE userId = ${userId} FOR UPDATE
+    FROM GameSave WHERE id = ${saveId} FOR UPDATE
   `;
   const row = rows[0];
   if (!row) return null;
@@ -120,8 +122,8 @@ async function readState(tx: Tx, gameSaveId: number): Promise<CareerMutationStat
 /** Buys one node. `nodeId` must already be a known catalog id (validated by the controller). */
 export async function buyNode(userId: number, nodeId: string): Promise<BuyResult> {
   return withWriteConflictRetry(() =>
-    prisma.$transaction(async (tx) => {
-      const save = await lockSave(tx, userId);
+    withSaveTransaction(userId, async (tx, saveId) => {
+      const save = await lockSave(tx, saveId);
       if (!save) return { ok: false, reason: "no_save" } as const;
       if (!save.windowOpen) {
         return { ok: false, reason: "window_closed", state: await readState(tx, save.id) } as const;
@@ -175,8 +177,8 @@ export async function buyNode(userId: number, nodeId: string): Promise<BuyResult
  */
 export async function refundNode(userId: number, nodeId: string): Promise<RefundResult> {
   return withWriteConflictRetry(() =>
-    prisma.$transaction(async (tx) => {
-      const save = await lockSave(tx, userId);
+    withSaveTransaction(userId, async (tx, saveId) => {
+      const save = await lockSave(tx, saveId);
       if (!save) return { ok: false, reason: "no_save" } as const;
       if (!save.windowOpen) {
         return { ok: false, reason: "window_closed", state: await readState(tx, save.id) } as const;
@@ -234,8 +236,8 @@ export async function refundNode(userId: number, nodeId: string): Promise<Refund
  */
 export async function closeWindow(userId: number, windowId?: number): Promise<CloseResult> {
   return withWriteConflictRetry(() =>
-    prisma.$transaction(async (tx) => {
-      const save = await lockSave(tx, userId);
+    withSaveTransaction(userId, async (tx, saveId) => {
+      const save = await lockSave(tx, saveId);
       if (!save) return { ok: false, reason: "no_save" } as const;
       if (save.windowOpen) {
         if (windowId !== undefined && windowId !== save.windowId) {
