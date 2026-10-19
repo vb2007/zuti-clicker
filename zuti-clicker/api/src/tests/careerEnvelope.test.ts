@@ -245,17 +245,41 @@ describe("career envelope — what a prestige keeps", () => {
     expect(verdict(plain, plainSave).outcome).not.toBe("accept");
 
     // A forged prestigeCount can't multiply the fund: with no earnings in the
-    // interval at most one fund is explained, however many prestiges are claimed.
+    // interval at most one fund is explained, however many prestiges are
+    // claimed. 4 prestiges stays inside the prestige-count bound (E/S + 2), so
+    // the fund's own cap is the only thing that can refuse this.
     const [forged, forgedSave] = prestigedFrom(
       mods({ startingTokens: fund }),
       { units: [] },
       {
         units: [],
-        prestigeCount: 50,
-        tokens: fund * 50
+        prestigeCount: 4,
+        phdCount: 4,
+        tokens: fund * 4
       }
     );
-    expect(verdict(forged, forgedSave).outcome).toBe("reject");
+    const v = verdict(forged, forgedSave);
+    expect(v.outcome).toBe("reject");
+    if (v.outcome === "reject") expect(v.reason).toBe("tokens_exceed_after_required_spend");
+  });
+
+  it("a prestigeCount bump that gained no PhD earns no start fund", () => {
+    const fund = 1000;
+    const [bare, bareSave] = prestigedFrom(
+      mods({ startingTokens: fund }),
+      { units: [] },
+      {
+        units: [],
+        phdCount: 0,
+        tokens: fund
+      }
+    );
+    const v = verdict(bare, bareSave);
+    expect(v.outcome).not.toBe("accept");
+    if (v.outcome !== "accept") {
+      const reasons = v.outcome === "reject" ? [v.reason] : v.reasons;
+      expect(reasons).toContain("tokens_exceed_after_required_spend");
+    }
   });
 });
 

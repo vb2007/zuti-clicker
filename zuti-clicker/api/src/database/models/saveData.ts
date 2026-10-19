@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { withWriteConflictRetry } from "../retry";
 import type { GameSave } from "../../../generated/prisma/client";
+import { CAREER_WINDOW_RUN_GRACE_SECS } from "../../constants/career";
 
 export interface UnitInput {
   unitId: string;
@@ -138,8 +139,9 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
       let career: CareerWindowState;
       if (!existing) {
         // A first-ever save that already carries a prestige (a guest who
-        // prestiged, then registered) is a prestige like any other.
-        const opened = prestigeCreate.prestigeCount > 0;
+        // prestiged, then registered) is a prestige like any other — one that
+        // earned PhDs, like every honest prestige does.
+        const opened = prestigeCreate.prestigeCount > 0 && prestigeCreate.phdCount > 0;
         gameSave = await tx.gameSave.create({
           data: {
             userId,
@@ -173,12 +175,25 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
         // A new window on every detected prestige — also when one is still
         // open (a second prestige before Done): bumping the id makes the old
         // window's purchases permanent, so a refund can never undo a node
-        // that was already in effect at a prestige.
+        // that was already in effect at a prestige. An honest prestige always
+        // gains at least one PhD (and nothing else can lower phdCount between
+        // two saves — every other PhD change is server-written and already in
+        // the stored row), so a prestigeCount bump that gains none opens nothing.
         const opened =
-          data.prestigeCount !== undefined && data.prestigeCount > locked.prestigeCount;
+          data.prestigeCount !== undefined &&
+          data.prestigeCount > locked.prestigeCount &&
+          data.phdCount !== undefined &&
+          data.phdCount > locked.phdCount;
+        // A save showing the new run under way ends an open window (see
+        // CAREER_WINDOW_RUN_GRACE_SECS) — its purchases become permanent.
+        const runStarted =
+          locked.careerWindowOpen &&
+          ((data.runClicks ?? 0) > 0 || (data.runSeconds ?? 0) > CAREER_WINDOW_RUN_GRACE_SECS);
         const windowUpdate = opened
           ? { careerWindowOpen: true, careerWindowId: locked.careerWindowId + 1 }
-          : {};
+          : runStarted
+            ? { careerWindowOpen: false }
+            : {};
 
         const updated = await tx.gameSave.updateMany({
           where: { id: existing.id, upgraderSeq: data.upgraderSeq ?? 0 },

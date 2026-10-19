@@ -207,8 +207,9 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *         description: >
  *           Missing required fields; a present-but-invalid core field
  *           (negative/non-finite, or a fractional totalClicks); tokens
- *           exceeding totalTokensEarned; or invalid units, prestige fields,
- *           upgrades, or upgraderSeq.
+ *           exceeding totalTokensEarned; invalid units, prestige fields,
+ *           upgrades, or upgraderSeq; or a phdCount that, with the PhDs
+ *           invested in the Academic Career, would exceed 2147483647.
  *         content:
  *           application/json:
  *             schema:
@@ -477,8 +478,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     // Lost the race to a wheel spin between the check above and the write
     // (or ANTICHEAT_MODE=off skipped that check): same outcome, same reply.
     if (!written.ok) {
-      const r =
-        written.reason === "phd_limit" ? Responses.SAVE.INVALID_PRESTIGE : Responses.SAVE.STALE;
+      const r = written.reason === "phd_limit" ? Responses.SAVE.PHD_LIMIT : Responses.SAVE.STALE;
       res.status(r.status).json(r.body);
       return;
     }

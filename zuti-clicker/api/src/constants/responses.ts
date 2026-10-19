@@ -83,6 +83,12 @@ export class Responses {
           "Your progress changed since this save was made (a wheel spin or an Academic Career change elsewhere). Reload to continue from your current progress."
       }
     },
+    // held + invested PhDs would overflow GameSave.phdTotal (an INT column).
+    // Only a forged phdCount gets here — an honest one is bounded far below.
+    PHD_LIMIT: {
+      status: 400,
+      body: { error: "phdCount plus the PhDs invested in the Academic Career exceeds 2147483647." }
+    },
     NOT_FOUND: { status: 404, body: { save: null } },
     SAVE_SUCCESS: { status: 200, body: { message: "Save updated successfully." } },
     RESET_SUCCESS: { status: 200, body: { message: "Save reset successfully." } },
@@ -128,7 +134,10 @@ export class Responses {
   // the caller appends the account's real career state (and phdCount where it
   // helps), so a client that was out of date can resync without a reload.
   static readonly CAREER = {
-    INVALID_NODE: { status: 400, body: { error: "nodeId must be a known Academic Career node id." } },
+    INVALID_NODE: {
+      status: 400,
+      body: { error: "nodeId must be a known Academic Career node id." }
+    },
     INVALID_WINDOW_ID: {
       status: 400,
       body: { error: "windowId must be a non-negative integer when provided." }

@@ -34,6 +34,12 @@ export async function claimBooster(userId: number): Promise<ClaimResult> {
   const now = new Date();
 
   return prisma.$transaction(async (tx) => {
+    // Lock the row first (GameSave before any child row, like every other
+    // writer). Besides serialising concurrent claims, it means the read below
+    // takes its snapshot only after any PUT /save holding the lock (a
+    // prestige, say) has committed — so a windfall is always computed from
+    // the live units and PhDs, never an older snapshot of them.
+    await tx.$queryRaw`SELECT id FROM GameSave WHERE userId = ${userId} FOR UPDATE`;
     const save = await tx.gameSave.findUnique({
       where: { userId },
       include: { upgrades: true, units: true, careerNodes: true }

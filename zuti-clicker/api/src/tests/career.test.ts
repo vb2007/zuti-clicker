@@ -197,20 +197,83 @@ describe("Career window - opened only by a prestige", () => {
     const opened = await api
       .put("/save")
       .set("Cookie", cookie)
-      .send({ ...TestData.VALID_SAVE, phdCount: 100, prestigeCount: 2, upgraderSeq: staleSeq });
+      .send({ ...TestData.VALID_SAVE, phdCount: 120, prestigeCount: 2, upgraderSeq: staleSeq });
     expect(opened.body.career.windowId).toBe(2);
     await buy(cookie, ROOT);
     await close(cookie);
     const stale = await api
       .put("/save")
       .set("Cookie", cookie)
-      .send({ ...TestData.VALID_SAVE, phdCount: 100, prestigeCount: 3, upgraderSeq: staleSeq });
+      .send({ ...TestData.VALID_SAVE, phdCount: 150, prestigeCount: 3, upgraderSeq: staleSeq });
     expect(stale.status).toBe(409);
     expect(stale.body.code).toBe(Responses.SAVE.STALE.body.code);
     const save = await load(cookie);
     expect(save.career.windowOpen).toBe(false);
     expect(save.career.windowId).toBe(2);
     expect(save.prestigeCount).toBe(2);
+  });
+});
+
+describe("Career window - never open into a run that has started", () => {
+  const resave = (cookie: string, seq: number, run: Record<string, number>) =>
+    api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send({ ...TestData.VALID_SAVE, phdCount: 99, prestigeCount: 1, upgraderSeq: seq, ...run });
+
+  it("a save with run clicks closes the window and makes its purchases permanent", async () => {
+    const { cookie } = await userWithWindow(100);
+    const bought = await buy(cookie, ROOT);
+    const put = await resave(cookie, bought.body.upgraderSeq, { runClicks: 3, runSeconds: 2 });
+    expect(put.body.career.windowOpen).toBe(false);
+    const res = await refund(cookie, ROOT);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe(Responses.CAREER.WINDOW_CLOSED.body.code);
+  });
+
+  it("a save with run time past the grace closes it too", async () => {
+    const { cookie } = await userWithWindow(100);
+    const bought = await buy(cookie, ROOT);
+    const put = await resave(cookie, bought.body.upgraderSeq, { runClicks: 0, runSeconds: 600 });
+    expect(put.body.career.windowOpen).toBe(false);
+  });
+
+  it("a save from the paused game (no run clicks, no run time) keeps it open", async () => {
+    const { cookie } = await userWithWindow(100);
+    const bought = await buy(cookie, ROOT);
+    const put = await resave(cookie, bought.body.upgraderSeq, { runClicks: 0, runSeconds: 0 });
+    expect(put.body.career.windowOpen).toBe(true);
+    expect((await refund(cookie, ROOT)).status).toBe(200);
+  });
+
+  it("a save that omits the run fields (a legacy client) leaves the window alone", async () => {
+    const { cookie } = await userWithWindow(100);
+    const bought = await buy(cookie, ROOT);
+    const put = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send({ ...TestData.VALID_SAVE, upgraderSeq: bought.body.upgraderSeq });
+    expect(put.body.career.windowOpen).toBe(true);
+  });
+
+  it("a prestigeCount bump that gained no PhD opens no window", async () => {
+    const cookie = await registerAndLogin();
+    await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send({ ...TestData.VALID_SAVE, phdCount: 5, prestigeCount: 0 });
+    const put = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send({ ...TestData.VALID_SAVE, phdCount: 5, prestigeCount: 1 });
+    expect(put.body.career.windowOpen).toBe(false);
+    // ...nor does a first-ever save claiming a prestige with no PhDs.
+    const other = await registerAndLogin();
+    const first = await api
+      .put("/save")
+      .set("Cookie", other)
+      .send({ ...TestData.VALID_SAVE, phdCount: 0, prestigeCount: 3 });
+    expect(first.body.career.windowOpen).toBe(false);
   });
 });
 
@@ -247,11 +310,14 @@ describe("Career buy", () => {
   });
 
   it("refuses an unaffordable node with the real balance (409 INSUFFICIENT_PHD)", async () => {
-    const { cookie } = await userWithWindow(0);
-    const res = await buy(cookie, ROOT);
+    // Exactly enough for the root, then nothing left for the next node.
+    const { cookie } = await userWithWindow(cost(ROOT));
+    await buy(cookie, ROOT);
+    const res = await buy(cookie, K1);
     expect(res.status).toBe(409);
     expect(res.body.code).toBe(Responses.CAREER.INSUFFICIENT_PHD.body.code);
     expect(res.body.phdCount).toBe(0);
+    expect((await load(cookie)).career.nodes).toHaveLength(1);
   });
 
   it("refuses everything once the window is closed (409 WINDOW_CLOSED)", async () => {
@@ -375,6 +441,43 @@ describe("Career and the rest of the save", () => {
     expect(spin.status).toBe(200);
     const save = await expectConsistent(cookie);
     expect(save.phdCount + save.career.phdInvested).toBe(100 + (spin.body.won ? 10 : -10));
+  });
+});
+
+describe("Career and PUT /save limits", () => {
+  it("refuses (400 PHD_LIMIT) a phdCount that, with the invested PhDs, overflows phdTotal", async () => {
+    const MAX = 2147483647;
+    const { cookie } = await userWithWindow(MAX);
+    const bought = await buy(cookie, ROOT);
+    expect(bought.status).toBe(200);
+    const put = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send({
+        ...TestData.VALID_SAVE,
+        phdCount: MAX,
+        prestigeCount: 1,
+        upgraderSeq: bought.body.upgraderSeq
+      });
+    expect(put.status).toBe(400);
+    expect(put.body.error).toBe(Responses.SAVE.PHD_LIMIT.body.error);
+    expect((await load(cookie)).phdCount).toBe(MAX - cost(ROOT));
+  });
+
+  it("parallel first-ever saves (two tabs) all land on one row, none 500s", async () => {
+    const cookie = await registerAndLogin();
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        api
+          .put("/save")
+          .set("Cookie", cookie)
+          .send({ ...TestData.VALID_SAVE, phdCount: 3, prestigeCount: 1 })
+      )
+    );
+    for (const r of results) expect(r.status).toBe(200);
+    const save = await load(cookie);
+    expect(save.career.windowId).toBe(1);
+    expect(save.career.windowOpen).toBe(true);
   });
 });
 

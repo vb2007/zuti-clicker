@@ -426,9 +426,15 @@ export function evaluateSaveEnvelope(
   // PHD_TOKEN_SCALE tokens). That cap matters because prestigeCount is only
   // bounded further below — an uncapped fund x a forged prestigeCount would
   // otherwise buy unlimited free units.
+  //
+  // Only prestiges that each gained a PhD count: an honest one always does,
+  // and nothing else can lower phdCount between two saves (every other PhD
+  // change is server-written and already in `prev`) — so a bare
+  // prestigeCount bump earns no fund.
   const deltaPrestige = Math.max(0, incoming.prestigeCount - prevPrestigeCount);
   const startFunds = Math.min(
     deltaPrestige,
+    Math.max(0, incoming.phdCount - prevPhdCount),
     Math.floor(Math.max(0, effectiveDeltaEarned) / PHD_TOKEN_SCALE) + 1
   );
   const availableBudget = prevTokens + effectiveDeltaEarned + mods.startingTokens * startFunds;
