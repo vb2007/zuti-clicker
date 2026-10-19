@@ -126,12 +126,31 @@ export default {
     names: {
       frenzy: "Értékelési Roham",
       clickStorm: "Röpdolgozat",
-      clearance: "Eszközkiárusítás"
+      clearance: "Eszközkiárusítás",
+      windfall: "Kutatási Bónusz",
+      critStorm: "Heuréka-pillanat"
     },
     effect: {
       production: "×{mult} termelés",
       click: "×{mult} kattintásonként",
-      costReduction: "-{pct}% ár"
+      costReduction: "-{pct}% ár",
+      instant: "azonnali tokenjóváírás",
+      instantAmount: "+{amount} token",
+      crit: "+{pct}% kritikus esély"
+    }
+  },
+  career: {
+    guestTreeDropped:
+      "A vendégként felépített Tudományos pályád nem kerül át a fiókodba — a PhD-ket visszakaptad. A következő fokozatszerzés után újra befektetheted őket.",
+    errors: {
+      syncFailed: "Nem sikerült előbb elmenteni a haladásodat — próbáld újra egy pillanat múlva.",
+      windowClosed: "A Tudományos pálya csak közvetlenül egy fokozatszerzés után módosítható.",
+      insufficient: "Nincs elég PhD-d ehhez a csomóponthoz.",
+      changed: "A Tudományos pályád máshol megváltozott — frissítettük.",
+      generic: "Ez nem sikerült — próbáld újra.",
+      unconfirmed: "Nem sikerült megerősíteni a változtatást — a haladásodat újratöltöttük.",
+      newWindow: "Egy újabb fokozatszerzés új ablakot nyitott — ott folytathatod a befektetést.",
+      closeFailed: "Nem sikerült bezárni a Tudományos pályát — próbáld újra."
     }
   },
   settings: {

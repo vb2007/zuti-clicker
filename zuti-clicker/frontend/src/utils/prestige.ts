@@ -4,6 +4,11 @@ import {
   PHD_COST_REDUCTION,
   PHD_COST_REDUCTION_CAP
 } from "@/utils/gameConstants";
+import { emptyCareerModifiers, type CareerModifiers } from "@/utils/careerCore";
+import {
+  getCareerPhdProductionMultiplier,
+  getCareerPhdCostMultiplier
+} from "@/utils/careerEconomy";
 
 /**
  * PhDs awarded for prestiging right now: floor(sqrt(runTokensEarned / SCALE)).
@@ -68,12 +73,15 @@ export function getPrestigeProgress(runTokensEarned: number): number {
  */
 export function getPrestigeOutcome(
   phdCount: number,
-  phdGain: number
+  phdGain: number,
+  // The Academic Career's per-PhD bonus and raised discount cap apply to the
+  // after-values too. Omitted (no tree) it is exactly the original formula.
+  mods: CareerModifiers = emptyCareerModifiers()
 ): { newPhdCount: number; productionMultiplier: number; costMultiplier: number } {
   const newPhdCount = phdCount + phdGain;
   return {
     newPhdCount,
-    productionMultiplier: getProductionMultiplier(newPhdCount),
-    costMultiplier: getCostMultiplier(newPhdCount)
+    productionMultiplier: getCareerPhdProductionMultiplier(newPhdCount, mods),
+    costMultiplier: getCareerPhdCostMultiplier(newPhdCount, mods)
   };
 }

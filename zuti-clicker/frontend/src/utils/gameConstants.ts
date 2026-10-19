@@ -86,10 +86,16 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
 // after a uniform random wait, stays on screen (and can be missed) for a
 // short window, and — once claimed — applies its effect for its duration.
 // Keep the id/effect set in sync with api/src/constants/boosters.ts.
+// The career boosters (career: true) mirror api/src/constants/boosters.ts's
+// CAREER_BOOSTER_* and api/src/constants/gameBalance.ts's BOOSTER_EFFECTS:
+// windfall's "multiplier" is unused (its grant is careerModifiers.windfallSecs
+// of production, credited by the server), critStorm's is the crit chance it adds.
 export const BOOSTER_DEFINITIONS: BoosterDefinition[] = [
   { id: "frenzy", kind: "production", multiplier: 7, durationSecs: 60, weight: 4 },
   { id: "clickStorm", kind: "click", multiplier: 10, durationSecs: 90, weight: 4 },
-  { id: "clearance", kind: "costReduction", multiplier: 0.25, durationSecs: 120, weight: 3 }
+  { id: "clearance", kind: "costReduction", multiplier: 0.25, durationSecs: 120, weight: 3 },
+  { id: "windfall", kind: "instant", multiplier: 0, durationSecs: 0, weight: 3, career: true },
+  { id: "critStorm", kind: "crit", multiplier: 0.5, durationSecs: 30, weight: 3, career: true }
 ];
 
 export const BOOSTER_SPAWN_MIN_SECS = 60;

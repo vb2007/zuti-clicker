@@ -22,6 +22,7 @@ import PrestigeCeremony from "@/components/prestige/PrestigeCeremony.vue";
 import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import { useGameLoop } from "@/composables/useGameLoop";
 import { useAntiCheat } from "@/composables/useAntiCheat";
+import { useAutoBuyer } from "@/composables/useAutoBuyer";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import { useOverlay, initOverlayStack } from "@/composables/useOverlayStack";
 import { QUICK_RESET_ENABLED, shouldQuickReset } from "@/utils/featureFlags";
@@ -37,6 +38,7 @@ const { isCompact } = useBreakpoint();
 
 useGameLoop();
 useAntiCheat();
+useAutoBuyer();
 
 // If the sheet was left open and the viewport widens back past the compact
 // breakpoint (e.g. rotating a tablet, or resizing a desktop window that had
@@ -101,7 +103,7 @@ watch(
 // Widened beyond totalClicks so a pure idler (units doing all the work, zero
 // manual clicks) still gets the unsaved-progress warning.
 const hasProgress = computed(
-  () => game.totalClicks > 0 || game.totalTokensEarned > 0 || game.phdCount > 0
+  () => game.totalClicks > 0 || game.totalTokensEarned > 0 || game.phdTotal > 0
 );
 
 function handleBeforeUnload(e: BeforeUnloadEvent) {

@@ -69,6 +69,12 @@ export const useSaveStore = defineStore("save", () => {
       if (loggedIn && game.forfeitGuestSpins() !== 0) {
         toast.push("error", i18n.global.t("upgrader.guestSpinsDropped"));
       }
+      // The same for a guest's Academic Career: the server has no record of it,
+      // so its nodes are refunded (and what its PhD-gain bonus added is taken
+      // back) before any save could carry it.
+      if (loggedIn && game.forfeitGuestCareer()) {
+        toast.push("error", i18n.global.t("career.guestTreeDropped"));
+      }
     }
   );
 
@@ -107,6 +113,9 @@ export const useSaveStore = defineStore("save", () => {
     try {
       const result = await api.save.store(game.toSavePayload());
       lastSyncedAt.value = new Date(result.savedAt);
+      // A save that carried a prestige opened an Academic Career purchase
+      // window on the server — adopt it so the tree can pop up right away.
+      if (result.career) game.applyCareerWindow(result.career.windowOpen, result.career.windowId);
       return "ok";
     } catch (e) {
       if (isStaleSaveError(e)) {

@@ -1,6 +1,8 @@
 import { UPGRADE_DEFINITIONS, BOOSTER_DEFINITIONS, BASE_TOKENS_PER_CLICK } from "@/utils/gameConstants";
 import { formatNumber, formatPercent } from "@/utils/formatters";
 import type { ActiveBoosterState, BoosterKind, UpgradeDefinition } from "@/types";
+import { emptyCareerModifiers, type CareerModifiers } from "@/utils/careerCore";
+import { getBoosterEffectMultiplier, isBoosterInPool } from "@/utils/careerEconomy";
 
 /**
  * Click-power upgrade formulas. Mirrors the shape of prestige.ts: pure
@@ -85,19 +87,33 @@ export function getBoosterSpawnMultiplier(ownedUpgrades: string[]): number {
 
 /**
  * Combined multiplier from every currently-active (non-expired) booster of a
- * given kind. `now` is passed in (rather than read via Date.now() here) so
- * callers stay pure and easily testable with a fixed clock.
+ * given kind, each with its Academic Career potency (see careerEconomy's
+ * getBoosterEffectMultiplier — omitted, it is each booster's plain effect).
+ * `now` is passed in (rather than read via Date.now() here) so callers stay
+ * pure and easily testable with a fixed clock.
  */
 export function getActiveBoosterMultiplier(
   activeBoosters: ActiveBoosterState[],
   now: number,
-  kind: BoosterKind
+  kind: "production" | "click" | "costReduction",
+  mods: CareerModifiers = emptyCareerModifiers()
 ): number {
   return activeBoosters
     .filter((b) => b.expiresAt > now)
     .map((b) => BOOSTER_DEFINITIONS.find((d) => d.id === b.id))
     .filter((d): d is (typeof BOOSTER_DEFINITIONS)[number] => d !== undefined && d.kind === kind)
-    .reduce((mult, d) => mult * (kind === "costReduction" ? 1 - d.multiplier : d.multiplier), 1);
+    .reduce((mult, d) => mult * getBoosterEffectMultiplier(d.id, mods), 1);
+}
+
+/** Whether a booster of `kind` is currently active (for the timed career kinds). */
+export function isBoosterKindActive(
+  activeBoosters: ActiveBoosterState[],
+  now: number,
+  kind: BoosterKind
+): boolean {
+  return activeBoosters.some(
+    (b) => b.expiresAt > now && BOOSTER_DEFINITIONS.find((d) => d.id === b.id)?.kind === kind
+  );
 }
 
 export interface ClickValueParams {
@@ -142,16 +158,22 @@ export function rollCrit(critChance: number, rng: () => number = Math.random): b
  * algorithm in sync with api/src/database/models/boosters.ts's own
  * pickWeightedBoosterId.
  */
-export function pickWeightedBoosterId(rng: () => number = Math.random): string {
-  const totalWeight = BOOSTER_DEFINITIONS.reduce((sum, d) => sum + d.weight, 0);
+export function pickWeightedBoosterId(
+  rng: () => number = Math.random,
+  // The pool: the base three plus any booster the Academic Career unlocked
+  // (api/src/services/boosters.ts's buildBoosterPool, in the same order).
+  mods: CareerModifiers = emptyCareerModifiers()
+): string {
+  const pool = BOOSTER_DEFINITIONS.filter((d) => isBoosterInPool(d.id, mods));
+  const totalWeight = pool.reduce((sum, d) => sum + d.weight, 0);
   let roll = rng() * totalWeight;
-  for (const def of BOOSTER_DEFINITIONS) {
+  for (const def of pool) {
     roll -= def.weight;
     if (roll < 0) return def.id;
   }
   // Floating-point fallback — should be unreachable since the loop above
   // covers the full [0, totalWeight) range.
-  return BOOSTER_DEFINITIONS[BOOSTER_DEFINITIONS.length - 1]!.id;
+  return pool[pool.length - 1]!.id;
 }
 
 /**

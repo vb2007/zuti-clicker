@@ -126,12 +126,31 @@ export default {
     names: {
       frenzy: "Grading Frenzy",
       clickStorm: "Pop Quiz",
-      clearance: "Equipment Clearance"
+      clearance: "Equipment Clearance",
+      windfall: "Research Windfall",
+      critStorm: "Eureka Moment"
     },
     effect: {
       production: "×{mult} production",
       click: "×{mult} per click",
-      costReduction: "-{pct}% prices"
+      costReduction: "-{pct}% prices",
+      instant: "an instant token grant",
+      instantAmount: "+{amount} tokens",
+      crit: "+{pct}% crit chance"
+    }
+  },
+  career: {
+    guestTreeDropped:
+      "Your guest Academic Career doesn't carry over to an account — its PhDs were refunded. Re-invest them after your next prestige.",
+    errors: {
+      syncFailed: "Couldn't save your progress first — try again in a moment.",
+      windowClosed: "The Academic Career can only be changed right after a prestige.",
+      insufficient: "Not enough PhDs for that node.",
+      changed: "Your Academic Career changed elsewhere — it has been updated.",
+      generic: "That didn't work — try again.",
+      unconfirmed: "Couldn't confirm that change — your progress has been reloaded.",
+      newWindow: "A newer prestige opened a new window — keep investing or finish there.",
+      closeFailed: "Couldn't close the Academic Career — try again."
     }
   },
   settings: {
