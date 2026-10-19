@@ -156,10 +156,22 @@ describe("gameStore", () => {
       const game = useGameStore();
       game.runTokensEarned = 4_000_000;
       game.prestige();
+      // Each prestige opens the Academic Career window; the next run (and so
+      // the next prestige) starts once it is closed.
+      game.closeCareerWindowLocal();
       game.runTokensEarned = 4_000_000;
       game.prestige();
       expect(game.phdCount).toBe(4);
       expect(game.prestigeCount).toBe(2);
+    });
+
+    it("regression: no prestige while the purchase window is still open", () => {
+      const game = useGameStore();
+      game.runTokensEarned = 4_000_000;
+      expect(game.prestige()).toBe(2);
+      game.runTokensEarned = 4_000_000;
+      expect(game.prestige()).toBe(0);
+      expect(game.prestigeCount).toBe(1);
     });
 
     it("production and cost multipliers reflect the new PhD count after prestiging", () => {

@@ -279,6 +279,7 @@ describe("gameStore — prestige with the Academic Career", () => {
   it("opens a new window and makes the previous window's purchases permanent", () => {
     const game = withWindow(100);
     game.buyCareerNodeLocal(ROOT);
+    game.closeCareerWindowLocal();
     game.runTokensEarned = 4e6;
     game.prestige();
     expect(game.careerWindowOpen).toBe(true);
@@ -290,6 +291,7 @@ describe("gameStore — prestige with the Academic Career", () => {
     const game = withWindow(100);
     game.buyCareerNodeLocal(ROOT);
     game.buyCareerNodeLocal("thesis.doctoralSchool");
+    game.closeCareerWindowLocal();
     game.runTokensEarned = 400e6; // base 20, plus the gain bonus
     const gained = Math.floor(20 * (1 + frac("thesis.doctoralSchool")));
     expect(game.prestige()).toBe(gained);
@@ -391,6 +393,29 @@ describe("gameStore — Academic Career persistence", () => {
     game.buyCareerNodeLocal(ROOT);
     const payload = game.toSavePayload() as unknown as Record<string, unknown>;
     expect(Object.keys(payload).some((k) => k.toLowerCase().includes("career"))).toBe(false);
+  });
+
+  it("regression: a server-loaded tree kept across a logout is not forfeited at the next login", () => {
+    const game = useGameStore();
+    game.phdCount = 10;
+    own(game, [ROOT]); // as loaded from the account
+    expect(game.forfeitGuestCareer()).toBe(false);
+    expect(game.careerNodeIds).toEqual([ROOT]);
+    expect(game.phdCount).toBe(10);
+  });
+
+  it("the game's buffs still expire while it is paused behind the window", () => {
+    vi.useFakeTimers();
+    try {
+      const game = useGameStore();
+      game.grantBooster("clearance", 1000);
+      game.applyCareerWindow(true, 1);
+      vi.advanceTimersByTime(1500);
+      game.tick(0.05);
+      expect(game.activeBoosters).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("hardReset clears the tree and the window", () => {

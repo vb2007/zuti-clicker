@@ -100,7 +100,9 @@ export const useSaveStore = defineStore("save", () => {
   // whatever the store looks like by then. The same goes for a sync requested
   // while withSyncLock below holds the lock: it waits for the release.
   let _queued = false;
-  let _locked = false;
+  // Holders of the sync lock, running or waiting their turn (see withSyncLock).
+  let _lockDepth = 0;
+  let _lockTail: Promise<void> = Promise.resolve();
   let _inflight: Promise<SyncOutcome> | null = null;
 
   // One PUT /save. Resolves with how it went and never rejects. A STALE
@@ -111,11 +113,17 @@ export const useSaveStore = defineStore("save", () => {
     isSyncing.value = true;
     syncError.value = null;
     try {
-      const result = await api.save.store(game.toSavePayload());
+      const payload = game.toSavePayload();
+      const result = await api.save.store(payload);
       lastSyncedAt.value = new Date(result.savedAt);
       // A save that carried a prestige opened an Academic Career purchase
-      // window on the server — adopt it so the tree can pop up right away.
-      if (result.career) game.applyCareerWindow(result.career.windowOpen, result.career.windowId);
+      // window on the server — adopt it so the tree can pop up right away. But
+      // only if no prestige happened while this save was on its way: a reply
+      // to a save made BEFORE a prestige would otherwise shut the window that
+      // prestige just opened locally (the save carrying it is queued behind).
+      if (result.career && payload.prestigeCount === game.prestigeCount) {
+        game.applyCareerWindow(result.career.windowOpen, result.career.windowId);
+      }
       return "ok";
     } catch (e) {
       if (isStaleSaveError(e)) {
@@ -134,7 +142,7 @@ export const useSaveStore = defineStore("save", () => {
 
   async function sync(): Promise<void> {
     if (!auth.isLoggedIn) return;
-    if (isSyncing.value || _locked) {
+    if (isSyncing.value || _lockDepth > 0) {
       _queued = true;
       return;
     }
@@ -143,7 +151,7 @@ export const useSaveStore = defineStore("save", () => {
       await _inflight;
     } finally {
       _inflight = null;
-      if (_queued && !_locked) {
+      if (_queued && _lockDepth === 0) {
         _queued = false;
         void sync();
       }
@@ -161,12 +169,26 @@ export const useSaveStore = defineStore("save", () => {
    * its result being applied here (that save would carry the old balance).
    * Held syncs run once, with the then-current state, on release. Guests have
    * nothing to flush or protect, so `fn` just runs.
+   *
+   * Holders queue rather than collide: a second caller (a career purchase
+   * while a windfall claim holds the lock, say) waits its turn, then flushes
+   * the then-current state itself. Every server-side PhD/token change is thus
+   * strictly one after another, and no ordinary save slips in between two of
+   * them. `flush: false` skips the pre-work save (see reload()).
    */
-  async function withSyncLock<T>(fn: () => Promise<T>): Promise<T> {
-    if (_locked) throw new Error("The save sync lock is already held");
-    _locked = true;
+  async function withSyncLock<T>(
+    fn: () => Promise<T>,
+    { flush = true }: { flush?: boolean } = {}
+  ): Promise<T> {
+    _lockDepth++;
+    const previous = _lockTail;
+    let release!: () => void;
+    _lockTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     try {
-      if (auth.isLoggedIn) {
+      await previous;
+      if (flush && auth.isLoggedIn) {
         // A sync already in flight may itself come back stale (and reload): its
         // outcome counts, or the spin would go ahead on state it just discarded.
         if (_inflight && (await _inflight) === "stale") throw new SyncFlushError(true);
@@ -175,12 +197,22 @@ export const useSaveStore = defineStore("save", () => {
       }
       return await fn();
     } finally {
-      _locked = false;
-      if (_queued) {
+      _lockDepth--;
+      release();
+      if (_queued && _lockDepth === 0) {
         _queued = false;
         void sync();
       }
     }
+  }
+
+  /**
+   * Takes the server's word after an action whose outcome is unknown (a
+   * timeout, a 5xx): reloads under the sync lock, so it can never interleave
+   * with another action's flush and overwrite newer state with older.
+   */
+  function reload(): Promise<boolean> {
+    return withSyncLock(() => load(), { flush: false });
   }
 
   async function resetSave(): Promise<void> {
@@ -208,6 +240,7 @@ export const useSaveStore = defineStore("save", () => {
     load,
     sync,
     withSyncLock,
+    reload,
     resetSave
   };
 });

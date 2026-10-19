@@ -61,7 +61,7 @@ export function useCareer() {
     // server may or may not have applied it. Take the server's word instead.
     if (auth.isLoggedIn) {
       toast.push("error", t("career.errors.unconfirmed"));
-      void save.load();
+      void save.reload();
     } else {
       toast.push("error", t("career.errors.generic"));
     }
@@ -120,9 +120,13 @@ export function useCareer() {
   }
 
   /**
-   * Skip / Done. Changes no PhDs, so no flush is needed; allowed while
-   * restricted (it grants nothing). A refusal because a newer window opened
-   * meanwhile adopts that window, which then stays up.
+   * Skip / Done; allowed while restricted (it grants nothing). Runs under the
+   * sync lock with a flush first: right after a prestige its save may still
+   * be on its way, and closing before the server has opened the window would
+   * only be undone when that save lands. Only the career part of the reply is
+   * adopted — closing changes no PhDs, and the balance it reports could
+   * predate saves the server hasn't seen yet. A refusal because a newer window
+   * opened meanwhile adopts that window, which then stays up.
    */
   async function close(): Promise<boolean> {
     if (!auth.isLoggedIn) {
@@ -132,15 +136,20 @@ export function useCareer() {
     if (game.careerPending) return false;
     game.careerPending = true;
     try {
-      game.applyCareerState(await api.career.close(game.careerWindowId));
+      await save.withSyncLock(async () => {
+        const res = await api.career.close(game.careerWindowId);
+        game.applyCareerState({ career: res.career });
+      });
       return true;
     } catch (err) {
       if (err instanceof ApiError && careerErrorCode(err) === CAREER_CODES.windowChanged) {
-        game.applyCareerState(err.body as CareerMutationResponse);
+        game.applyCareerState({ career: (err.body as CareerMutationResponse).career });
         toast.push("error", t("career.errors.newWindow"));
         return false;
       }
-      toast.push("error", t("career.errors.closeFailed"));
+      if (!(err instanceof SyncFlushError && err.stale)) {
+        toast.push("error", t("career.errors.closeFailed"));
+      }
       return false;
     } finally {
       game.careerPending = false;

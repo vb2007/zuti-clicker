@@ -115,7 +115,8 @@ const problem = computed<string | null>(() => {
       mult: formatMult(multiplier.value)
     });
   }
-  if (owned.value - stake.value + quote.value.payout > PHD_MAX) {
+  // The server checks held + invested (phdTotal) too.
+  if (owned.value + game.phdInvested - stake.value + quote.value.payout > PHD_MAX) {
     return t("upgrader.errors.limit");
   }
   return null;

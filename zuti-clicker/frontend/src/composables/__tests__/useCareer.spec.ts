@@ -161,16 +161,32 @@ describe("useCareer", () => {
       expect(game.careerWindowId).toBe(3);
     });
 
-    it("close needs no flush", async () => {
+    it("regression: close flushes first and adopts only the career, never a stale balance", async () => {
       loginAs();
-      useGameStore().applyCareerWindow(true, 1);
-      vi.mocked(api.career.close).mockResolvedValue(
-        state({ career: { windowOpen: false, windowId: 1, phdInvested: 0, nodes: [] } })
-      );
+      const game = useGameStore();
+      // A prestige just opened the window locally; its save is what the flush sends.
+      game.phdCount = 12;
+      game.applyCareerWindow(true, 1);
+      const order: string[] = [];
+      vi.mocked(api.save.store).mockImplementation(async () => {
+        order.push("flush");
+        return savedOk();
+      });
+      vi.mocked(api.career.close).mockImplementation(async () => {
+        order.push("close");
+        // A reply whose balance predates something: it must not be adopted.
+        return state({
+          phdCount: 10,
+          upgraderSeq: 99,
+          career: { windowOpen: false, windowId: 1, phdInvested: 0, nodes: [] }
+        });
+      });
       const career = mountCareer();
       expect(await career.close()).toBe(true);
-      expect(api.save.store).not.toHaveBeenCalled();
-      expect(useGameStore().careerWindowOpen).toBe(false);
+      expect(order).toEqual(["flush", "close"]);
+      expect(game.careerWindowOpen).toBe(false);
+      expect(game.phdCount).toBe(12);
+      expect(game.upgraderSeq).toBe(0);
     });
   });
 

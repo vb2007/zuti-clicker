@@ -402,7 +402,37 @@ describe("saveStore", () => {
       expect(api.save.store).toHaveBeenCalledTimes(1);
     });
 
-    it("refuses a second concurrent lock", async () => {
+    it("regression: a second lock holder waits its turn instead of colliding", async () => {
+      loginAs();
+      vi.mocked(api.save.store).mockResolvedValue(ok());
+      const save = useSaveStore();
+      let release!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const order: string[] = [];
+      const first = save.withSyncLock(async () => {
+        await gate;
+        order.push("first");
+      });
+      await vi.waitFor(() => expect(api.save.store).toHaveBeenCalledTimes(1));
+
+      const second = save.withSyncLock(async () => {
+        order.push("second");
+        return "x";
+      });
+      // Still the first holder's turn: the second hasn't even flushed yet.
+      await Promise.resolve();
+      expect(api.save.store).toHaveBeenCalledTimes(1);
+      release();
+      await expect(second).resolves.toBe("x");
+      await first;
+      expect(order).toEqual(["first", "second"]);
+      // ...and it flushed the then-current state itself before its work.
+      expect(api.save.store).toHaveBeenCalledTimes(2);
+    });
+
+    it("an ordinary sync waits until no holder is left", async () => {
       loginAs();
       vi.mocked(api.save.store).mockResolvedValue(ok());
       const save = useSaveStore();
@@ -411,11 +441,22 @@ describe("saveStore", () => {
         release = r;
       });
       const first = save.withSyncLock(() => gate);
+      const second = save.withSyncLock(async () => undefined);
       await vi.waitFor(() => expect(api.save.store).toHaveBeenCalledTimes(1));
-
-      await expect(save.withSyncLock(async () => "x")).rejects.toThrow(/already held/);
+      await save.sync();
+      expect(api.save.store).toHaveBeenCalledTimes(1);
       release();
-      await first;
+      await Promise.all([first, second]);
+      await vi.waitFor(() => expect(api.save.store).toHaveBeenCalledTimes(3));
+    });
+
+    it("reload() takes the lock without flushing", async () => {
+      loginAs();
+      vi.mocked(api.save.load).mockResolvedValue({ save: null });
+      const save = useSaveStore();
+      await save.reload();
+      expect(api.save.store).not.toHaveBeenCalled();
+      expect(api.save.load).toHaveBeenCalled();
     });
 
     it("guests: just runs the work — nothing to flush", async () => {
@@ -423,6 +464,41 @@ describe("saveStore", () => {
       const result = await save.withSyncLock(async () => "guest");
       expect(result).toBe("guest");
       expect(api.save.store).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Academic Career window from PUT /save replies", () => {
+    const savedWith = (windowOpen: boolean, windowId: number) => ({
+      message: "ok",
+      savedAt: new Date().toISOString(),
+      career: { windowOpen, windowId }
+    });
+
+    it("adopts the window a prestige save opened", async () => {
+      loginAs();
+      vi.mocked(api.save.store).mockResolvedValue(savedWith(true, 3));
+      const game = useGameStore();
+      await useSaveStore().sync();
+      expect(game.careerWindowOpen).toBe(true);
+      expect(game.careerWindowId).toBe(3);
+    });
+
+    it("regression: a reply to a save made before a prestige doesn't shut the window it opened", async () => {
+      loginAs();
+      const game = useGameStore();
+      let reply!: (v: ReturnType<typeof savedWith>) => void;
+      vi.mocked(api.save.store).mockImplementationOnce(
+        () => new Promise((r) => (reply = r))
+      );
+      const inFlight = useSaveStore().sync();
+      // The prestige lands while that autosave is on its way.
+      game.runTokensEarned = 4_000_000;
+      game.prestige();
+      expect(game.careerWindowOpen).toBe(true);
+      vi.mocked(api.save.store).mockResolvedValue(savedWith(true, 1));
+      reply(savedWith(false, 0));
+      await inFlight;
+      expect(game.careerWindowOpen).toBe(true);
     });
   });
 

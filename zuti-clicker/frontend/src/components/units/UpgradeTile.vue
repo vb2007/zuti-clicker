@@ -160,7 +160,7 @@ function buy(e: MouseEvent) {
   >
     <span class="tile-name">{{ t(nameKey) }}</span>
     <span class="tile-effect">{{ effectLabel }}</span>
-    <span class="tile-cost">{{ formatNumber(def.cost) }}</span>
+    <span class="tile-cost">{{ formatNumber(game.getUpgradeCost(def.id)) }}</span>
   </button>
 
   <TooltipCard
@@ -173,7 +173,7 @@ function buy(e: MouseEvent) {
   >
     <div class="tip-row">
       <span>{{ t("upgrades.tooltipCost") }}</span>
-      <span class="tip-val">{{ formatNumber(def.cost) }}</span>
+      <span class="tip-val">{{ formatNumber(game.getUpgradeCost(def.id)) }}</span>
     </div>
     <div class="tip-row">
       <span>{{ t("upgrades.tooltipEffect") }}</span>

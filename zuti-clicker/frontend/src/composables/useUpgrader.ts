@@ -86,7 +86,8 @@ export function useUpgrader() {
     // assume either — take the server's word, and say the outcome wasn't confirmed.
     if (auth.isLoggedIn) {
       toast.push("error", t("upgrader.errors.unconfirmed"));
-      void save.load();
+      // Under the sync lock: never interleaved with another action's flush.
+      void save.reload();
     } else {
       toast.push("error", t("upgrader.errors.generic"));
     }
@@ -103,7 +104,9 @@ export function useUpgrader() {
       antiCheat.recordClick(false);
       return null;
     }
-    if (antiCheat.isRestricted || game.spinPending) return null;
+    // Any server-side change in progress (a spin, an Academic Career change)
+    // must settle first — they all move PhDs and share the save sync lock.
+    if (antiCheat.isRestricted || game.serverActionPending) return null;
 
     // The modal only offers valid bets; this is the same check, defensively.
     const hundredths = toHundredths(multiplier);

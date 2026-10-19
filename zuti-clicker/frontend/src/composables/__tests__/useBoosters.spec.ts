@@ -9,22 +9,21 @@ import { useToastStore } from "@/stores/toastStore";
 import { api } from "@/lib/api";
 import { BOOSTER_SPAWN_MIN_SECS } from "@/utils/gameConstants";
 
-vi.mock("@/lib/api", () => ({
-  api: {
-    boosters: {
-      claim: vi.fn()
+// Only `api` is replaced: useBoosters reaches saveStore (the windfall claim's
+// sync lock), whose autosave reads the real isStaleSaveError & co.
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    api: {
+      save: { load: vi.fn(), store: vi.fn(), reset: vi.fn() },
+      settings: { load: vi.fn(), store: vi.fn() },
+      boosters: {
+        claim: vi.fn()
+      }
     }
-  },
-  ApiError: class ApiError extends Error {
-    status: number;
-    body: unknown;
-    constructor(status: number, message: string, body?: unknown) {
-      super(message);
-      this.status = status;
-      this.body = body;
-    }
-  }
-}));
+  };
+});
 
 function loginAs(id = 1) {
   const auth = useAuthStore();

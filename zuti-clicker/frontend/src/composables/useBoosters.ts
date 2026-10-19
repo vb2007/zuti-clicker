@@ -97,6 +97,12 @@ export function useBoosters(getLayout?: () => PlacementLayout | null) {
   }
 
   function showPickup(): void {
+    // Nothing spawns while the Academic Career purchase window is open — the
+    // game is paused behind it, and a buff would only burn down unused.
+    if (game.careerWindowOpen) {
+      scheduleNextSpawn();
+      return;
+    }
     // Measured at spawn time (not cached): the area and circle resize with the
     // viewport, and a pickup must clear the circle as it is *now*.
     pickupPosition.value = randomSafePosition(getLayout?.() ?? DEFAULT_LAYOUT);
@@ -129,13 +135,21 @@ export function useBoosters(getLayout?: () => PlacementLayout | null) {
         // goes out until the grant has been applied here (an in-between save
         // would carry the old balance and an outdated counter).
         const claim = (): Promise<ClaimBoosterResponse> => api.boosters.claim();
+        let applied = false;
         const res = game.careerModifiers.unlockedBoosters.includes("windfall")
           ? await save.withSyncLock(async () => {
               const r = await claim();
               if (r.windfall) game.applyWindfall(r.windfall.granted, r.windfall.upgraderSeq);
+              applied = true;
               return r;
             })
           : await claim();
+        // A windfall can come back even without the lock (this tab's tree was
+        // out of date — another tab unlocked it): the server has credited it
+        // either way, so it is applied either way.
+        if (res.windfall && !applied) {
+          game.applyWindfall(res.windfall.granted, res.windfall.upgraderSeq);
+        }
         if (res.windfall) {
           announce(res.boosterId, res.windfall.granted);
         } else {

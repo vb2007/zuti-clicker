@@ -156,6 +156,10 @@ export const useGameStore = defineStore("game", () => {
   // server load. A guest's tree doesn't carry over to an account (the server
   // has no record of it), so neither may what it earned — see forfeitGuestCareer.
   const careerBonusPhdSinceLoad = ref(0);
+  // Whether this tree has changed outside the server's knowledge (a guest's
+  // local buys/refunds). Only then is there anything to forfeit at login — a
+  // server-loaded tree kept across a logout is the account's own.
+  const careerChangedLocally = ref(false);
   // Lecture momentum meter (0..1) and when the last manual click landed.
   const momentum = ref(0);
   let lastClickAt = 0;
@@ -447,6 +451,8 @@ export const useGameStore = defineStore("game", () => {
     // a save showing run time or clicks while the window is open ends the
     // window (api/src/constants/career.ts), so nodes bought "at the prestige"
     // can't be used for a run and refunded before the next one.
+    // Timed buffs run on wall-clock time, paused or not.
+    _sweepExpiredBoosters();
     if (antiCheat.isRestricted || careerWindowOpen.value) return;
     const earned = (tokensPerSecond.value + autoClickIncome.value) * delta;
     if (momentum.value > 0 && Date.now() - lastClickAt > MOMENTUM_GRACE_MS) {
@@ -519,7 +525,8 @@ export const useGameStore = defineStore("game", () => {
    * saved (and its reply is adopted), so this is just the local mirror.
    */
   function prestige(): number {
-    if (antiCheat.isRestricted || serverActionPending.value) return 0;
+    // Not while a purchase window is open: that run hasn't started yet.
+    if (antiCheat.isRestricted || serverActionPending.value || careerWindowOpen.value) return 0;
     const gained = phdGain.value; // MUST be read before any reset below
     if (gained < 1) return 0;
     const mods = careerModifiers.value;
@@ -567,6 +574,7 @@ export const useGameStore = defineStore("game", () => {
       .map((n) => ({ nodeId: n.nodeId, cost: n.cost, refundable: n.refundable }));
     careerWindowOpen.value = state.career.windowOpen;
     careerWindowId.value = state.career.windowId;
+    careerChangedLocally.value = false;
   }
 
   /** The window state a PUT /save reply reports (a save carrying a prestige opens one). */
@@ -585,6 +593,7 @@ export const useGameStore = defineStore("game", () => {
     const cost = CAREER_NODES_BY_ID.get(nodeId)!.cost;
     phdCount.value -= cost;
     careerNodes.value = [...careerNodes.value, { nodeId, cost, refundable: true }];
+    careerChangedLocally.value = true;
     return true;
   }
 
@@ -610,6 +619,7 @@ export const useGameStore = defineStore("game", () => {
     const set = new Set(preview.nodeIds);
     careerNodes.value = careerNodes.value.filter((n) => !set.has(n.nodeId));
     phdCount.value += preview.phd;
+    careerChangedLocally.value = true;
     return true;
   }
 
@@ -625,6 +635,8 @@ export const useGameStore = defineStore("game", () => {
    * Returns whether there was anything to undo.
    */
   function forfeitGuestCareer(): boolean {
+    if (!careerChangedLocally.value) return false;
+    careerChangedLocally.value = false;
     const hadAny = careerNodes.value.length > 0 || careerBonusPhdSinceLoad.value > 0;
     phdCount.value = Math.max(0, phdCount.value + phdInvested.value - careerBonusPhdSinceLoad.value);
     careerNodes.value = [];
@@ -665,6 +677,7 @@ export const useGameStore = defineStore("game", () => {
     careerWindowOpen.value = false;
     careerWindowId.value = 0;
     careerBonusPhdSinceLoad.value = 0;
+    careerChangedLocally.value = false;
     momentum.value = 0;
   }
 

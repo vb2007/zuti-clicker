@@ -36,6 +36,27 @@ const MAX_RUN_SECS = 6 * 3600;
 const MAX_HOURS = Number(process.env["SIM_HOURS"] ?? 300);
 // SIM_INVEST=0 models a pure hoarder (never invests) for comparison.
 const INVEST_SHARE = Number(process.env["SIM_INVEST"] ?? 0.5);
+// SIM_ORDER=value buys the nodes that compound fastest first (PhD gain, then
+// production), cheapest first within each; the default is cheapest first.
+const VALUE_ORDER = process.env["SIM_ORDER"] === "value";
+const VALUE_RANK: Record<string, number> = {
+  phdGainPct: 0,
+  phdProductionBonusAdd: 1,
+  productionMult: 2,
+  unitProductionMult: 3,
+  productionPct: 4
+};
+// Seeded, so a run is reproducible (SIM_SEED, default 1). mulberry32.
+function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 function buyGreedy(game: ReturnType<typeof useGameStore>) {
   for (let guard = 0; guard < 200; guard++) {
@@ -68,7 +89,11 @@ function invest(game: ReturnType<typeof useGameStore>) {
   for (;;) {
     const next = CAREER_NODES.filter(
       (n) => careerBuyRefusal(n.id, game.careerNodeIds, game.phdCount - budgetFloor) === null
-    ).sort((a, b) => a.cost - b.cost)[0];
+    ).sort((a, b) =>
+      VALUE_ORDER
+        ? (VALUE_RANK[a.kind] ?? 9) - (VALUE_RANK[b.kind] ?? 9) || a.cost - b.cost
+        : a.cost - b.cost
+    )[0];
     if (!next || !game.buyCareerNodeLocal(next.id)) return;
   }
 }
@@ -78,6 +103,7 @@ describe.skipIf(!RUN)("Academic Career balance simulation", () => {
     // Simulated time drives the clock too: boosters expire and momentum
     // drains by Date.now(), and hundreds of simulated hours pass in seconds.
     vi.useFakeTimers({ now: 0 });
+    vi.spyOn(Math, "random").mockImplementation(seededRandom(Number(process.env["SIM_SEED"] ?? 1)));
     setActivePinia(createPinia());
     const game = useGameStore();
     const total = CAREER_NODES.reduce((s, n) => s + n.cost, 0);
@@ -162,6 +188,7 @@ describe.skipIf(!RUN)("Academic Career balance simulation", () => {
       CAREER_NODES_BY_ID.get("habilitation")!.cost
     );
     vi.useRealTimers();
+    vi.restoreAllMocks();
     expect(prestiges).toBeGreaterThan(0);
   }, 3_600_000);
 });
