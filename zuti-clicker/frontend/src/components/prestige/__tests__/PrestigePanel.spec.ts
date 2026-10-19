@@ -128,6 +128,21 @@ describe("PrestigePanel", () => {
     });
   });
 
+  describe("Academic Career entry button", () => {
+    it("is hidden before the first prestige, then opens the tree (view mode) with its progress", async () => {
+      const game = useGameStore();
+      game.totalTokensEarned = 1_000_000;
+      expect(mount(PrestigePanel).find(".career-btn").exists()).toBe(false);
+      game.prestigeCount = 1;
+      const ui = useUiStore();
+      const wrapper = mount(PrestigePanel);
+      const btn = wrapper.find(".career-btn");
+      expect(btn.text()).toMatch(/0\/\d+/);
+      await btn.trigger("click");
+      expect(ui.careerOpen).toBe(true);
+    });
+  });
+
   describe("Upgrader entry button", () => {
     function revealed() {
       const game = useGameStore();
