@@ -22,5 +22,10 @@ module.exports = {
   },
   testMatch: ["<rootDir>/src/tests/**/*.test.ts"],
   verbose: true,
+  // Every suite talks to a live server and a shared remote database, and
+  // several spawn their own servers (one tsx compile each) at the same moment.
+  // On the self-hosted CI runner that start-up burst can push a plain
+  // register/login past Jest's 5 s default — a slow request, not a failure.
+  testTimeout: 20_000,
   forceExit: true
 };

@@ -22,8 +22,14 @@ async function registerAndLogin(): Promise<string> {
 // The shared server runs in "monitor" mode (see testServerHelper.ts), which
 // logs but never clamps or rejects — so a test can seed any PhD balance
 // directly through PUT /save without having to actually prestige.
-async function userWithPhds(phdCount: number): Promise<string> {
+// `hidden`: for balances far beyond anything else the suite writes — the
+// account opts out of the leaderboards first, so it can't outrank
+// leaderboard.test.ts's own users on the shared database.
+async function userWithPhds(phdCount: number, hidden = false): Promise<string> {
   const cookie = await registerAndLogin();
+  if (hidden) {
+    await api.put("/settings").set("Cookie", cookie).send({ hideFromLeaderboards: true });
+  }
   const res = await api
     .put("/save")
     .set("Cookie", cookie)
@@ -307,7 +313,7 @@ describe("Upgrader endpoint - overflow guard", () => {
   const NEAR_MAX = Number.MAX_SAFE_INTEGER - 1_000_000_000;
 
   it("refuses a spin whose win could pass the exact range: 409 LIMIT_REACHED, nothing changes", async () => {
-    const cookie = await userWithPhds(NEAR_MAX);
+    const cookie = await userWithPhds(NEAR_MAX, true);
     // A win would add 1e9 net PhDs, past 2^53 - 1.
     const res = await spin(cookie, { stake: 1_000_000_000, multiplier: 2.01 });
     expect(res.status).toBe(409);
@@ -319,13 +325,13 @@ describe("Upgrader endpoint - overflow guard", () => {
   });
 
   it("still allows a spin at the same balance whose win fits", async () => {
-    const cookie = await userWithPhds(NEAR_MAX);
+    const cookie = await userWithPhds(NEAR_MAX, true);
     const res = await spin(cookie, { stake: 1000, multiplier: 2 });
     expect(res.status).toBe(200);
   });
 
   it("regression: balances past the old INT range can spin (and stakes stay capped per spin)", async () => {
-    const cookie = await userWithPhds(5_000_000_000);
+    const cookie = await userWithPhds(5_000_000_000, true);
     expect((await spin(cookie, { stake: 2_000_000_000, multiplier: 2 })).status).toBe(200);
   });
 });

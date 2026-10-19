@@ -22,8 +22,14 @@ async function registerAndLogin(): Promise<string> {
 // The shared server runs in "monitor" (see testServerHelper.ts): it logs but
 // never clamps, so a test can seed any PhD balance. A first-ever save that
 // carries a prestige opens the purchase window (windowId 1).
-async function userWithWindow(phdCount: number, prestigeCount = 1) {
+// `hidden`: for balances far beyond anything else the suite writes — the
+// account opts out of the leaderboards first, so it can't outrank
+// leaderboard.test.ts's own users on the shared database.
+async function userWithWindow(phdCount: number, prestigeCount = 1, hidden = false) {
   const cookie = await registerAndLogin();
+  if (hidden) {
+    await api.put("/settings").set("Cookie", cookie).send({ hideFromLeaderboards: true });
+  }
   const res = await api
     .put("/save")
     .set("Cookie", cookie)
@@ -447,7 +453,7 @@ describe("Career and the rest of the save", () => {
 describe("Career and PUT /save limits", () => {
   it("regression: PhD balances past the old INT range are stored exactly", async () => {
     const big = 3_000_000_000_017; // far past 2147483647, still an exact whole number
-    const { cookie } = await userWithWindow(big);
+    const { cookie } = await userWithWindow(big, 1, true);
     expect((await load(cookie)).phdCount).toBe(big);
     const bought = await buy(cookie, ROOT);
     expect(bought.body.phdCount).toBe(big - cost(ROOT));
@@ -467,7 +473,7 @@ describe("Career and PUT /save limits", () => {
 
   it("refuses (400 PHD_LIMIT) a phdCount that, with the invested PhDs, passes 2^53 - 1", async () => {
     const MAX = Number.MAX_SAFE_INTEGER;
-    const { cookie } = await userWithWindow(MAX);
+    const { cookie } = await userWithWindow(MAX, 1, true);
     const bought = await buy(cookie, ROOT);
     expect(bought.status).toBe(200);
     const put = await api

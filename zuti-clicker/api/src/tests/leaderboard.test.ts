@@ -23,7 +23,9 @@ async function registerAndLogin(): Promise<string> {
 // literal elsewhere is PRESTIGE_SAVE's totalTokensEarned at 1.2e7), so these
 // test users are guaranteed to sit at the very top of the ranking regardless
 // of what other test files write to the shared zutiClickerTest database
-// concurrently.
+// concurrently. (The few tests that seed even larger PhD balances — the
+// widened DOUBLE columns' range checks in career.test.ts / upgrader.test.ts —
+// hide their accounts from the leaderboards before seeding.)
 const HUGE_TOKENS = 900_000_000_000;
 const HUGE_CLICKS = 2_000_000_000; // still within MySQL's signed INT32 range
 const HUGE_PHD = 2_000_000_000;
