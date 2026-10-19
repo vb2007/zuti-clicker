@@ -99,11 +99,11 @@ A bal oldali panel valós időben mutatja a játékod aktuális állását:
 | **Total Earned** | Az összes valaha szerzett token (nem csökken vásárlásnál) |
 | **Total Clicks** | Az összes eddigi kattintásod száma |
 | **Time Played** | Az eltelt játékidő |
-| **PhDs Earned** | Az eddig megszerzett PhD-k száma (lásd „Fokozat (Prestige)" lentebb) |
+| **PhDs Held** | A jelenleg birtokolt PhD-k száma (lásd „Fokozat (Prestige)" lentebb) — ha már fektettél be a Tudományos pályába, alatta egy **PhDs Invested** sor is mutatja, mennyit |
 
 A token/s érték a játék elején 0.00-ként jelenik meg, amíg az első egységeket meg nem veszed.
 
-A „Total Earned", „Total Clicks", „Time Played" és „PhDs Earned" statisztikák **egész játékodra** vonatkoznak, és fokozatszerzés (prestige) után sem állnak vissza. Ezek alatt egy „This Run" (Ez a menet) blokk mutatja ugyanezt **csak a jelenlegi menetre**: **Run Earned**, **Run Clicks**, **Run Time** — ezek nullázódnak minden fokozatszerzéskor.
+A „Total Earned", „Total Clicks", „Time Played" és „PhDs Held" statisztikák **egész játékodra** vonatkoznak, és fokozatszerzés (prestige) után sem állnak vissza. Ezek alatt egy „This Run" (Ez a menet) blokk mutatja ugyanezt **csak a jelenlegi menetre**: **Run Earned**, **Run Clicks**, **Run Time** — ezek nullázódnak minden fokozatszerzéskor.
 
 ---
 
@@ -238,7 +238,7 @@ nulláról építi fel újra.
 
 Amint összesen (élete során, nem csak az aktuális menetben) legalább 100 000 tokent szereztél, a bal oldali oszlop alján megjelenik a **„Fokozat"** panel — ugyanaz a fokozatos feltárási logika, mint az egységeknél: a panel egyszer megjelenve mindig látható marad, akkor is, ha egy új menetet éppen csak elkezdtél. A tényleges fokozatszerzéshez (a „Defend Thesis" gomb aktiválódásához) az **aktuális menetben** kell legalább 1 000 000 tokent szerezned:
 
-- **PHDS OWNED**: Az eddig megszerzett PhD-k száma.
+- **PHDS OWNED**: A jelenleg birtokolt PhD-k száma (a Tudományos pályába befektetettek nélkül).
 - **Progress to next PhD**: Egy folyamatjelző, ami mutatja, mennyire vagy közel a következő PhD-hoz, alatta pedig egy sor mutatja, pontosan mennyi token hiányzik még hozzá.
 - **„Defend Thesis" (Disszertáció megvédése) gomb**: Aktívvá válik, amint legalább 1 PhD-t érsz el az aktuális menetben.
 
@@ -256,15 +256,16 @@ megnyíló megerősítő ablakban jelennek meg, hogy a bal oldali oszlop ne
 duplikálja ugyanazt a két számot. A megerősítő ablak azt is megmutatja,
 pontosan hány PhD-t kapnál. **Fontos**: a fokozatszerzés véglegesen
 **visszaállítja a jelenlegi tokenjeidet, az összes megvásárolt egységet és
-fejlesztést, valamint a menet statisztikáit (Run Earned/Clicks/Time)**,
-cserébe a PhD-id és az ebből adódó bónuszok **véglegesen megmaradnak**, és
+fejlesztést, valamint a menet statisztikáit (Run Earned/Clicks/Time)** — kivéve
+azt, amit a Tudományos pályád megtart (egységek egy része, fejlesztéscsaládok,
+kezdőtőke; a megerősítő ablak felsorolja) —, cserébe a PhD-id és az ebből adódó bónuszok **véglegesen megmaradnak**, és
 minden jövőbeli menetedben érvényesülnek. Egy éppen aktív booster viszont
 túléli a fokozatszerzést — az egy időzített esemény, nem a menethez kötött
 haladás.
 
 Vendégként is fokozatot szerezhetsz — ilyenkor a megerősítő ablak egy külön figyelmeztetést mutat, hogy a PhD-id (a többi haladásoddal együtt) elvesznek, ha bezárod a lapot bejelentkezés nélkül.
 
-Sikeres fokozatszerzés után egy teljes képernyős „ünneplés" jelenik meg: a megszerzett PhD-k száma animálva számol fel, majd egy „Begin Anew" (Új kezdet) gombbal térhetsz vissza a (már visszaállított) játékhoz. Ez az ünneplés a Beállítások panelben „Brief"-re (Rövidre) kapcsolható, ekkor csak a megerősítő ablak jelenik meg, teljes képernyős animáció nélkül.
+Sikeres fokozatszerzés után egy teljes képernyős „ünneplés" jelenik meg: a megszerzett PhD-k száma animálva számol fel, majd egy „Begin Anew" (Új kezdet) gombbal térhetsz vissza a (már visszaállított) játékhoz. Utána megnyílik a **Tudományos pálya** vásárlási ablaka (lásd lent): itt befektetheted a PhD-ket, vagy megtarthatod őket — az új menet akkor indul, amikor végeztél. Ez az ünneplés a Beállítások panelben „Brief"-re (Rövidre) kapcsolható, ekkor csak a megerősítő ablak jelenik meg, teljes képernyős animáció nélkül.
 
 ---
 
@@ -289,7 +290,43 @@ Az első fokozatszerzésed után a „Fokozat" panelen, a „Defend Thesis" gomb
 
 **Bejelentkezve** a pörgetés előtt a játék automatikusan elmenti az állapotodat, és az eredmény a szerveren is rögzül. Ha ugyanazt a fiókot egy másik lapon is használod, és ott pörgettél, ezen a lapon a következő mentés „a haladásod máshol megváltozott" értesítést kap, és a legfrissebb mentést tölti be. **Vendégként** a pörgetés csak a játékban él — a nyert vagy elvesztett PhD-k a többi haladásoddal együtt elvesznek, ha bezárod a lapot (az ablak ezt ki is írja). Ha vendégként pörgettél, majd bejelentkezel, a keréken nyert vagy elvesztett PhD-k **nem kerülnek át a fiókodba** (a játék értesít erről) — a fiókod haladása csak a fokozatszerzésből származó PhD-ket tartalmazza.
 
-A PhD-ranglista a *jelenlegi* PhD-készletedet mutatja, ezért az Upgrader közvetlenül befolyásolja a helyezésedet.
+A PhD-ranglista a birtokolt és a Tudományos pályába befektetett PhD-id összegét mutatja, ezért az Upgrader nyeresége és vesztesége közvetlenül befolyásolja a helyezésedet (a befektetés viszont nem). Egy pörgetés tétje legfeljebb 2 147 483 647 PhD lehet.
+
+## Tudományos pálya (Academic Career)
+
+A PhD-k másik, **végleges** felhasználási módja. Az első fokozatszerzésed után a „Fokozat" panelen megjelenik a **„Tudományos pálya"** gomb (mellette, hogy a fa hány csomópontja a tiéd már, pl. „12/253"). Egy teljes képernyős fát nyit meg: alul a gyökér (**Habilitáció**), fölötte hat ág ágazik szét felfelé — **Kutatás** (termelés), **Oktatás** (kattintás, kritikus találat, előadói lendület), **Adminisztráció** (árak, és ami megmarad fokozatszerzéskor), **Konferenciák** (boosterek), **Disszertáció** (maguk a PhD-k) és **Labor** (automatizálás). Összesen ~250 csomópont; mindegyik **egyetlen** dolgot javít. A megvett csomópontok **örökre a tiéid** — a fokozatszerzés sem veszi el őket.
+
+**Mikor lehet vásárolni?** Csak közvetlenül egy fokozatszerzés után. A fokozatszerzés (és az ünneplés) után a fa magától megnyílik: ez a **vásárlási ablak**. Az ablak alatt a játék **szünetel** — az új menet akkor indul, amikor végeztél. Az ablakot véletlenül nem lehet bezárni (az Esc, a Vissza gomb és a fára kattintás sem zárja be); csak a lap alján lévő gombbal: **„Megtartom a PhD-ket"** (ha semmit nem vettél), vagy **„Kész"**. Ha közben bezárod a lapot, bejelentkezve a következő megnyitáskor (akár másik eszközön is) a fa ugyanott vár. Máskor a Fokozat panel gombjával bármikor megnézheted a fát, de akkor csak olvasható.
+
+**Megtartani vagy befektetni?** Amit befektetsz, az a PhD már nem „birtokolt": **elveszíti a +2% termelés / −0,5% egységár bónuszát.** A részletpanel ezért vásárlás előtt kiírja, mennyi lesz utána a PhD-bónuszod (pl. „×7,80 → ×7,56"), és a vásárlás teljes hatását a termelésedre („Termelés összesen: ×0,98"). Ha egy vásárlás a termelésed nagy részét elvinné, ez a sor sárgán, feltűnően jelenik meg. A legtöbbször megéri a PhD-k egy részét megtartani — a fa egésze **jó néhány száz óra játék**, a leggyorsabb stratégiával is legalább ~100.
+
+**A fa olvasása:**
+
+- **Teli kék** kör: már a tiéd.
+- **Teli kék, szaggatott sárga gyűrűvel**: ebben az ablakban vetted — még **visszavonhatod**.
+- **Kék gyűrű**: most megvehető (megvan az előfeltétele, és van rá elég PhD-d).
+- **Sima gyűrű**: elérhető, de még nincs rá elég PhD-d (vagy nincs nyitva az ablak).
+- **Szaggatott, halvány kör**: zárolt — előbb az alatta lévőt kell megvenned.
+- A nagyobb, ikonos körök a **kulcscsomópontok** (egyedi névvel), a kisebb, római számos körök egy sáv fokozatai (pl. „Pályázatírás IV").
+
+A „?" gomb (a nagyítás fölött) ugyanezt a jelmagyarázatot mutatja.
+
+**Mozgatás:** húzd (egérrel vagy egy ujjal) a fát; **két ujjal** csippentve, egérgörgővel vagy a +/− gombokkal nagyíthatsz; a negyedik gomb az egész fát mutatja; dupla koppintás ott nagyít. Egy csomópontra koppintva (kattintva) megnyílik a részletpanel — ez **nem vásárol**, a vásárláshoz a panel gombja kell. Billentyűzettel a nyilak a fában lépkednek (fel: a ráépülő csomópont, le: az előfeltétel, oldalra: a szomszéd). Telefonon a részletpanel alulról csúszik be (fekvő telefonon jobbról), és a kiválasztott csomópont fölötte marad látható.
+
+**Visszavonás:** amit az aktuális ablakban vettél, az ablak bezárásáig visszavonhatod — teljes áron, **a ráépülő, szintén most vett csomópontokkal együtt** (a gomb kiírja, mennyit és hány PhD-t kapsz vissza). A korábbi ablakokban vett csomópontok véglegesek. Ha az ablak nyitva van, és mégis elindul a menet (pl. egy másik lapon kattintasz), a vásárlásaid véglegessé válnak.
+
+**Amit a fa adhat** — néhány a különlegesebbek közül:
+
+- **Előadói lendület**: ha folyamatosan kattintasz, egy mérő töltődik (a kattintás/mp jelző mellett látszik), és a kattintásaid többet érnek; szünetben a mérő lassan elfogy.
+- **Demonstrátorok**: automatikusan kattintanak helyetted (a bevételt adják, de nem számítanak a kattintás-statisztikádba).
+- **Beszerzési előadó / Fejlesztési ügyintéző**: automatikusan megveszik a legjobb ár-érték arányú egységet, illetve a legolcsóbb fejlesztést, amint megengedheted. A boltban egy **„Auto"** kapcsolóval ki-be kapcsolhatod őket (a kapcsoló állását ez a böngésző jegyzi meg).
+- **Véglegesítés, Alapítványi vagyon, Indulótámogatás**: fokozatszerzéskor minden egység egy része, bizonyos fejlesztéscsaládok és egy kezdőtőke **megmarad**. Ezek a **következő** fokozatszerzéstől hatnak (a panel kiírja), és a fokozatszerzés megerősítő ablaka is felsorolja, mi marad meg.
+- **Új boosterek**: a **Kutatási Bónusz** azonnal jóváír néhány perc termelést, a **Heuréka-pillanat** egy ideig +50% kritikus esélyt ad.
+- **Disszertáció ág**: több PhD fokozatszerzésenként, és erősebb bónusz minden birtokolt PhD után.
+
+**Vendégként** a fa csak a játékban él. Ha vendégként vásároltál, majd bejelentkezel, a vendég-fa **nem kerül át a fiókodba**: a csomópontok árát visszakapod (a játék szól), a fiók pedig a következő fokozatszerzésnél nyit neked vásárlási ablakot.
+
+A **PhD-ranglista** a birtokolt és a befektetett PhD-id **összegét** mutatja, így a fába fektetés nem ront a helyezéseden.
 
 ---
 
@@ -334,7 +371,7 @@ Ranglisták ablak. Négy mérőszám közül választhatsz a fül-váltóval:
 
 - **Tokens**: Az összes valaha szerzett token (mint a Státuszoszlop „Total Earned" mezője).
 - **Clicks**: Az összes eddigi kattintás.
-- **PhDs**: Az eddig megszerzett PhD-k száma.
+- **PhDs**: A birtokolt és a Tudományos pályába befektetett PhD-k összege.
 - **Playtime**: Az eltelt játékidő.
 
 Az ablakot a jobb felső ✕ gombbal (vagy a Vissza gombbal) zárhatod be. Keskeny

@@ -201,6 +201,7 @@ router/ → controllers/ → database/models/ → Prisma → MariaDB
 | `GET` | `/leaderboard` | kötelező | Rangsor egy adott mérőszám szerint (`tokens`, `clicks`, `phd`, `playtime`), plusz a lekérdező saját helyezése |
 | `POST` | `/boosters/claim` | kötelező | Egy véletlenszerű booster igénylése, ha a lehűlési idő már letelt — lásd lent, "Anti-cheat modell" |
 | `POST` | `/upgrader/spin` | kötelező | A PhD-kerék egy pörgetése: `{ stake, multiplier }` — a szerver dobja és számolja el a kimenetelt — lásd lent, "Anti-cheat modell" → "Az Upgrader" |
+| `POST` | `/career/buy`, `/career/refund`, `/career/close` | kötelező | A Tudományos pálya: egy csomópont megvétele, visszaváltása (a leszármazottakkal együtt), a vásárlási ablak bezárása — csak a fokozatszerzés után nyíló ablakban; lásd lent, "Anti-cheat modell" → "Tudományos pálya" |
 | `POST` | `/anticheat/report` | kötelező | Kattintás-időzítési telemetria digest beküldése (fix ütemezéssel + azonnal lokális detekció esetén) — lásd lent, "Anti-cheat modell" |
 | `GET` | `/anticheat/status` | kötelező | A jelenlegi korlátozási állapot (`isRestricted`, `restrictedUntil`, `strikeCount`) lekérdezése |
 
@@ -210,7 +211,9 @@ Egy formailag helyes, de az előző mentéshez és az eltelt időhöz képest fi
 
 Egy hatodik, szintén opcionális mező, az `upgrades` (megszerzett fejlesztés-azonosítók tömbje) ugyanezt a mintát követi: hiányzása esetén a szerver a már tárolt fejlesztéseket változatlanul hagyja, jelenléte esetén viszont — az `units` mezőhöz hasonlóan — teljesen felülírja őket. Minden elemének egy ismert fejlesztés-azonosítónak kell lennie (`api/src/constants/upgrades.ts`'s `KNOWN_UPGRADE_IDS`), különben a végpont `400`-at ad vissza. A `GET /save` válasza az `upgrades` mellett egy csak-olvasható `activeBoosters` tömböt is tartalmaz (a jelenleg aktív boosterek, `remainingMs` hátralévő idővel) — ezt a `PUT /save` sosem fogadja el, kizárólag a `POST /boosters/claim` hozhatja létre vagy frissítheti.
 
-A hetedik, szintén opcionális mező, az `upgraderSeq` az Upgrader pörgetés-számlálója: a `GET /save` és a `POST /upgrader/spin` adja ki, a kliens pedig minden mentésnél visszaküldi. A `PUT /save` **sosem tárolja** — kizárólag az írást védi: ha nem egyezik a fiók aktuális értékével, a mentés egy pörgetés *előtti* állapotot hordoz, ezért `409`-et kap `code: "save_stale"` kóddal (nem strike, minden `ANTICHEAT_MODE` alatt), és semmi nem íródik. Hiányzó értéke `0`-nak számít (egy sosem pörgetett fióknál ez helyes). Lásd lent, "Az Upgrader".
+A `PUT /save` a `phdCount`-ot egész számként fogadja `2^53 − 1`-ig (a PhD-oszlopok `DOUBLE`-k), és a válasza egy `career` mezőt is hordoz: a mentés nyitott-e Tudományos pálya vásárlási ablakot (egy fokozatszerzést hordozó mentés nyit) — lásd lent, "Tudományos pálya".
+
+A hetedik, szintén opcionális mező, az `upgraderSeq` az Upgrader pörgetés-számlálója: a `GET /save` és a `POST /upgrader/spin` adja ki, a kliens pedig minden mentésnél visszaküldi. A `PUT /save` **sosem tárolja** — kizárólag az írást védi: ha nem egyezik a fiók aktuális értékével, a mentés egy pörgetés (vagy egy Tudományos pálya-vásárlás/-visszaváltás, egy `windfall`-jóváírás) *előtti* állapotot hordoz, ezért `409`-et kap `code: "save_stale"` kóddal (nem strike, minden `ANTICHEAT_MODE` alatt), és semmi nem íródik. Hiányzó értéke `0`-nak számít (egy sosem pörgetett fióknál ez helyes). Lásd lent, "Az Upgrader".
 
 ### Frontend state management
 
@@ -221,17 +224,20 @@ App.vue
   ├── usePrestige()          → gameStore.prestige() -> ceremónia/szinkron
   ├── useBoosters()          → booster pickup ütemezése (spawn/láthatósági ablak) + igénylés
   ├── useUpgrader()          → egy Upgrader-pörgetés végigvitele (előzetes mentés → szerver-pörgetés → eredmény alkalmazása); UpgraderModal.vue használja
+  ├── useCareer()            → Tudományos pálya: vásárlás/visszaváltás/bezárás (előzetes mentés → szerver → állapot átvétele); a CareerOverlay.vue használja
+  ├── useAutoBuyer()         → az automatikus egység-/fejlesztésvásárlók másodpercenkénti köre (autoBuyStore: a kapcsolók localStorage-ban)
   ├── useBreakpoint()        → isCompact (matchMedia, < 760px) — a useMediaQuery() vékony burkolója
   ├── useOverlayStack()      → melyik nyitott lap/modál záródik Esc-re és a böngésző/Android Vissza gombra — lásd lent, "Overlayek és a Vissza gomb"
   ├── authStore              → session check, login/register/logout
   ├── settingsStore          → téma, nyelv, autosave, ceremónia — localStorage + szerver szinkron
-  ├── saveStore               → load/sync/reset (autosave-időzítő a settingsStore-ból olvas) + withSyncLock (lásd lent, "Az Upgrader")
-  ├── uiStore                → modál állapotok, mobilePanel ("none" | "stats" | "units"), shopTab ("units" | "upgrades")
+  ├── saveStore               → load/sync/reset (autosave-időzítő a settingsStore-ból olvas) + withSyncLock (sorba állító lock, lásd lent, "Az Upgrader" és "Tudományos pálya") + reload
+  ├── uiStore                → modál állapotok (köztük careerOpen — a fa nézet módban), mobilePanel ("none" | "stats" | "units"), shopTab ("units" | "upgrades")
   ├── toastStore             → átmeneti értesítések (pl. beállítások mentése, booster begyűjtése)
   ├── leaderboardStore       → mérőszámonkénti rangsor lekérése (nincs localStorage-gyorsítótár, mindig a szerver a forrás)
   ├── antiCheatStore         → recordClick()/recordPurchase(), isRestricted/restrictedUntil/strikeCount, telemetria-puffer
   └── gameStore              → tokenek, egységek, fejlesztések (upgrades), aktív boosterek, statisztikák, prestige állapot,
-                                upgraderSeq / spinPending / phdCountDisplay
+                                upgraderSeq / spinPending / phdCountDisplay, Tudományos pálya (careerNodes, ablak,
+                                careerModifiers, careerPending, lendület, demonstrátor-bevétel)
                                 (minden progressziót módosító akció előbb antiCheatStore.isRestricted-et ellenőrzi)
 ```
 
@@ -742,7 +748,7 @@ A játékos tetszőleges számú PhD-t tesz fel egy kerékre, egy választott sz
 
 1. `SELECT … FOR UPDATE` — **zároló** olvasás, nem sima `findUnique`. A tranzakció sima olvasása a saját kezdeti pillanatfelvételét látja, amely nem látja egy párhuzamos tranzakció commit-ját: a versenyben alulmaradó pörgetés rossz hibát kapott (méréskor 60 párhuzamos vesztesből 48 „túlcsordulást"), és elavult egyenleget jelentett. A zárolt olvasásnál a párhuzamos pörgetések sorba állnak, és mind az előző által hagyott egyenleget látja.
 2. Fedezet: `phdCount < tét` → `409` `INSUFFICIENT_PHD`, a válasz a **valós** egyenleget is tartalmazza.
-3. Túlcsordulás-előszűrés a dobás **előtt**, sima aritmetikával: ha egy nyeremény túlvinné a `phdCount` vagy az `upgraderNet` `Int` oszlopát → `409` `LIMIT_REACHED`. Így a válasz sosem függ a szerencsétől, és tartományon kívüli érték sosem jut a Prismáig.
+3. Túlcsordulás-előszűrés a dobás **előtt**, sima aritmetikával: ha egy nyeremény a `phdCount`, a `phdTotal` vagy az `upgraderNet` pontosan tárolható tartományán (`2^53 − 1`, lásd „Tudományos pálya” → a PhD-oszlopok szélesítése) túlra vinné → `409` `LIMIT_REACHED`. Egy pörgetés tétje legfeljebb `2 147 483 647` (`UPGRADER_MAX_STAKE`). Így a válasz sosem függ a szerencsétől, és tartományon kívüli érték sosem jut a Prismáig.
 4. `crypto.randomInt(0, 1 000 000)`; nyer, ha `roll < winPpm`. A válasz a `rollPpm`-et és a `winPpm`-et is tartalmazza, így a kerék pontosan a szerver dobására áll rá — nincs megrendezett „majdnem".
 5. Feltételes `updateMany` (`WHERE phdCount >= tét`): a `phdCount`, az `upgraderNet` és az `upgraderSeq` növelése. A sor már zárolt, ez egy második, független garancia.
 6. Vesztésnél vigaszdíj (lent).
@@ -770,6 +776,65 @@ Az újrapróbálkozás (`withWriteConflictRetry`) új dobást jelent, ami bizton
 **Tesztek.** `api/src/tests/upgrader-parity.test.ts` / `frontend/src/utils/__tests__/upgrader-parity.spec.ts` a közös, kézzel számolt `upgrader-vectors.json` táblát ellenőrzi (byte-azonos másolat mindkét oldalon); `upgrader.test.ts` és `upgraderSave.test.ts` a végpontot és a mentés-integrációt, utóbbi saját `enforce` és `off` szerverpéldánnyal. A párhuzamossági teszt szándékosan ×1,2-vel (75%) pörget: egy vesztő pörgetés egy booster-sort is ír, aminek holtpont-majd-újrapróbálás viselkedése elfedné egy hiányzó egyenleg-védelmet, a nyerő ág viszont nem.
 
 
+### Tudományos pálya (Academic Career — a végleges PhD-fa)
+
+A PhD-k második, **végleges** felhasználási módja: egy ~250 csomópontos fa, amelynek csomópontjait PhD-ért lehet megvenni, és amelyek a fokozatszerzést is túlélik. A fa az első fokozatszerzés után válik láthatóvá (`prestigeCount ≥ 1`, egyirányú feltárás), vásárolni azonban **csak a fokozatszerzés után nyíló vásárlási ablakban** lehet. Egy befektetett PhD már nem „birtokolt": elveszti a +2% termelés / −0,5% egységár bónuszát — ez a valódi döntés (megtartani vagy befektetni).
+
+**A katalógus** (`services/careerCore.ts` ↔ `frontend/src/utils/careerCore.ts`, **byte-azonos** másolat, ezért nincs benne import): egy gyökér (`habilitation`) és hat ág (Kutatás, Oktatás, Adminisztráció, Konferenciák, Disszertáció, Labor). Minden ág kulcscsomópontok (keystone) láncából áll, ezekről lógnak a többfokozatú sávok (track, `Pályázatírás I…X`). Minden csomópont **pontosan egy** módosítót ad (`kind` + `value` + opcionális `target`). Minden ár és érték **egész szám**: az árak egész aritmetikával (`costAtLevel`: a szint első hat lépése ×1,6, utána ×2,65, felfelé kerekítve), a módosítók bázispontban (1 bp = 0,01%) — se `Math.pow`, se `Math.log`, mert azok JS-motoronként az utolsó bitben eltérhetnek, egy ár vagy egy `floor()` pedig nem térhet el a kliens és a szerver között. A katalógus **csak bővíthető**: egy csomópont-azonosítót sosem szabad átnevezni vagy törölni (a `CareerNodeSave` sorok hivatkoznak rá); egy kivezetett csomópontot az aggregátor és a `GET /save` figyelmen kívül hagy.
+
+**Módosítók** (`getCareerModifiers`, a katalógus rögzített sorrendjében iterál, sosem a bemenet sorrendjében — a lebegőpontos szorzás nem asszociatív, az adatbázis sorrendje pedig tetszőleges): termelés (globális %, szorzó, egységenkénti szorzó, PhD-nkénti extra bónusz), kattintás (szorzó, szinergia, kritikus esély és szorzó, **előadói lendület**), árak (egység- és fejlesztéskedvezmény, magasabb PhD-kedvezmény-plafon), **fokozatszerzéskor megmaradó dolgok** (egységek %-a, fejlesztéscsaládok, kezdőtőke), boosterek (időtartam, gyakoriság, begyűjtési ablak, erősség, két új booster: `windfall` és `critStorm`), PhD-nyereség (%), **automatizálás** (demonstrátor auto-kattintás, automatikus egység- és fejlesztésvásárlás). Minden összegzett értéknek plafonja van (`CAREER_CAPS`; a teljes fával is tartaniuk kell — mindkét oldal katalógus-tesztje ellenőrzi): pl. az egységár-szorzó sosem megy `0,1` alá, a kezdőtőke legfeljebb `PHD_TOKEN_SCALE` (így a `tokens ≤ totalTokensEarned` állapotmentes ellenőrzés becsületes játékosnál sosem sérülhet).
+
+**Új mechanikák:**
+
+- *Előadói lendület* — folyamatos kattintás egy 0–1 közti mérőt tölt (`MOMENTUM_PER_CLICK`), ami `MOMENTUM_GRACE_MS` szünet után fogy; a kattintás értéke `× (1 + momentumMax × mérő)`. Kizárólag kliens-oldali, a burok a teli mérőt feltételezi.
+- *Demonstrátorok* — automatikus kattintások másodpercenként, egy sima kattintás értékével (nincs kritikus találat, lendület, kattintás-booster). **Csak bevétel**: a `tick()` írja jóvá, sosem a `clickToken()`, ezért nem kerül a `totalClicks`/`runClicks` számlálóba és a kattintás-telemetriába sem (egy 10/s-os időzítő a statisztikai verdikt szemében metronóm lenne → strike).
+- *Automatikus vásárlók* (`useAutoBuyer`, `autoBuyStore` — a ki/be kapcsoló csak ebben a böngészőben, localStorage-ban él) — ugyanazon a `buyUnit`/`buyUpgrade` úton vásárolnak, mint egy kattintás, így minden korlátozás érvényes rájuk; nyitott vásárlási ablak vagy függő szerver-művelet alatt semmit nem vesznek.
+- *Fokozatszerzéskor megmaradó dolgok* — a `prestige()` az **akkor birtokolt** csomópontok szerint dolgozik: egységenként `floor(birtokolt × bp / 10000)` marad, a megtartott családok fejlesztései maradnak (a `booster` család a két booster-fejlesztést jelenti), a menet a kezdőtőkével indul (csak `tokens`, **sosem** `totalTokensEarned`/`runTokensEarned` — nem kereset). Egy ablakban vett ilyen csomópont tehát a *következő* fokozatszerzéstől hat (a panel kiírja).
+- *Új boosterek* — `windfall` (azonnali jóváírás: `windfallSecs` másodpercnyi **boostolatlan** termelés) és `critStorm` (+50% kritikus esély 30 mp-ig). Az alap három booster azonosítója, súlya és időtartama változatlan.
+
+**A vásárlási ablak.** Csak a `PUT /save` nyitja, a szerver maga állapítja meg: ha a mentés (esetleg korrigált) `prestigeCount`-ja nagyobb a tároltnál **és** a `phdCount` is nőtt (egy becsületes fokozatszerzés mindig legalább 1 PhD-t hoz, és két mentés között más nem csökkentheti a `phdCount`-ot — minden más PhD-változás szerver-oldali és már a tárolt sorban van), akkor `careerWindowOpen = true` és `careerWindowId++`. Egy első mentés, amely már fokozatszerzést hordoz, ugyanígy nyit. Minden ablaknyitás új azonosítót kap, ezért egy újabb fokozatszerzés az előző ablak vásárlásait véglegessé teszi, sorok átírása nélkül (`CareerNodeSave.boughtInWindow` ≠ aktuális azonosító). Az ablak a `POST /career/close`-ig marad nyitva (Kihagyás / Kész) — újratöltés és másik eszköz után is —, kivéve, ha egy mentés azt mutatja, hogy az új menet már elindult (`runClicks > 0`, vagy `runSeconds > CAREER_WINDOW_RUN_GRACE_SECS`): ilyenkor a szerver zárja be. A kliens ugyanis az ablak alatt **megállítja a játékot** (`tick()` és kattintás nem csinál semmit, booster nem jelenik meg, fokozatot sem lehet szerezni); e nélkül egy „fokozatszerzéskor" vett csomópontot egy egész menetre lehetne használni, majd a következő előtt teljes áron visszaváltani.
+
+**Végpontok** (`router/career.ts`, `controllers/career.ts`, `database/models/career.ts`), mind szerver-hitelesek, az Upgrader mintájára: zároló `SELECT … FOR UPDATE` a `GameSave` soron (mindig a `GameSave` előbb, a gyerek-táblák utána — egységes zárolási sorrend), validálás minden írás előtt, `withWriteConflictRetry`:
+
+| Végpont | Mit csinál | Hibák |
+|---|---|---|
+| `POST /career/buy { nodeId }` | levonja az árat, `phdInvested`-et növeli, `upgraderSeq++` | `400 INVALID_NODE` (ismeretlen azonosító, `Map`-keresés, így `__proto__`/`toString` sem talál), `404`, `409 WINDOW_CLOSED`/`ALREADY_OWNED`/`PREREQUISITE_MISSING`/`INSUFFICIENT_PHD` |
+| `POST /career/refund { nodeId }` | a csomópontot és **minden birtokolt leszármazottját** visszaváltja a ténylegesen fizetett áron (`refundClosure`), `upgraderSeq++` | `409 WINDOW_CLOSED`/`NOT_OWNED`/`NOT_REFUNDABLE` (korábbi ablakból) |
+| `POST /career/close { windowId? }` | bezárja az ablakot; idempotens; korlátozott fiókkal is megy (semmit nem ad); `upgraderSeq`-et **nem** növeli | `409 WINDOW_CHANGED`, ha közben újabb ablak nyílt |
+
+Minden `409` `code`-ot és a fiók valós karrier-állapotát hordozza (a kliens átveszi). A `GET /save` és a `PUT /save` válasza `career` mezőt kap (ablak + csomópontok `refundable` jelzéssel); a `PUT /save` sosem olvas karrier-mezőt a kérésből.
+
+**Adatbázis** (`20261019083757_add_academic_career`, additív): `GameSave.phdInvested` (befektetett PhD), `phdTotal` (birtokolt + befektetett — a `phd` ranglista mezője, minden `phdCount`-író abszolút értékkel írja újra, így egy régi API által elavulttá tett érték a következő írásnál helyreáll), `careerWindowOpen`, `careerWindowId`; új `CareerNodeSave` tábla (`nodeId`, a ténylegesen fizetett `cost`, `boughtInWindow`). Ablakot a migráció **nem** nyit: aki a bevezetés előtt szerzett fokozatot, a következőnél kapja az elsőt.
+
+**A PhD-oszlopok szélesítése** (`20261019120000_widen_phd_columns`): a `phdCount`, `upgraderNet`, `phdInvested`, `phdTotal` és `CareerNodeSave.cost` `INT` helyett `DOUBLE` (mint a `tokens`). A `phdCount` korlátlanul, nagyjából négyzetesen nő a játékidővel: a balance-szimuláció szerint egy hatékony játékos fa nélkül ~1000, a teljes fával ~175 óra után túllépné a 2 147 483 647-et, és onnantól minden mentése 400-at kapna. A `DOUBLE` 2^53-ig pontosan tárol egész számokat — ugyanaddig, ameddig egy JS `number` (és így a frontend) egyáltalán képes; a `BIGINT`-et a Prisma JS `bigint`-ként adná vissza, ami JSON-ba nem szerializálható. A validáció ennek megfelelően egész számot vár `2^53 − 1`-ig (`SAVE.PHD_LIMIT`, ha a birtokolt + befektetett túllépné); egy pörgetés tétje továbbra is legfeljebb `2 147 483 647` (`UPGRADER_MAX_STAKE`, a kliens is erre korlátoz). **Ellenőrizve, nem feltételezve:** a `main` ág teljes API tesztkészlete (392 teszt) hibátlanul fut egy erre a sémára migrált adatbázison, vagyis a deploy-ablakban még futó régi API működik.
+
+**A mentés-hihetőségi burok** (`services/saveValidator.ts`) a fiók **saját, tárolt** csomópontjaiból (sosem a kérésből) számolt módosítókkal tágítja minden korlátját — két elfogadott mentés között a fa nem változhat `upgraderSeq`-ugrás nélkül, ezért ugyanazok a módosítók érvényesek a fokozatszerzés előtti és utáni gazdaságra is:
+
+- `maxTps`: egységenkénti és globális szorzók, PhD-nkénti bónusz, booster-erősség (a játékos booster-készletének azonos fajtájú szorzóinak szorzata);
+- `maxClickValue`: kattintásszorzó, szinergia (plafonnal), `MAX_CRIT + critMultAdd`, `× (1 + momentumMax)`; a demonstrátorok bevétele (`maxAutoIncome × dt`) **idővel** korlátozott, a kattintás-korlát változatlan;
+- legolcsóbb ár: egység- és fejlesztéskedvezmény, magasabb plafon, a `clearance` erősítése;
+- fokozatszerzés az intervallumban: a megtartott egységek `before = floor(előző × bp/10000)` (az alsó korlát bármennyi fokozatszerzésre érvényes), a megtartott családok fejlesztései ingyenesek, és fokozatszerzésenként egy kezdőtőke költhető — de legfeljebb annyi, amennyit a kereset (`floor(ΔE/S) + 1`) és a PhD-növekedés megmagyaráz, így egy hamisított `prestigeCount` nem sokszorozhatja;
+- PhD-korlát: `(1 + phdGainBp/10000) × √(n × E / S) + slack + upgraderNet − phdInvested` — a befektetett PhD-ket mentéssel nem lehet „visszahozni".
+
+Nulla csomóponttal a burok **bitre azonos** a korábbival (egy reviewer 50 000 véletlen bemenettel ellenőrizte a `main` és az ág között).
+
+**Kliens-szerződés** (az Upgraderével azonos, ettől függ, hogy a burok igaz maradjon):
+
+1. Minden PhD-t mozgató hívás (vásárlás, visszaváltás, a `windfall`-t is tartalmazó booster-igénylés, pörgetés) a `saveStore.withSyncLock` alatt fut: előbb **elmenti** a jelenlegi állapotot, a lock alatt más mentés nem megy ki. A lock **sorba állít**: egy második igénylő megvárja a sorát (és maga is elment), így a szerver-oldali PhD-/token-változások szigorúan egymás után történnek. A bizonytalan kimenetelű hiba utáni újratöltés is a lock alatt fut (`save.reload()`), hogy ne keveredhessen egy másik művelet mentésével.
+2. `gameStore.careerPending` (és `spinPending`, együtt `serverActionPending`) az előzetes mentéstől az eredmény alkalmazásáig tiltja a vásárlást és a fokozatszerzést.
+3. A szerver válaszából a `phdCount`-ot és az `upgraderSeq`-et átvesszük (`applyCareerState`), nem számoljuk újra. A bezárás (`close`) is a lock alatt, előzetes mentéssel fut, és csak a karrier-részt veszi át (az egyenleg egy, a fokozatszerzés mentése előtti állapotot tükrözhetne).
+4. Egy `PUT /save` válaszának ablak-állapotát csak akkor vesszük át, ha a mentés óta nem történt fokozatszerzés (egy úton lévő autosave válasza különben becsukná az épp megnyílt ablakot).
+
+**Vendég → fiók.** A vendég fáját a szerver nem ismeri, ezért bejelentkezéskor (`forfeitGuestCareer`, csak ha a fa helyben változott) minden csomópontot visszaváltunk, a vendég PhD-nyereség-bónuszával szerzett PhD-ket levonjuk, és szólunk. **Ismert, a bevezetés előtt is létező hiba:** egy vendég, aki a fiókja létrehozásánál tovább játszott, az első mentésénél `elapsed_exceeds_wallclock` elutasítást (és `enforce` alatt strike-ot) kap, mert a burok a fiók létrehozásától méri az időt — külön javításként követjük, ez a változtatás nem érinti.
+
+**A felület** (`components/career/`): teljes képernyős overlay (`CareerOverlay`, z-index 1150) — vásárlási ablak módban Esc, Vissza és a vászonra kattintás sem zárja be (csak a kijelölést törli), csak a Kihagyás / Kész; nézet módban (a Fokozat panel „Tudományos pálya" gombja) bezárható. A vászon (`CareerCanvas`) egyetlen transzformált rétegen SVG-éleket és valódi `<button>` csomópontokat tartalmaz; a bevitel kizárólag Pointer Events (egér, érintés, toll egy kódúton): húzás `DRAG_SLOP` felett pásztáz és sosem jelöl ki, két ujj a középpont körül nagyít, görgő a kurzor körül, dupla koppintás ott nagyít; a nyilak a fában lépkednek (roving tabindex). A geometria tiszta, tesztelt függvényekben él (`utils/panZoom.ts`, `utils/careerLayout.ts`). Egérrel a teljes legyezőt (a gyökeret és mind a hat ágat) mutatva nyílik; érintéssel szándékosan 1-es nagyítással (44 px-es célpontok — a teljes fát a „Mindent mutat” gomb, a jelmagyarázatot a „?” mutatja), a részletpanel alsó lap (alacsony fekvő képernyőn jobb oldali), és a vászon a kijelölt csomópontot a lap fölé hozza.
+
+**Balance-szimuláció** (`frontend/src/utils/__tests__/career-balance.sim.spec.ts`, `pnpm sim:balance`; alapértelmezésben kihagyva): a valódi `gameStore`-ral több száz szimulált órát játszik (3 katt/s, minden booster, a legjobb PhD/óra szerinti fokozatszerzés, ablakonként a birtokolt PhD-k rögzített hányadának befektetése; `SIM_INVEST`, `SIM_ORDER=value`, `SIM_SEED`, `SIM_HOURS`). A jelenlegi árakkal a leggyorsabb talált stratégia (~10% befektetés ablakonként) **~129 óra** alatt maxolja a fát; a felét minden ablakban befektető ~172 óra. Ár- vagy hatásmódosítás után futtasd újra.
+
+**Paritás és tesztek.** `api/scripts/generate-career-fixtures.ts` (`pnpm generate:career-fixtures`) írja a byte-azonos `career-catalog.json`-t és `career-vectors.json`-t mindkét app-ba; `career-parity.test.ts` / `.spec.ts` ezekhez hasonlítja a saját másolatot (plusz kézzel számolt értékek és katalógus-invariánsok). API: `careerEnvelope.test.ts` (minden módosító mindkét irányban), `career.test.ts` (végpontok, ablakszabályok, párhuzamosság), `careerSave.test.ts` (saját `enforce`/`off` szerver), `careerBoosters.test.ts`. Frontend: `gameStoreCareer.spec.ts`, `useCareer.spec.ts`, `useBoostersCareer.spec.ts`, `useAutoBuyer.spec.ts`, `careerText.spec.ts`, `panZoom.spec.ts`, `careerLayout.spec.ts`; e2e: `e2e/career.spec.ts` (mind a kilenc eszközprojekten, CDP-s csippentés és húzás).
+
+**Új csomópont / sáv hozzáadása:** bővítsd a `BRANCH_DEFS`-et a `careerCore.ts`-ben (csak hozzáadás!), másold a fájlt byte-azonosan a másik app-ba, futtasd a `pnpm generate:career-fixtures`-t, add hozzá a nevét mindkét i18n fájlhoz (`career.nodes.*` / `career.tracks.*`; a `careerText.spec.ts` minden csomópontot ellenőriz mindkét nyelven), és ha új `kind`-ot vezetsz be: a hatását mindkét economy-tükörben, a burokban és a `careerEffectText`-ben is. Végül futtasd a balance-szimulációt.
+
 ---
 
 ## Ranglisták (leaderboard)
@@ -782,7 +847,7 @@ mező a `src/constants/leaderboard.ts`-ben van definiálva:
 |---|---|
 | `tokens` (alapértelmezett) | `totalTokensEarned` |
 | `clicks` | `totalClicks` |
-| `phd` | `phdCount` (az Upgrader közvetlenül változtatja — tudatos döntés: a ranglista a *jelenlegi* PhD-készletet mutatja) |
+| `phd` | `phdTotal` — a birtokolt és a Tudományos pályába befektetett PhD-k összege, így a befektetés sosem ront a helyezésen (az Upgrader nyeresége/vesztesége viszont közvetlenül mozgatja) |
 | `playtime` | `elapsedSeconds` |
 
 Query paraméterek: `metric` (fenti értékek egyike) és `limit` (egész szám,
@@ -859,6 +924,8 @@ economy-vectors.json`, byte-azonos másolat a frontend oldalán) és a hozzá
 tartozó két parity-teszt (`economy-parity.test.ts` / `.spec.ts`) ellenőrzi —
 egy balance-módosítás után mindkét parity-tesztet le kell futtatni, és ha a
 vektorok konkrét várt értékei is változtak, újra kell generálni őket.
+
+A Tudományos pálya árai és hatásai a `careerCore.ts` két byte-azonos másolatában élnek (`CAREER_*_GROWTH_PERCENT`, `KEYSTONE_*_SCALE`, a `BRANCH_DEFS` értékei); módosítás után másold át a fájlt, futtasd a `pnpm generate:career-fixtures`-t és a `pnpm sim:balance`-ot (lásd „Tudományos pálya”).
 
 Az Upgrader balance-állandói (`UPGRADER_RTP`, `UPGRADER_WIN_CHANCE_CAP`, a szorzó-tartomány, a vigaszdíj `UPGRADER_CONSOLATION_*` értékei) két helyen élnek, kézzel tartva: `api/src/constants/upgrader.ts` (a szerver — ez a hiteles) és `frontend/src/utils/gameConstants.ts` (a kliens előnézete és a vendég-mód), mindkettőn „keep in sync" kommenttel. A képletek tükrei (`api/src/services/upgrader.ts` ↔ `frontend/src/utils/upgrader.ts`) közös, **kézzel számolt** arany-vektor táblát használnak (`upgrader-vectors.json`, byte-azonos másolat mindkét oldalon, `upgrader-parity.test.ts` / `.spec.ts`) — a vektorok szándékosan nem a megvalósításból generáltak, hogy egy hibát ne másoljanak le. Módosítás után mindkét parity-tesztet és az `upgraderMath.test.ts`-t futtasd, és ha egy várt érték megváltozott, kézzel számold újra, majd másold át a fájlt a másik oldalra is.
 
@@ -945,6 +1012,8 @@ Minden `main`-re kerülő push-on lefut (branch protection miatt ez mindig egy m
 cd /mnt/raid1/zuti-clicker
 IMAGE_TAG=sha-<korábbi_rövid_sha> docker compose -f docker-compose.prod.yml up -d
 ```
+
+**Figyelem — a Tudományos pálya előtti verzióra visszaállva:** a régi burok nem ismeri a csomópontok módosítóit és a `phdInvested`-et, ezért a fát használó játékosok mentéseit hamisan korrigálhatja vagy elutasíthatja (strike) — futtasd utána a `reset:anticheat-state` scriptet. Ha egy játékos `phdCount`-ja már túllépte a régi `INT` tartományt (2 147 483 647), a régi API validációja minden mentését `400`-zal utasítja el; ez visszaállással nem javítható, csak előre. A régi ranglista a `phdCount` szerint rangsorol (a `phdCount` index megmaradt). Visszaállás és újbóli előrelépés után a `phdTotal` a következő mentésnél helyreáll.
 
 **Figyelem — az Upgrader előtti verzióra visszaállva:** ha a játékosok közben már pörgettek, a régi mentés-hihetőségi burok nem ismeri az `upgraderNet` oszlopot (a séma additív, ezért a régi image fut, de figyelmen kívül hagyja). A nyertesek PhD-készlete a régi burok szerint a prestige-ekből elérhetetlen (korrigálja vagy elutasítja), a vesztesek mentése pedig monotonitás-sértés — mindkettő **strike**-ot okozhat becsületes játékosoknak. Visszaállás után ezért a `pnpm reset:anticheat-state` scripttel (alapértelmezésben próbafuttatás, `--apply`-jal éles) nullázd az anti-cheat állapotot — a script **minden** fiókra hat, nem csak az érintettekre —, vagy inkább előre javíts, ne visszaállj.
 
