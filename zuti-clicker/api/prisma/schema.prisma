@@ -57,17 +57,31 @@ model GameSave {
   // guard, so an in-flight save can't resurrect PhDs a later spin removed.
   upgraderNet       Int             @default(0)
   upgraderSeq       Int             @default(0)
+  // Academic Career (the persistent PhD tree — see database/models/career.ts).
+  // phdInvested is the PhDs currently sunk into CareerNodeSave rows (always
+  // the sum of their `cost`); phdTotal = phdCount + phdInvested is the "phd"
+  // leaderboard metric, rewritten absolutely by every writer of either
+  // column. The purchase window is opened ONLY by upsertSave on a detected
+  // prestige and closed only by POST /career/close; careerWindowId counts
+  // windows ever opened, and a node is refundable iff the window is open and
+  // its boughtInWindow equals it.
+  phdInvested       Int             @default(0)
+  phdTotal          Int             @default(0)
+  careerWindowOpen  Boolean         @default(false)
+  careerWindowId    Int             @default(0)
   savedAt           DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   units             UnitSave[]
   upgrades          UpgradeSave[]
   activeBoosters    ActiveBooster[]
+  careerNodes       CareerNodeSave[]
 
   // Support ORDER BY ... DESC LIMIT queries for each leaderboard metric.
   @@index([totalTokensEarned])
   @@index([totalClicks])
   @@index([phdCount])
   @@index([elapsedSeconds])
+  @@index([phdTotal])
 }
 
 model UnitSave {
@@ -91,6 +105,25 @@ model UpgradeSave {
   upgradeId  String   @db.VarChar(32)
 
   @@unique([gameSaveId, upgradeId])
+}
+
+// Academic Career nodes (see GameSave.phdInvested above). Written ONLY by
+// POST /career/buy and /career/refund — never by PUT /save. `cost` is the
+// PhDs actually paid, so a refund returns exactly that even if the catalog's
+// price changed since; `boughtInWindow` is GameSave.careerWindowId at
+// purchase time, so opening a new window makes every older purchase
+// permanent without touching any row here. Unlike UnitSave/UpgradeSave this
+// survives prestige — it is cleared only by deleting the save.
+model CareerNodeSave {
+  id             Int      @id @default(autoincrement())
+  gameSaveId     Int
+  gameSave       GameSave @relation(fields: [gameSaveId], references: [id], onDelete: Cascade)
+  nodeId         String   @db.VarChar(32)
+  cost           Int
+  boughtInWindow Int
+  boughtAt       DateTime @default(now())
+
+  @@unique([gameSaveId, nodeId])
 }
 
 // Server-issued, server-timed booster buffs (see POST /boosters/claim). Never
