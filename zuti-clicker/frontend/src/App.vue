@@ -16,6 +16,7 @@ import ConfirmModal from "@/components/modals/ConfirmModal.vue";
 import SettingsModal from "@/components/modals/SettingsModal.vue";
 import LeaderboardModal from "@/components/modals/LeaderboardModal.vue";
 import UpgraderModal from "@/components/upgrader/UpgraderModal.vue";
+import CareerOverlay from "@/components/career/CareerOverlay.vue";
 import ToastHost from "@/components/layout/ToastHost.vue";
 import PrestigeConfirmModal from "@/components/prestige/PrestigeConfirmModal.vue";
 import PrestigeCeremony from "@/components/prestige/PrestigeCeremony.vue";
@@ -115,6 +116,15 @@ function handleBeforeUnload(e: BeforeUnloadEvent) {
 onMounted(() => window.addEventListener("beforeunload", handleBeforeUnload));
 onUnmounted(() => window.removeEventListener("beforeunload", handleBeforeUnload));
 
+// The Academic Career: its purchase window (a prestige opened it) shows on its
+// own — after the prestige confirm and ceremony, and again after a reload until
+// it is finished — and the view mode when opened from the Prestige panel.
+const showCareer = computed(
+  () =>
+    (game.careerWindowOpen && !ui.prestigeConfirmOpen && !ui.prestigeCeremonyOpen) ||
+    ui.careerOpen
+);
+
 async function onConfirmDelete() {
   try {
     await save.resetSave();
@@ -169,6 +179,7 @@ async function onConfirmDelete() {
   />
   <PrestigeConfirmModal v-if="ui.prestigeConfirmOpen" />
   <PrestigeCeremony v-if="ui.prestigeCeremonyOpen" />
+  <CareerOverlay v-if="showCareer" />
   <CheatWarningModal />
   <ToastHost />
 </template>

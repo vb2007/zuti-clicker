@@ -9,7 +9,8 @@ export default {
     totalEarned: "Összes szerzett",
     totalClicks: "Összes kattintás",
     timePlayed: "Játékidő",
-    phdCount: "Szerzett PhD",
+    phdCount: "Birtokolt PhD",
+    phdInvested: "Befektetett PhD",
     thisRun: "Ez a menet",
     runEarned: "Menetben szerzett",
     runClicks: "Menetbeli kattintás",
@@ -63,7 +64,8 @@ export default {
     emptyHint: "Gyűjts tovább tokeneket — hamarosan megjelenik itt az első fejlesztésed.",
     tooltipCost: "Ár",
     tooltipEffect: "Hatás",
-    clickOnlyNote: "A fejlesztések csak a kattintásodat érintik — a másodpercenkénti termelést egyik sem.",
+    clickOnlyNote:
+      "A fejlesztések csak a kattintásodat érintik — a másodpercenkénti termelést egyik sem.",
     familyClickValue: "Kattintás Értéke",
     familySynergy: "Bevétel-szinergia",
     familyCrit: "Kritikus Találatok",
@@ -140,6 +142,208 @@ export default {
     }
   },
   career: {
+    title: "Tudományos pálya",
+    openBtn: "Tudományos pálya",
+    progress: "{owned} / {total} csomópont",
+    statsHeld: "Birtokolt PhD",
+    statsInvested: "Befektetve",
+    statsBonus: "PhD-bónusz",
+    statsBonusValue: "×{mult} termelés",
+    windowIntro:
+      "A fokozatszerzés megnyitotta a pályádat. Fektesd be a PhD-ket végleges fejlesztésekbe — vagy tartsd meg őket, hiszen minden birtokolt PhD növeli a termelést. Az új menet akkor indul, amikor végeztél.",
+    viewIntro: "A pályád végleges. Új csomópontokat minden fokozatszerzés után vásárolhatsz.",
+    skip: "Megtartom a PhD-ket",
+    done: "Kész",
+    footerNote: "Az új menet akkor indul, amikor végeztél.",
+    buy: "Megveszem: {cost} PhD",
+    refundOne: "Visszavonás · +{phd} PhD",
+    refundCascade: "{count} csomópont visszavonása · +{phd} PhD",
+    refundNote:
+      "Ezen fokozatszerzés óta vetted — még visszavonhatod, a ráépülő csomópontokkal együtt.",
+    owned: "Végleg a tiéd.",
+    locked: "Feltétel: {name}.",
+    needPhd: "{cost} PhD kell hozzá — {held} van.",
+    viewOnly: "A következő fokozatszerzésed után veheted meg.",
+    nextPrestige: "A következő fokozatszerzéstől érvényes.",
+    tradeoff: "PhD-bónusz: ×{before} → ×{after}",
+    cost: "Ár",
+    selectHint: "Koppints vagy kattints egy csomópontra a részletekért.",
+    zoomIn: "Nagyítás",
+    zoomOut: "Kicsinyítés",
+    fit: "Az egész fa",
+    legendOwned: "Megvan",
+    legendRefundable: "Most vetted",
+    legendBuyable: "Megvehető",
+    legendLocked: "Zárolt",
+    stateOwned: "megvan",
+    stateRefundable: "most vetted, visszavonható",
+    stateBuyable: "megvehető",
+    stateAvailable: "elérhető",
+    stateLocked: "zárolt",
+    nodeAria: "{name}, {state}",
+    canvasLabel:
+      "Tudományos pálya fa. Húzással vagy csippentéssel mozgathatod és nagyíthatod; a nyilakkal léphetsz a csomópontok között.",
+    bought: "Megvetted: {name}.",
+    refunded: "Visszavonva: {count} csomópont, +{phd} PhD.",
+    autoBuy: "Auto",
+    autoBuyUnits: "Egységek automatikus vásárlása",
+    autoBuyUpgrades: "Fejlesztések automatikus vásárlása",
+    momentum: "Lendület +{pct}%",
+    keepsUnits: "minden egység {pct}%-a megmarad",
+    keepsFamilies: "megmaradnak ezek a fejlesztések: {families}",
+    startsWith: "a menet {amount} tokennel indul",
+    prestigeKeeps: "Tudományos pálya: {list}.",
+    busy: "Folyamatban…",
+    branches: {
+      root: "Habilitáció",
+      research: "Kutatás",
+      lecturing: "Oktatás",
+      administration: "Adminisztráció",
+      conferences: "Konferenciák",
+      thesis: "Disszertáció",
+      lab: "Labor"
+    },
+    nodes: {
+      habilitation: { name: "Habilitáció", desc: "Minden pálya egy újabb értekezéssel kezdődik." },
+      labAccess: { name: "Laborbelépő", desc: "Belépőkártya a jó műszerekhez." },
+      researchGroup: { name: "Kutatócsoport", desc: "Sok kéz, sok kísérlet." },
+      institute: { name: "Intézet", desc: "Saját épület, saját költségvetési sor." },
+      nationalLab: { name: "Nemzeti Laboratórium", desc: "Kutatás országos léptékben." },
+      nobelNomination: {
+        name: "Nobel-jelölés",
+        desc: "Elsőre senki sem nyeri meg. Már a jelölés is sokat számít."
+      },
+      lecturer: { name: "Előadó", desc: "Saját kurzus, saját előadóterem." },
+      lectureMomentum: {
+        name: "Előadói lendület",
+        desc: "Kattints folyamatosan, és a terem bemelegszik: a lendület kattintásbónuszt épít, ami szünetben elhalványul."
+      },
+      seminarLeader: {
+        name: "Szemináriumvezető",
+        desc: "Minden vita a teljes tanszék teljesítményéből merít."
+      },
+      examiner: { name: "Vizsgáztató", desc: "Pontosan tudod, mikor zseniális egy válasz." },
+      standingOvation: { name: "Vastaps", desc: "A ritka előadás, amikor feláll a terem." },
+      departmentBudget: { name: "Tanszéki költségvetés", desc: "Végre külön tétel a műszerekre." },
+      seedFunding: {
+        name: "Indulótámogatás",
+        desc: "Minden projekt valamennyi pénzzel indul a számlán."
+      },
+      tenureTrack: {
+        name: "Véglegesítési pálya",
+        desc: "Amit felépítettél, annak egy része a félév végén is megmarad."
+      },
+      endowment: {
+        name: "Alapítványi vagyon",
+        desc: "Tartós alap tart kéznél bizonyos eszközöket."
+      },
+      bulkPurchasing: { name: "Tömeges beszerzés", desc: "A beszerzési iroda végre alkudni kezd." },
+      conferenceSeason: {
+        name: "Konferenciaszezon",
+        desc: "A jó ötletek tovább tartanak, ha megosztod őket."
+      },
+      callForPapers: { name: "Felhívás előadásokra", desc: "A lehetőségek gyakrabban jönnek." },
+      posterSession: { name: "Poszterszekció", desc: "Az eredményeid tovább maradnak a falon." },
+      keynoteSpeaker: { name: "Plenáris előadó", desc: "Néha egy előadás mellé támogatás is jár." },
+      symposium: { name: "Szimpózium", desc: "Egy teremnyi szakértő hirtelen felismerést szül." },
+      doctoralSchool: { name: "Doktori iskola", desc: "Több jelölt, több megvédett értekezés." },
+      academicPrestige: {
+        name: "Tudományos presztízs",
+        desc: "Minden birtokolt fokozat többet nyom a latban."
+      },
+      fundingCommittee: {
+        name: "Pályázati bizottság",
+        desc: "A fokozataid nagyobb kedvezményt nyitnak meg."
+      },
+      habilitationCommittee: {
+        name: "Habilitációs bizottság",
+        desc: "Most már az asztal másik oldalán ülsz."
+      },
+      professorEmeritus: {
+        name: "Professor emeritus",
+        desc: "Egy életmű, ami még mindig kamatozik."
+      },
+      teachingAssistant: {
+        name: "Demonstrátor",
+        desc: "Valaki más is kattint egy kicsit, amíg gondolkodsz."
+      },
+      purchasingOfficer: {
+        name: "Beszerzési előadó",
+        desc: "Megveszi a legjobb ár-érték arányú egységet, amint megengedheted."
+      },
+      upgradeClerk: {
+        name: "Fejlesztési ügyintéző",
+        desc: "Megveszi a legolcsóbb fejlesztést, amit megengedhetsz."
+      },
+      secondAssistant: { name: "Második demonstrátor", desc: "Két pár kéz többet ér egynél." }
+    },
+    tracks: {
+      grantWriting: "Pályázatírás",
+      unitStudies: "{unit}-kutatás",
+      peerReviewedPapers: "Lektorált cikkek",
+      citationIndex: "Idézettségi index",
+      fieldWork: "Terepmunka",
+      rhetoric: "Retorika",
+      momentum: "Lendület",
+      appliedTheory: "Alkalmazott elmélet",
+      popQuizInstinct: "Röpdolgozat-ösztön",
+      eureka: "Heuréka",
+      officeHours: "Fogadóóra",
+      procurement: "Beszerzés",
+      startupFund: "Induló alap",
+      tenure: "Véglegesítés",
+      archives: "Archívum",
+      bursary: "Ösztöndíjkeret",
+      accounting: "Könyvelés",
+      networking: "Kapcsolatépítés",
+      mailingList: "Levelezőlista",
+      posterBoard: "Poszterfal",
+      speakerFee: "Előadói díj",
+      frenzyPotency: "Roham-erősítés",
+      popQuizPotency: "Röpdolgozat-erősítés",
+      clearancePotency: "Kiárusítás-erősítés",
+      citations: "Hivatkozások",
+      reputation: "Hírnév",
+      scholarships: "Ösztöndíjak",
+      legacy: "Örökség",
+      dissertations: "Disszertációk",
+      taTraining: "Demonstrátorképzés",
+      taHours: "Demonstrátori órák"
+    },
+    effects: {
+      productionPct: "+{pct}% termelés",
+      productionMult: "×{mult} termelés",
+      unitProductionMult: "×{mult} {unit}-termelés",
+      clickMult: "×{mult} kattintásérték",
+      clickSynergyAdd: "A bevételed +{pct}%-a minden kattintáshoz",
+      critChanceAdd: "+{pct}% kritikus esély",
+      critMultAdd: "+{mult}× kritikus szorzó",
+      momentumMax: "+{pct}% előadói lendület (maximum)",
+      unitCostDiscount: "-{pct}% egységár",
+      upgradeCostDiscount: "-{pct}% fejlesztésár",
+      startingTokens: "Minden menet +{amount} tokennel indul",
+      keepUnitsPct: "Minden egység {pct}%-a megmarad fokozatszerzéskor",
+      keepUpgradeFamily: "{family}: a fejlesztések megmaradnak fokozatszerzéskor",
+      boosterDurationPct: "+{pct}% booster-időtartam",
+      boosterSpawnPct: "+{pct}% booster-gyakoriság",
+      boosterWindowPct: "A boosterek +{pct}%-kal tovább gyűjthetők be",
+      boosterPotencyPct: "{booster}: +{pct}% erősség",
+      unlockBooster: "Új booster: {booster}",
+      windfallSecs: "{booster}: +{secs} mp termelés",
+      phdGainPct: "+{pct}% PhD fokozatszerzésenként",
+      phdProductionBonusAdd: "+{pct}% termelés minden birtokolt PhD után",
+      phdCostCapAdd: "+{pct}% maximális PhD-árkedvezmény",
+      autoClickRate: "+{rate} automatikus kattintás másodpercenként",
+      autoBuyUnits: "Egységeket vásárol helyetted",
+      autoBuyUpgrades: "Fejlesztéseket vásárol helyetted"
+    },
+    families: {
+      flat: "Fix kattintás",
+      multiplier: "Kattintásszorzó",
+      synergy: "Bevételi szinergia",
+      crit: "Kritikus találat",
+      booster: "Booster"
+    },
     guestTreeDropped:
       "A vendégként felépített Tudományos pályád nem kerül át a fiókodba — a PhD-ket visszakaptad. A következő fokozatszerzés után újra befektetheted őket.",
     errors: {
@@ -208,7 +412,8 @@ export default {
   },
   guest: {
     warningTitle: "A haladásod nem kerül mentésre",
-    warningBody: "Vendégként játszasz. Jelentkezz be vagy regisztrálj, hogy felhőbe mentsd a játékod.",
+    warningBody:
+      "Vendégként játszasz. Jelentkezz be vagy regisztrálj, hogy felhőbe mentsd a játékod.",
     loginBtn: "Bejelentkezés / Regisztráció",
     continueBtn: "Folytatás mentés nélkül"
   },
@@ -302,7 +507,8 @@ export default {
     title: "Haladás szüneteltetve",
     body: "Ezen a fiókon automatizált vagy szokatlanul gyors bevitelt észleltünk. A kattintás, a vásárlás és a fokozat az alábbi visszaszámlálás lejártáig szünetel.",
     timeRemaining: "Hátralévő idő",
-    strikeNote: "Ez már {count}. alkalommal történt meg ezen a fiókon. A korlátozás minden alkalommal hosszabb.",
+    strikeNote:
+      "Ez már {count}. alkalommal történt meg ezen a fiókon. A korlátozás minden alkalommal hosszabb.",
     dismissBtn: "Értem"
   }
 };

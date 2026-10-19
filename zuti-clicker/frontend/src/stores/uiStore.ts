@@ -19,6 +19,9 @@ export const useUiStore = defineStore("ui", () => {
   const prestigeConfirmOpen = ref(false);
   const prestigeCeremonyOpen = ref(false);
   const upgraderOpen = ref(false);
+  // The Academic Career opened to look at (view mode). Its purchase window
+  // needs no flag here: it's shown whenever gameStore.careerWindowOpen is set.
+  const careerOpen = ref(false);
   const lastPrestigeGain = ref(0);
   const mobilePanel = ref<MobilePanel>("none");
   const shopTab = ref<ShopTab>("units");
@@ -32,6 +35,7 @@ export const useUiStore = defineStore("ui", () => {
     prestigeConfirmOpen,
     prestigeCeremonyOpen,
     upgraderOpen,
+    careerOpen,
     lastPrestigeGain,
     mobilePanel,
     shopTab

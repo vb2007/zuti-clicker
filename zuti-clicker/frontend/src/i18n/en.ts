@@ -9,7 +9,8 @@ export default {
     totalEarned: "Total Earned",
     totalClicks: "Total Clicks",
     timePlayed: "Time Played",
-    phdCount: "PhDs Earned",
+    phdCount: "PhDs Held",
+    phdInvested: "PhDs Invested",
     thisRun: "This Run",
     runEarned: "Run Earned",
     runClicks: "Run Clicks",
@@ -140,6 +141,208 @@ export default {
     }
   },
   career: {
+    title: "Academic Career",
+    openBtn: "Academic Career",
+    progress: "{owned} of {total} nodes",
+    statsHeld: "PhDs held",
+    statsInvested: "Invested",
+    statsBonus: "Held PhD bonus",
+    statsBonusValue: "×{mult} production",
+    windowIntro:
+      "Your prestige opened your career. Invest PhDs in permanent upgrades — or keep them, since every PhD you hold boosts production. The new run starts when you're done.",
+    viewIntro: "Your career is permanent. New nodes can be bought right after each prestige.",
+    skip: "Keep my PhDs",
+    done: "Done",
+    footerNote: "The new run starts when you're done.",
+    buy: "Buy for {cost} PhD",
+    refundOne: "Undo · +{phd} PhD",
+    refundCascade: "Undo {count} nodes · +{phd} PhD",
+    refundNote:
+      "Bought since this prestige — you can still undo it, together with everything bought on top of it.",
+    owned: "Yours for good.",
+    locked: "Unlocks after {name}.",
+    needPhd: "Needs {cost} PhD — you hold {held}.",
+    viewOnly: "You can buy this right after your next prestige.",
+    nextPrestige: "Takes effect from your next prestige.",
+    tradeoff: "Held PhD bonus: ×{before} → ×{after}",
+    cost: "Cost",
+    selectHint: "Tap or click a node to see what it does.",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    fit: "Show the whole tree",
+    legendOwned: "Owned",
+    legendRefundable: "Bought now",
+    legendBuyable: "Can buy",
+    legendLocked: "Locked",
+    stateOwned: "owned",
+    stateRefundable: "bought now, can be undone",
+    stateBuyable: "can buy",
+    stateAvailable: "available",
+    stateLocked: "locked",
+    nodeAria: "{name}, {state}",
+    canvasLabel:
+      "Academic Career tree. Drag or pinch to move and zoom; arrow keys move between nodes.",
+    bought: "Bought {name}.",
+    refunded: "Undone: {count} node(s), +{phd} PhD.",
+    autoBuy: "Auto",
+    autoBuyUnits: "Buy units automatically",
+    autoBuyUpgrades: "Buy upgrades automatically",
+    momentum: "Momentum +{pct}%",
+    keepsUnits: "keeps {pct}% of every unit",
+    keepsFamilies: "keeps your {families} upgrades",
+    startsWith: "starts the run with {amount} tokens",
+    prestigeKeeps: "Academic Career: {list}.",
+    busy: "Working…",
+    branches: {
+      root: "Habilitation",
+      research: "Research",
+      lecturing: "Lecturing",
+      administration: "Administration",
+      conferences: "Conferences",
+      thesis: "Thesis",
+      lab: "Lab Assistants"
+    },
+    nodes: {
+      habilitation: { name: "Habilitation", desc: "Every career starts with one more thesis." },
+      labAccess: { name: "Lab Access", desc: "A key card to the good equipment." },
+      researchGroup: { name: "Research Group", desc: "Many hands, many experiments." },
+      institute: { name: "Institute", desc: "Your own building, your own budget line." },
+      nationalLab: { name: "National Laboratory", desc: "Research at a national scale." },
+      nobelNomination: {
+        name: "Nobel Nomination",
+        desc: "Nobody wins on the first try. Being nominated already counts."
+      },
+      lecturer: { name: "Lecturer", desc: "Your own course, your own lecture hall." },
+      lectureMomentum: {
+        name: "Lecture Momentum",
+        desc: "Keep clicking and the room warms up: momentum builds a click bonus that fades when you pause."
+      },
+      seminarLeader: {
+        name: "Seminar Leader",
+        desc: "Every discussion draws on the whole department's output."
+      },
+      examiner: { name: "Examiner", desc: "You know exactly when an answer is brilliant." },
+      standingOvation: {
+        name: "Standing Ovation",
+        desc: "The rare lecture that brings the hall to its feet."
+      },
+      departmentBudget: { name: "Department Budget", desc: "A line item for equipment, at last." },
+      seedFunding: {
+        name: "Seed Funding",
+        desc: "Every project starts with something in the account."
+      },
+      tenureTrack: {
+        name: "Tenure Track",
+        desc: "Some of what you built stays when the semester ends."
+      },
+      endowment: { name: "Endowment", desc: "Lasting funds keep certain tools on hand." },
+      bulkPurchasing: {
+        name: "Bulk Purchasing",
+        desc: "The procurement office finally negotiates."
+      },
+      conferenceSeason: {
+        name: "Conference Season",
+        desc: "Good ideas last longer when they're shared."
+      },
+      callForPapers: { name: "Call for Papers", desc: "Opportunities come around more often." },
+      posterSession: { name: "Poster Session", desc: "Your findings stay on the board longer." },
+      keynoteSpeaker: {
+        name: "Keynote Speaker",
+        desc: "Sometimes a talk comes with funding attached."
+      },
+      symposium: { name: "Symposium", desc: "A room full of experts sparks sudden insight." },
+      doctoralSchool: { name: "Doctoral School", desc: "More candidates, more theses defended." },
+      academicPrestige: {
+        name: "Academic Prestige",
+        desc: "Every degree you hold carries more weight."
+      },
+      fundingCommittee: { name: "Funding Committee", desc: "Your degrees open deeper discounts." },
+      habilitationCommittee: {
+        name: "Habilitation Committee",
+        desc: "Now you sit on the other side of the table."
+      },
+      professorEmeritus: {
+        name: "Professor Emeritus",
+        desc: "A lifetime of work, still paying dividends."
+      },
+      teachingAssistant: {
+        name: "Teaching Assistant",
+        desc: "Someone else clicks a little while you think."
+      },
+      purchasingOfficer: {
+        name: "Purchasing Officer",
+        desc: "Buys the best-value unit whenever you can afford one."
+      },
+      upgradeClerk: { name: "Upgrade Clerk", desc: "Buys the cheapest upgrade you can afford." },
+      secondAssistant: { name: "Second Assistant", desc: "Two pairs of hands are better than one." }
+    },
+    tracks: {
+      grantWriting: "Grant Writing",
+      unitStudies: "{unit} Studies",
+      peerReviewedPapers: "Peer-Reviewed Papers",
+      citationIndex: "Citation Index",
+      fieldWork: "Field Work",
+      rhetoric: "Rhetoric",
+      momentum: "Momentum",
+      appliedTheory: "Applied Theory",
+      popQuizInstinct: "Pop Quiz Instinct",
+      eureka: "Eureka",
+      officeHours: "Office Hours",
+      procurement: "Procurement",
+      startupFund: "Startup Fund",
+      tenure: "Tenure",
+      archives: "Archives",
+      bursary: "Bursary",
+      accounting: "Accounting",
+      networking: "Networking",
+      mailingList: "Mailing List",
+      posterBoard: "Poster Board",
+      speakerFee: "Speaker Fee",
+      frenzyPotency: "Frenzy Potency",
+      popQuizPotency: "Pop Quiz Potency",
+      clearancePotency: "Clearance Potency",
+      citations: "Citations",
+      reputation: "Reputation",
+      scholarships: "Scholarships",
+      legacy: "Legacy",
+      dissertations: "Dissertations",
+      taTraining: "TA Training",
+      taHours: "TA Hours"
+    },
+    effects: {
+      productionPct: "+{pct}% production",
+      productionMult: "×{mult} production",
+      unitProductionMult: "×{mult} {unit} production",
+      clickMult: "×{mult} click value",
+      clickSynergyAdd: "+{pct}% of your income added to every click",
+      critChanceAdd: "+{pct}% critical hit chance",
+      critMultAdd: "+{mult}× critical hit multiplier",
+      momentumMax: "+{pct}% Lecture momentum cap",
+      unitCostDiscount: "-{pct}% unit prices",
+      upgradeCostDiscount: "-{pct}% upgrade prices",
+      startingTokens: "Every run starts with +{amount} tokens",
+      keepUnitsPct: "Keep {pct}% of every unit through a prestige",
+      keepUpgradeFamily: "{family} upgrades survive a prestige",
+      boosterDurationPct: "+{pct}% booster duration",
+      boosterSpawnPct: "+{pct}% booster frequency",
+      boosterWindowPct: "Booster pickups stay +{pct}% longer",
+      boosterPotencyPct: "{booster}: +{pct}% strength",
+      unlockBooster: "New booster: {booster}",
+      windfallSecs: "{booster}: +{secs}s of production",
+      phdGainPct: "+{pct}% PhDs per prestige",
+      phdProductionBonusAdd: "+{pct}% production per PhD held",
+      phdCostCapAdd: "+{pct}% maximum PhD price discount",
+      autoClickRate: "+{rate} automatic clicks per second",
+      autoBuyUnits: "Buys units for you",
+      autoBuyUpgrades: "Buys upgrades for you"
+    },
+    families: {
+      flat: "Flat click",
+      multiplier: "Click multiplier",
+      synergy: "Income synergy",
+      crit: "Critical hit",
+      booster: "Booster"
+    },
     guestTreeDropped:
       "Your guest Academic Career doesn't carry over to an account — its PhDs were refunded. Re-invest them after your next prestige.",
     errors: {
@@ -299,7 +502,8 @@ export default {
     title: "Progress paused",
     body: "Automated or unusually fast input was detected on this account. Clicking, purchases, and prestige are paused until the timer below runs out.",
     timeRemaining: "Time remaining",
-    strikeNote: "This has happened {count} times on this account. Restrictions get longer each time.",
+    strikeNote:
+      "This has happened {count} times on this account. Restrictions get longer each time.",
     dismissBtn: "Got it"
   }
 };
