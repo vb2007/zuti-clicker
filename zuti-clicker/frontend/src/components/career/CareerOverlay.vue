@@ -70,11 +70,7 @@ watch(sheetEl, (el) => {
   }
 });
 // Docked to the right on short screens (see the max-height media query): no inset.
-const bottomInset = computed(() =>
-  sheetOpen.value && typeof matchMedia === "function" && !matchMedia("(max-height: 500px)").matches
-    ? sheetHeight.value
-    : 0
-);
+const bottomInset = computed(() => (sheetOpen.value && !shortScreen.value ? sheetHeight.value : 0));
 
 function closeView(): void {
   ui.careerOpen = false;
@@ -107,13 +103,19 @@ useOverlay(
 // Focus stays inside while it's open (like BaseModal's trap).
 function onKeydown(e: KeyboardEvent): void {
   if (e.key !== "Tab" || !rootEl.value) return;
+  // Real tab stops only: the tree's nodes are one roving stop (tabindex 0 on
+  // one of them, -1 on the rest), so the -1 ones must not count as first/last.
   const focusables = Array.from(
-    rootEl.value.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]')
-  ).filter((el) => el.offsetParent !== null);
+    rootEl.value.querySelectorAll<HTMLElement>("button:not([disabled]), [tabindex]")
+  ).filter((el) => el.tabIndex >= 0 && el.offsetParent !== null);
   if (focusables.length === 0) return;
   const first = focusables[0]!;
   const last = focusables[focusables.length - 1]!;
-  if (e.shiftKey && document.activeElement === first) {
+  if (!rootEl.value.contains(document.activeElement)) {
+    // Focus slipped out (a click on empty header space): bring it back in.
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+  } else if (e.shiftKey && document.activeElement === first) {
     e.preventDefault();
     last.focus();
   } else if (!e.shiftKey && document.activeElement === last) {
@@ -139,21 +141,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!--
-    THESIS: an academic career drawn as a real tree you climb — root at the
-    bottom, six branches rising — not a grid of upgrade cards.
-    OWN-WORLD: the game's navy/blue system (base.css); one blue accent for owned
-    and buyable, the rare amber only for "bought now, still undoable"; node
-    shape carries kind (medallion root, ringed keystones with drawn branch
-    glyphs, tier discs with roman numerals); state is never colour alone.
-    STORY: see what PhDs could become, weigh each against the held-PhD bonus
-    it costs, invest or keep, then start the new run.
-    FIRST VIEWPORT: the frontier around the root; detail panel right (sheet on
-    phones); in the purchase window a footer with Skip/Done.
-    FORM: pan/zoom canvas — user-pinned, no concept roll (no seed key).
-    FINISH: unreviewed is unfinished; this build ends with the finish review and
-    its verdict.
-  -->
+  <!-- Design: the career as a tree you climb (root at the bottom, six branches
+       rising) in the game's own navy/blue system — one blue accent for owned and
+       buyable, amber only for "bought now, still undoable"; node shape carries
+       kind and state is never colour alone. -->
   <Teleport to="body">
     <div
       ref="rootEl"
@@ -222,6 +213,7 @@ onUnmounted(() => {
           :bottom-inset="bottomInset"
           @select="selectedId = $event"
           @legend="showLegend"
+          @deselect="selectedId = null"
         />
         <aside v-if="!isCompact" class="side">
           <CareerNodePanel :node-id="selectedId" @select="selectedId = $event" />

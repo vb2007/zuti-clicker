@@ -320,7 +320,8 @@ export const api = {
     // see the anti-cheat model in the plan this implements. A 409 (cooldown
     // not yet elapsed) still carries nextAvailableInMs on the thrown
     // ApiError's `body`.
-    claim: () => request<ClaimBoosterResponse>("POST", "/boosters/claim", undefined, CAREER_TIMEOUT_MS)
+    claim: () =>
+      request<ClaimBoosterResponse>("POST", "/boosters/claim", undefined, CAREER_TIMEOUT_MS)
   },
   upgrader: {
     // The server alone rolls and settles the spin — the client only says how

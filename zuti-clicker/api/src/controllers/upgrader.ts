@@ -82,7 +82,12 @@ export const spinHandler = async (req: express.Request, res: express.Response) =
       multiplier?: unknown;
     };
 
-    if (typeof stake !== "number" || !Number.isInteger(stake) || stake < 1 || stake > UPGRADER_MAX_STAKE) {
+    if (
+      typeof stake !== "number" ||
+      !Number.isInteger(stake) ||
+      stake < 1 ||
+      stake > UPGRADER_MAX_STAKE
+    ) {
       const r = Responses.UPGRADER.INVALID_STAKE;
       res.status(r.status).json(r.body);
       return;

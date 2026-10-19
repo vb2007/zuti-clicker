@@ -89,10 +89,7 @@ export function useBoosters(getLayout?: () => PlacementLayout | null) {
     // between spawns (the same capped divisor and floor the server applies).
     const wait =
       delayMs ??
-      Math.max(
-        CAREER_CAPS.boosterCooldownFloorSecs * 1000,
-        baseWait / game.boosterSpawnMultiplier
-      );
+      Math.max(CAREER_CAPS.boosterCooldownFloorSecs * 1000, baseWait / game.boosterSpawnMultiplier);
     spawnTimer = setTimeout(showPickup, Math.max(0, wait));
   }
 

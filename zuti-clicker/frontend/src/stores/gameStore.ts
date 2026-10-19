@@ -217,7 +217,8 @@ export const useGameStore = defineStore("game", () => {
   // Booster-system perks (affect how the booster system itself behaves, not
   // the click formula directly) — read by composables/useBoosters.ts.
   const boosterDurationMultiplier = computed(
-    () => getBoosterDurationMultiplier(ownedUpgrades.value) + careerModifiers.value.boosterDurationPct
+    () =>
+      getBoosterDurationMultiplier(ownedUpgrades.value) + careerModifiers.value.boosterDurationPct
   );
   // The divisor of the average wait between spawns (newsletter + tree, capped).
   const boosterSpawnMultiplier = computed(() =>
@@ -588,7 +589,9 @@ export const useGameStore = defineStore("game", () => {
 
   /** A guest's purchase, settled locally with the same rules the server applies. */
   function buyCareerNodeLocal(nodeId: string): boolean {
-    if (antiCheat.isRestricted || serverActionPending.value || !careerWindowOpen.value) return false;
+    if (antiCheat.isRestricted || serverActionPending.value || !careerWindowOpen.value) {
+      return false;
+    }
     if (careerBuyRefusal(nodeId, careerNodeIds.value, phdCount.value) !== null) return false;
     const cost = CAREER_NODES_BY_ID.get(nodeId)!.cost;
     phdCount.value -= cost;
@@ -638,14 +641,17 @@ export const useGameStore = defineStore("game", () => {
     if (!careerChangedLocally.value) return false;
     careerChangedLocally.value = false;
     const hadAny = careerNodes.value.length > 0 || careerBonusPhdSinceLoad.value > 0;
-    phdCount.value = Math.max(0, phdCount.value + phdInvested.value - careerBonusPhdSinceLoad.value);
+    phdCount.value = Math.max(
+      0,
+      phdCount.value + phdInvested.value - careerBonusPhdSinceLoad.value
+    );
     careerNodes.value = [];
     careerBonusPhdSinceLoad.value = 0;
     careerWindowOpen.value = false;
     return hadAny;
   }
 
-  /** A server-credited windfall booster: the tokens it already added to the save, and the new counter. */
+  /** A windfall booster's grant (already credited to the save by the server) and the new counter. */
   function applyWindfall(granted: number, newUpgraderSeq?: number): void {
     tokens.value += granted;
     totalTokensEarned.value += granted;

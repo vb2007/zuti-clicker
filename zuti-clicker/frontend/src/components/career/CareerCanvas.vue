@@ -47,7 +47,7 @@ import CareerIcon from "./CareerIcon.vue";
 const props = withDefaults(defineProps<{ selectedId: string | null; bottomInset?: number }>(), {
   bottomInset: 0
 });
-const emit = defineEmits<{ select: [id: string]; legend: [] }>();
+const emit = defineEmits<{ select: [id: string]; deselect: []; legend: [] }>();
 
 const { t } = useI18n();
 const game = useGameStore();
@@ -313,6 +313,12 @@ function onPointerDown(e: PointerEvent): void {
 
 function onPointerMove(e: PointerEvent): void {
   if (!pointers.has(e.pointerId)) return;
+  // A mouse released outside the canvas before a drag took capture never sent
+  // its pointerup here: with no button held any more, the press is over.
+  if (e.pointerType !== "touch" && e.buttons === 0) {
+    onPointerUp(e);
+    return;
+  }
   pointers.set(e.pointerId, local(e));
   if (pointers.size >= 2 && pinchStart) {
     const g = pinchGeometry();
@@ -355,13 +361,20 @@ function onPointerUp(e: PointerEvent): void {
     pinchStart = null;
     return;
   }
+  if (pointers.size === 2) {
+    // Three fingers down to two: measure the pinch afresh from the pair that's
+    // left, or the zoom jumps to the ratio against a different pair.
+    pinchStart = { ...pinchGeometry(), view: { ...view.value } };
+    return;
+  }
   if (pointers.size > 0) return;
   dragging.value = false;
   pinchStart = null;
   dragStart = null;
-  // A double tap/click on empty canvas zooms in there.
+  // A tap/click on empty canvas clears the selection; a double one zooms in there.
   const onNode = (e.target as HTMLElement | null)?.closest?.(".career-node");
   if (!moved && !onNode) {
+    emit("deselect");
     const now = performance.now();
     if (lastTap && now - lastTap.time < 320 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) {
       zoomBy(1.6, p.x, p.y);
@@ -381,9 +394,28 @@ function onWheel(e: WheelEvent): void {
   zoomBy(Math.exp(-clamp(e.deltaY * unit, -200, 200) * (e.ctrlKey ? 0.01 : 0.0015)), p.x, p.y);
 }
 
-function onNodeClick(id: string): void {
-  if (suppressClick) return;
+function onNodeClick(id: string, e: MouseEvent): void {
+  // A click a drag's release fires is swallowed — but a keyboard activation
+  // (Enter/Space: detail 0) always goes through, whatever the last gesture was.
+  if (suppressClick && e.detail !== 0) return;
   emit("select", id);
+}
+
+function onNodeFocus(id: string): void {
+  focusId.value = id;
+  // Tabbing onto a node off screen brings it into view (the canvas itself
+  // never scrolls — see .career-canvas).
+  reveal(id);
+}
+
+// `overflow: clip` keeps focus from scrolling the canvas; where it isn't
+// supported (`hidden` fallback), any scroll a focus move causes is undone.
+function onCanvasScroll(): void {
+  const el = viewportEl.value;
+  if (el && (el.scrollLeft !== 0 || el.scrollTop !== 0)) {
+    el.scrollLeft = 0;
+    el.scrollTop = 0;
+  }
 }
 
 // ---- Keyboard -------------------------------------------------------------
@@ -462,6 +494,7 @@ defineExpose({ zoomBy, fitAll });
     @pointerup="onPointerUp"
     @pointercancel="onPointerUp"
     @wheel="onWheel"
+    @scroll="onCanvasScroll"
   >
     <div class="world" :class="{ 'low-zoom': lowZoom }" :style="worldStyle">
       <svg class="edges" :width="worldW" :height="worldH" aria-hidden="true">
@@ -489,8 +522,8 @@ defineExpose({ zoomBy, fitAll });
         :aria-label="n.label"
         :aria-pressed="n.node.id === selectedId"
         :data-node="n.node.id"
-        @click="onNodeClick(n.node.id)"
-        @focus="focusId = n.node.id"
+        @click="onNodeClick(n.node.id, $event)"
+        @focus="onNodeFocus(n.node.id)"
         @keydown="onNodeKeydown($event, n.node.id)"
       >
         <CareerIcon
@@ -581,7 +614,10 @@ defineExpose({ zoomBy, fitAll });
 <style scoped>
 .career-canvas {
   position: relative;
+  /* clip, not hidden: a hidden box still scrolls when focus lands on a node
+     outside it, which would knock the drawing out of step with the view. */
   overflow: hidden;
+  overflow: clip;
   /* Every gesture on the canvas is ours: no browser pan, zoom or text selection. */
   touch-action: none;
   user-select: none;

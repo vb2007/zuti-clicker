@@ -132,6 +132,9 @@ export function getWindfallGrant(
 }
 
 /** The booster spawn divisor: departmentNewsletter + tree spawn bonus, capped. */
-export function getBoosterSpawnDivisor(upgradeSpawnMultiplier: number, mods: CareerModifiers): number {
+export function getBoosterSpawnDivisor(
+  upgradeSpawnMultiplier: number,
+  mods: CareerModifiers
+): number {
   return Math.min(CAREER_CAPS.boosterSpawnDivisor, upgradeSpawnMultiplier + mods.boosterSpawnPct);
 }

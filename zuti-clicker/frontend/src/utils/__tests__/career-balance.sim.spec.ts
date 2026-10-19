@@ -165,7 +165,9 @@ describe.skipIf(!RUN)("Academic Career balance simulation", () => {
           for (const h of [1, 3, 5, 10, 20, 40, 60, 80, 100, 125, 150, 200, 250, 300, 400]) {
             if (hour >= h && !milestones.has(h)) {
               milestones.set(h, owned);
-              log.push(`  @${h}h: nodes ${owned}, held ${game.phdCount}, total ${game.phdTotal}, run ${(run / 60).toFixed(0)}m`);
+              log.push(
+                `  @${h}h: nodes ${owned}, held ${game.phdCount}, total ${game.phdTotal}, run ${(run / 60).toFixed(0)}m`
+              );
             }
           }
           if (owned === CAREER_NODES.length && INVEST_SHARE > 0 && maxedAt === null) {
@@ -183,10 +185,7 @@ describe.skipIf(!RUN)("Academic Career balance simulation", () => {
       `total tree cost ${total} PhD; prestiges ${prestiges}; windows with nothing new ${dryWindows}; ` +
         `maxed at ${maxedAt === null ? "never (within " + MAX_HOURS + " h)" : (maxedAt / 3600).toFixed(1) + " h"}`
     );
-    console.log(
-      "first-prestige price check:",
-      CAREER_NODES_BY_ID.get("habilitation")!.cost
-    );
+    console.log("first-prestige price check:", CAREER_NODES_BY_ID.get("habilitation")!.cost);
     vi.useRealTimers();
     vi.restoreAllMocks();
     expect(prestiges).toBeGreaterThan(0);

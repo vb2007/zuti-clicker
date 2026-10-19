@@ -123,10 +123,17 @@ function onCircleClick({ x, y }: { x: number; y: number }) {
             <template v-if="game.careerModifiers.momentumMax > 0">
               <span class="momentum-sep" aria-hidden="true">·</span>
               <span class="momentum-track" aria-hidden="true">
-                <span class="momentum-fill" :style="{ transform: `scaleX(${game.momentum})` }"></span>
+                <span
+                  class="momentum-fill"
+                  :style="{ transform: `scaleX(${game.momentum})` }"
+                ></span>
               </span>
               <span class="momentum-val">
-                {{ t("career.momentum", { pct: formatPercent((game.momentumMultiplier - 1) * 100) }) }}
+                {{
+                  t("career.momentum", {
+                    pct: formatPercent((game.momentumMultiplier - 1) * 100)
+                  })
+                }}
               </span>
             </template>
           </div>

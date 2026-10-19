@@ -324,7 +324,7 @@ A „?" gomb (a nagyítás fölött) ugyanezt a jelmagyarázatot mutatja.
 - **Új boosterek**: a **Kutatási Bónusz** azonnal jóváír néhány perc termelést, a **Heuréka-pillanat** egy ideig +50% kritikus esélyt ad.
 - **Disszertáció ág**: több PhD fokozatszerzésenként, és erősebb bónusz minden birtokolt PhD után.
 
-**Vendégként** a fa csak a játékban él. Ha vendégként vásároltál, majd bejelentkezel, a vendég-fa **nem kerül át a fiókodba**: a csomópontok árát visszakapod (a játék szól), a fiók pedig a következő fokozatszerzésnél nyit neked vásárlási ablakot.
+**Vendégként** a fa csak a játékban él. Ha vendégként vásároltál, majd bejelentkezel, a vendég-fa **nem kerül át a fiókodba**: a csomópontok árát visszakapod — kivéve azokat a PhD-ket, amelyeket maga a fa hozott (a játék szól), a fiók pedig a következő fokozatszerzésnél nyit neked vásárlási ablakot.
 
 A **PhD-ranglista** a birtokolt és a befektetett PhD-id **összegét** mutatja, így a fába fektetés nem ront a helyezéseden.
 

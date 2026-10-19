@@ -121,8 +121,7 @@ onUnmounted(() => window.removeEventListener("beforeunload", handleBeforeUnload)
 // it is finished — and the view mode when opened from the Prestige panel.
 const showCareer = computed(
   () =>
-    (game.careerWindowOpen && !ui.prestigeConfirmOpen && !ui.prestigeCeremonyOpen) ||
-    ui.careerOpen
+    (game.careerWindowOpen && !ui.prestigeConfirmOpen && !ui.prestigeCeremonyOpen) || ui.careerOpen
 );
 
 async function onConfirmDelete() {

@@ -112,9 +112,7 @@ export function layoutCareerTree(nodes: readonly CareerNode[]): CareerLayout {
   const root = nodes.find((n) => n.parent === null);
   if (root) result.set(root.id, { id: root.id, col: 0, row: 0 });
 
-  const edges = nodes
-    .filter((n) => n.parent !== null)
-    .map((n) => ({ from: n.parent!, to: n.id }));
+  const edges = nodes.filter((n) => n.parent !== null).map((n) => ({ from: n.parent!, to: n.id }));
   const cols = [...result.values()].map((n) => n.col);
   return {
     nodes: result,

@@ -64,6 +64,16 @@ export const test = base.extend<Mocks & { app: AppHelper }>({
     await installApiMock(page, { loggedIn, language });
     // Settings (incl. language) are read from localStorage on boot — see
     // settingsStore's STORAGE_KEY.
+    // The dev server's Vue devtools pill (vite-plugin-vue-devtools — never in a
+    // production build) floats over the bottom of the page and would swallow
+    // taps meant for the app underneath. Not part of the app: hidden.
+    await page.addInitScript(() => {
+      document.addEventListener("DOMContentLoaded", () => {
+        const style = document.createElement("style");
+        style.textContent = "#__vue-devtools-container__ { display: none !important; }";
+        document.head.appendChild(style);
+      });
+    });
     await page.addInitScript((lang) => {
       try {
         localStorage.setItem(

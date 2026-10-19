@@ -4,7 +4,13 @@ import { useAuthStore } from "@/stores/authStore";
 import { useSaveStore, SyncFlushError } from "@/stores/saveStore";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { useToastStore } from "@/stores/toastStore";
-import { api, ApiError, CAREER_CODES, careerErrorCode, type CareerMutationResponse } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  CAREER_CODES,
+  careerErrorCode,
+  type CareerMutationResponse
+} from "@/lib/api";
 
 /**
  * Buys, refunds and closes the Academic Career purchase window end to end.

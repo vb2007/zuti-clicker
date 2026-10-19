@@ -71,8 +71,12 @@ describe("career copy", () => {
   });
 
   it("marks exactly the run-start nodes as applying from the next prestige", () => {
-    expect(appliesFromNextPrestige(CAREER_NODES_BY_ID.get("administration.seedFunding")!)).toBe(true);
-    expect(appliesFromNextPrestige(CAREER_NODES_BY_ID.get("administration.tenureTrack")!)).toBe(true);
+    expect(appliesFromNextPrestige(CAREER_NODES_BY_ID.get("administration.seedFunding")!)).toBe(
+      true
+    );
+    expect(appliesFromNextPrestige(CAREER_NODES_BY_ID.get("administration.tenureTrack")!)).toBe(
+      true
+    );
     expect(appliesFromNextPrestige(CAREER_NODES_BY_ID.get("research.labAccess")!)).toBe(false);
   });
 });

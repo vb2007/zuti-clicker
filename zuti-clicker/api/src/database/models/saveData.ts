@@ -52,7 +52,6 @@ export type UpsertResult =
   // only a forged phdCount can get here (an honest one is bounded by the envelope).
   | { ok: false; reason: "phd_limit" };
 
-
 interface LockedSaveRow {
   id: number;
   prestigeCount: number;

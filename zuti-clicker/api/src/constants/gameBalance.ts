@@ -143,4 +143,3 @@ export const BOOSTER_EFFECTS: Record<string, { kind: BoosterKind; multiplier: nu
   windfall: { kind: "instant", multiplier: 0 },
   critStorm: { kind: "crit", multiplier: 0.5 }
 };
-

@@ -29,7 +29,8 @@ export function runAutoBuy(
   if (mods.autoBuyUpgrades && enabled.upgrades) {
     while (bought < AUTO_BUY_MAX_PER_TICK) {
       const next = UPGRADE_DEFINITIONS.filter(
-        (d) => !game.isUpgradeOwned(d.id) && game.isUpgradeRevealed(d.id) && game.canAffordUpgrade(d.id)
+        (d) =>
+          !game.isUpgradeOwned(d.id) && game.isUpgradeRevealed(d.id) && game.canAffordUpgrade(d.id)
       ).sort((a, b) => game.getUpgradeCost(a.id) - game.getUpgradeCost(b.id))[0];
       if (!next || !game.buyUpgrade(next.id)) break;
       bought++;

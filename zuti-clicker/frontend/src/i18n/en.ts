@@ -347,7 +347,7 @@ export default {
       booster: "Booster"
     },
     guestTreeDropped:
-      "Your guest Academic Career doesn't carry over to an account — its PhDs were refunded. Re-invest them after your next prestige.",
+      "Your guest Academic Career doesn't carry over to an account — its PhDs were refunded, minus any extra PhDs the tree itself earned you. Re-invest them after your next prestige.",
     errors: {
       syncFailed: "Couldn't save your progress first — try again in a moment.",
       windowClosed: "The Academic Career can only be changed right after a prestige.",

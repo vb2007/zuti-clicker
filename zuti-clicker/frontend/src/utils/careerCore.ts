@@ -104,8 +104,8 @@ export interface CareerNode {
 // steep, so the deep tree is a long-term goal. Tuned by the balance
 // simulation (frontend/src/utils/__tests__/career-balance.sim.spec.ts, `pnpm
 // sim:balance`): the fastest strategy it found (invest ~10% of held PhDs per
-// window, 3 clicks/s, every booster) maxes the tree at ~130 h; investing half
-// at every window takes ~175 h. Re-run it after any price or effect change.
+// window, 3 clicks/s, every booster) maxes the tree at ~129 h; investing half
+// at every window takes ~172 h. Re-run it after any price or effect change.
 export const CAREER_EARLY_LEVELS = 6;
 export const CAREER_EARLY_GROWTH_PERCENT = 160;
 export const CAREER_COST_GROWTH_PERCENT = 265;
@@ -113,7 +113,10 @@ export const KEYSTONE_LEVEL_STEP = 3;
 export const KEYSTONE_COST_SCALE = 300;
 export const FIRST_KEYSTONE_COST_SCALE = 150;
 
-/** Base price at a level: 1, then x1.6 per early level and x2.3 after, rounded up, in exact integers. */
+/**
+ * Base price at a level: 1, then x1.6 per early level and x2.65 after, rounded
+ * up, in exact integers.
+ */
 export function costAtLevel(level: number): number {
   let cost = 1;
   for (let i = 0; i < level; i++) {

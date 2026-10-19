@@ -147,12 +147,107 @@ test.describe("Academic Career", () => {
     // On a phone the sheet covers the lower canvas: close it to reach the root.
     if (await page.locator(".career-sheet").count())
       await page.locator(".node-panel .close").click();
-    await root.click();
+    // Back to the root the keyboard way: focusing it brings it into view.
+    await root.focus();
+    await expect(root).toBeInViewport();
+    await page.keyboard.press("Enter");
     const undo = page.locator(".node-panel .btn-secondary").last();
     await expect(undo).toContainText("2");
     await undo.click();
     expect(await app.seed((s) => s.game.careerNodes.length)).toBe(0);
     expect(await app.seed((s) => s.game.phdCount)).toBe(60);
+  });
+
+  test("regression: keyboard focus never leaves the open window, and Tab never scrolls the canvas", async ({
+    app,
+    page
+  }) => {
+    await openWindow(app);
+    // Walk off the root first, so the roving tab stop isn't the first node in the DOM.
+    await page.locator('[data-node="habilitation"]').focus();
+    await page.keyboard.press("ArrowUp");
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("Shift+Tab");
+      expect(await page.evaluate(() => !!document.activeElement?.closest(".career-overlay"))).toBe(
+        true
+      );
+    }
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => !!document.activeElement?.closest(".career-overlay"))).toBe(
+        true
+      );
+    }
+    const scroll = await page
+      .locator(".career-canvas")
+      .evaluate((el) => [el.scrollLeft, el.scrollTop]);
+    expect(scroll).toEqual([0, 0]);
+  });
+
+  test("regression: Tabbing back to a node dragged off screen doesn't scroll the canvas", async ({
+    app,
+    page
+  }) => {
+    test.skip(await coarse(page), "mouse devices only");
+    await openWindow(app);
+    // Drag the whole tree away, so the roving tab stop (the root) is off screen.
+    const box = (await page.locator(".career-canvas").boundingBox())!;
+    await page.mouse.move(box.x + 30, box.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 30, box.y + 30, { steps: 10 });
+    await page.mouse.up();
+    await expect(page.locator('[data-node="habilitation"]')).not.toBeInViewport();
+    // Back into the tree from the footer.
+    await page.locator(".career-foot .finish").focus();
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press("Shift+Tab");
+      if (await page.evaluate(() => !!document.activeElement?.closest(".career-node"))) break;
+    }
+    expect(await page.evaluate(() => !!document.activeElement?.closest(".career-node"))).toBe(true);
+    const scroll = await page
+      .locator(".career-canvas")
+      .evaluate((el) => [el.scrollLeft, el.scrollTop]);
+    expect(scroll).toEqual([0, 0]);
+    // ...and the focused node was brought into view instead.
+    await expect(page.locator(".career-node:focus")).toBeInViewport();
+  });
+
+  test("regression: Enter on a node still selects it after a drag", async ({ app, page }) => {
+    test.skip(await coarse(page), "mouse devices only");
+    await openWindow(app);
+    const box = (await page.locator(".career-canvas").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    const root = page.locator('[data-node="habilitation"]');
+    await root.focus();
+    await page.keyboard.press("Enter");
+    await expect(root).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("a tap on empty canvas clears the selection", async ({ app, page }) => {
+    await openWindow(app);
+    const root = page.locator('[data-node="habilitation"]');
+    await root.click();
+    await expect(root).toHaveAttribute("aria-pressed", "true");
+    // A point where the canvas itself is on top — no node, label, control or sheet.
+    const spot = await page.evaluate(() => {
+      const c = document.querySelector(".career-canvas")!.getBoundingClientRect();
+      for (let y = c.top + 20; y < c.bottom - 20; y += 23) {
+        for (let x = c.left + 20; x < c.right - 20; x += 23) {
+          const el = document.elementFromPoint(x, y);
+          if (el && el.closest(".career-canvas") && !el.closest("button, .branch-label")) {
+            return { x, y };
+          }
+        }
+      }
+      return null;
+    });
+    expect(spot).not.toBeNull();
+    if (await coarse(page)) await page.touchscreen.tap(spot!.x, spot!.y);
+    else await page.mouse.click(spot!.x, spot!.y);
+    await expect(root).toHaveAttribute("aria-pressed", "false");
   });
 
   test("dragging pans the tree and never selects the node it started on", async ({ app, page }) => {

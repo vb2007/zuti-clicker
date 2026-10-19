@@ -114,7 +114,10 @@ describe("useCareer", () => {
       vi.mocked(api.career.buy).mockRejectedValue(
         new ApiError(409, "closed", {
           code: CAREER_CODES.windowClosed,
-          ...state({ phdCount: 3, career: { windowOpen: false, windowId: 1, phdInvested: 0, nodes: [] } })
+          ...state({
+            phdCount: 3,
+            career: { windowOpen: false, windowId: 1, phdInvested: 0, nodes: [] }
+          })
         })
       );
       const career = mountCareer();

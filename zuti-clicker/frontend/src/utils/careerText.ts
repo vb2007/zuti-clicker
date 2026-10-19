@@ -44,7 +44,8 @@ export function careerNodeFlavor(t: Translate, node: CareerNode): string {
 /** What owning this one node does, in plain language. */
 export function careerEffectText(t: Translate, node: CareerNode): string {
   const v = node.value;
-  const p = (key: string, params: Record<string, unknown> = {}) => t(`career.effects.${key}`, params);
+  const p = (key: string, params: Record<string, unknown> = {}) =>
+    t(`career.effects.${key}`, params);
   switch (node.kind) {
     case "productionPct":
       return p("productionPct", { pct: formatBp(v) });

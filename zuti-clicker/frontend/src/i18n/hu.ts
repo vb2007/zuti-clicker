@@ -348,7 +348,7 @@ export default {
       booster: "Booster"
     },
     guestTreeDropped:
-      "A vendégként felépített Tudományos pályád nem kerül át a fiókodba — a PhD-ket visszakaptad. A következő fokozatszerzés után újra befektetheted őket.",
+      "A vendégként felépített Tudományos pályád nem kerül át a fiókodba — a PhD-ket visszakaptad, kivéve azokat, amelyeket maga a fa hozott neked. A következő fokozatszerzés után újra befektetheted őket.",
     errors: {
       syncFailed: "Nem sikerült előbb elmenteni a haladásodat — próbáld újra egy pillanat múlva.",
       windowClosed: "A Tudományos pálya csak közvetlenül egy fokozatszerzés után módosítható.",
