@@ -32,6 +32,7 @@ export type SpinResult =
 interface LockedSave {
   id: number;
   phdCount: number;
+  phdInvested: number;
   upgraderNet: number;
 }
 
@@ -57,7 +58,7 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
       // commit — a losing racer would then be told the wrong thing (and the
       // balance it reported would be stale).
       const rows = await tx.$queryRaw<LockedSave[]>`
-        SELECT id, phdCount, upgraderNet FROM GameSave WHERE userId = ${userId} FOR UPDATE
+        SELECT id, phdCount, phdInvested, upgraderNet FROM GameSave WHERE userId = ${userId} FOR UPDATE
       `;
       const save = rows[0];
       if (!save) return { ok: false, reason: "no_save" } as const;
@@ -69,8 +70,11 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
       // before the roll, in plain arithmetic, so the answer never depends on
       // the roll and an out-of-range value never reaches the database.
       const winDelta = quote.payout - stake;
+      // phdTotal (held + invested, the "phd" leaderboard metric) moves with
+      // phdCount, so it must fit too.
       if (
         save.phdCount + winDelta > INT32_MAX ||
+        save.phdCount + save.phdInvested + winDelta > INT32_MAX ||
         save.upgraderNet + winDelta > INT32_MAX ||
         save.upgraderNet - stake < INT32_MIN
       ) {
@@ -89,6 +93,8 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
         where: { id: save.id, phdCount: { gte: stake } },
         data: {
           phdCount: { increment: delta },
+          // Absolute, not an increment, so a value an older API left stale heals here.
+          phdTotal: save.phdCount + delta + save.phdInvested,
           upgraderNet: { increment: delta },
           upgraderSeq: { increment: 1 }
         }

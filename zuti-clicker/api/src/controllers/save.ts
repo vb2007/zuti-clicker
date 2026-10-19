@@ -10,6 +10,8 @@ import {
   type IncomingSave
 } from "../services/saveValidator";
 import { applyStrike, recordSoftClamp } from "../database/models/antiCheat";
+import { getCareerModifiers } from "../services/careerCore";
+import { toCareerState } from "../database/models/career";
 
 interface SaveBody {
   tokens?: unknown;
@@ -159,6 +161,9 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
         // so a save made before a later spin can be told apart from a current
         // one (see storeSave's stale check).
         upgraderSeq: save.upgraderSeq,
+        // Read-only, like activeBoosters below: the Academic Career tree and
+        // its purchase window change only through POST /career/*.
+        career: toCareerState(save),
         // Read-only — see SaveInput's comment on why PUT /save can't touch
         // this. remainingMs, never the row's absolute expiresAt: the client
         // anchors it to its own clock the instant it's loaded (gameStore's
@@ -375,9 +380,12 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
             phdCount: previous.phdCount,
             prestigeCount: previous.prestigeCount,
             upgraderNet: previous.upgraderNet,
+            phdInvested: previous.phdInvested,
             savedAt: previous.savedAt,
             units: previous.units.map((u) => ({ unitId: u.unitId, owned: u.owned })),
-            upgrades: previous.upgrades.map((u) => u.upgradeId)
+            upgrades: previous.upgrades.map((u) => u.upgradeId),
+            // From the account's own stored nodes — PUT /save never carries them.
+            career: getCareerModifiers(previous.careerNodes.map((n) => n.nodeId))
           }
         : null;
 
@@ -469,13 +477,20 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     // Lost the race to a wheel spin between the check above and the write
     // (or ANTICHEAT_MODE=off skipped that check): same outcome, same reply.
     if (!written.ok) {
-      const r = Responses.SAVE.STALE;
+      const r =
+        written.reason === "phd_limit" ? Responses.SAVE.INVALID_PRESTIGE : Responses.SAVE.STALE;
       res.status(r.status).json(r.body);
       return;
     }
 
+    // `career` lets the client open the purchase window right after the
+    // post-prestige sync, without waiting for a reload.
     const r = Responses.SAVE.SAVE_SUCCESS;
-    res.status(r.status).json({ ...r.body, savedAt: written.save.savedAt });
+    res.status(r.status).json({
+      ...r.body,
+      savedAt: written.save.savedAt,
+      career: { windowOpen: written.career.windowOpen, windowId: written.career.windowId }
+    });
   } catch (error) {
     console.error("Store save error:", error);
     const r = Responses.SAVE.INTERNAL_ERROR;

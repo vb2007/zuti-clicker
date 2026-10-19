@@ -80,7 +80,7 @@ export class Responses {
       body: {
         code: "save_stale",
         error:
-          "Your progress changed since this save was made (a wheel spin elsewhere). Reload to continue from your current progress."
+          "Your progress changed since this save was made (a wheel spin or an Academic Career change elsewhere). Reload to continue from your current progress."
       }
     },
     NOT_FOUND: { status: 404, body: { save: null } },
@@ -120,6 +120,66 @@ export class Responses {
       body: { error: "This spin would overflow the stored PhD totals." }
     },
     SPIN_SUCCESS: { status: 200, body: { message: "Spin settled." } },
+    INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
+  } as const;
+
+  // POST /career/* (the Academic Career tree). Every 409 carries a `code` the
+  // client keys on (keep in sync with frontend/src/lib/api.ts's CAREER_CODES);
+  // the caller appends the account's real career state (and phdCount where it
+  // helps), so a client that was out of date can resync without a reload.
+  static readonly CAREER = {
+    INVALID_NODE: { status: 400, body: { error: "nodeId must be a known Academic Career node id." } },
+    INVALID_WINDOW_ID: {
+      status: 400,
+      body: { error: "windowId must be a non-negative integer when provided." }
+    },
+    NO_SAVE: { status: 404, body: { error: "No save exists yet — sync your progress first." } },
+    WINDOW_CLOSED: {
+      status: 409,
+      body: {
+        code: "career_window_closed",
+        error: "The Academic Career can only be changed right after a prestige."
+      }
+    },
+    // A delayed "Done" for an earlier window must not close a newer one that
+    // another tab's prestige opened meanwhile.
+    WINDOW_CHANGED: {
+      status: 409,
+      body: {
+        code: "career_window_changed",
+        error: "A newer Academic Career window has opened since this one."
+      }
+    },
+    ALREADY_OWNED: {
+      status: 409,
+      body: { code: "career_already_owned", error: "That node is already yours." }
+    },
+    PREREQUISITE_MISSING: {
+      status: 409,
+      body: {
+        code: "career_prerequisite_missing",
+        error: "Buy the node this one branches from first."
+      }
+    },
+    INSUFFICIENT_PHD: {
+      status: 409,
+      body: { code: "career_insufficient_phd", error: "You do not have enough PhDs for that node." }
+    },
+    NOT_OWNED: {
+      status: 409,
+      body: { code: "career_not_owned", error: "That node is not yours to refund." }
+    },
+    // Bought in an earlier window: permanent.
+    NOT_REFUNDABLE: {
+      status: 409,
+      body: {
+        code: "career_not_refundable",
+        error: "Only nodes bought since your latest prestige can be refunded."
+      }
+    },
+    BUY_SUCCESS: { status: 200, body: { message: "Node bought." } },
+    REFUND_SUCCESS: { status: 200, body: { message: "Nodes refunded." } },
+    CLOSE_SUCCESS: { status: 200, body: { message: "Academic Career window closed." } },
     INTERNAL_ERROR: { status: 500, body: { error: "Internal server error." } }
   } as const;
 

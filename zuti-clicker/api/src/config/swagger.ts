@@ -205,9 +205,11 @@ export const buildSwaggerSpec = (): object => {
               upgraderSeq: {
                 type: "integer",
                 minimum: 0,
-                description: "Wheel-spin counter; echo it back on PUT /save",
+                description:
+                  "Counter of server-side PhD changes (wheel spins, Academic Career purchases/refunds, windfall grants); echo it back on PUT /save",
                 example: 0
               },
+              career: { $ref: "#/components/schemas/CareerState" },
               activeBoosters: {
                 type: "array",
                 items: { $ref: "#/components/schemas/ActiveBooster" }
@@ -274,7 +276,121 @@ export const buildSwaggerSpec = (): object => {
               {
                 type: "object",
                 properties: {
-                  savedAt: { type: "string", format: "date-time" }
+                  savedAt: { type: "string", format: "date-time" },
+                  career: {
+                    type: "object",
+                    description:
+                      "The Academic Career purchase window after this save — a save that carried a new prestige opens one",
+                    properties: {
+                      windowOpen: { type: "boolean", example: true },
+                      windowId: { type: "integer", minimum: 0, example: 3 }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          CareerState: {
+            type: "object",
+            description:
+              "The Academic Career tree. Read-only on GET /save: it changes only through POST /career/*.",
+            properties: {
+              windowOpen: {
+                type: "boolean",
+                description: "Whether the purchase window (opened by a prestige) is open",
+                example: false
+              },
+              windowId: {
+                type: "integer",
+                minimum: 0,
+                description: "How many purchase windows have ever opened",
+                example: 2
+              },
+              phdInvested: {
+                type: "integer",
+                minimum: 0,
+                description: "PhDs currently invested in owned nodes",
+                example: 12
+              },
+              nodes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    nodeId: { type: "string", example: "research.labAccess" },
+                    cost: { type: "integer", minimum: 1, description: "PhDs paid", example: 4 },
+                    refundable: {
+                      type: "boolean",
+                      description: "Bought in the still-open current window",
+                      example: true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          CareerNodeRequest: {
+            type: "object",
+            required: ["nodeId"],
+            properties: {
+              nodeId: { type: "string", example: "research.labAccess" }
+            }
+          },
+          CareerCloseRequest: {
+            type: "object",
+            properties: {
+              windowId: {
+                type: "integer",
+                minimum: 0,
+                description: "The window the client is closing; refused if a newer one is open",
+                example: 2
+              }
+            }
+          },
+          CareerMutationResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/MessageResponse" },
+              {
+                type: "object",
+                properties: {
+                  phdCount: { type: "integer", minimum: 0, description: "PhDs held now", example: 38 },
+                  upgraderSeq: {
+                    type: "integer",
+                    minimum: 0,
+                    description: "The new counter — echo it back on PUT /save",
+                    example: 5
+                  },
+                  career: { $ref: "#/components/schemas/CareerState" }
+                }
+              }
+            ]
+          },
+          CareerRefundResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/CareerMutationResponse" },
+              {
+                type: "object",
+                properties: {
+                  refundedNodeIds: {
+                    type: "array",
+                    items: { type: "string" },
+                    example: ["research.labAccess", "research.grantWriting.1"]
+                  },
+                  phdRefunded: { type: "integer", minimum: 1, example: 8 }
+                }
+              }
+            ]
+          },
+          CareerErrorResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/ErrorResponse" },
+              {
+                type: "object",
+                properties: {
+                  code: { type: "string", example: "career_window_closed" },
+                  phdCount: { type: "integer", minimum: 0 },
+                  upgraderSeq: { type: "integer", minimum: 0 },
+                  career: { $ref: "#/components/schemas/CareerState" }
                 }
               }
             ]
@@ -335,6 +451,20 @@ export const buildSwaggerSpec = (): object => {
                     minimum: 0,
                     description: "Time until the next claim could succeed, in milliseconds",
                     example: 142000
+                  },
+                  windfall: {
+                    type: "object",
+                    description:
+                      "Present only when the Academic Career's windfall booster was rolled: an instant grant the server already credited to the save (no timed buff)",
+                    properties: {
+                      granted: { type: "number", minimum: 0, example: 1800000 },
+                      upgraderSeq: {
+                        type: "integer",
+                        minimum: 1,
+                        description: "The bumped counter — echo it back on PUT /save",
+                        example: 4
+                      }
+                    }
                   }
                 }
               }

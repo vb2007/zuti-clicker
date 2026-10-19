@@ -62,13 +62,16 @@ async function main(): Promise<void> {
   const ids = victims.map((u) => u.id);
 
   // Count-first so the dry run reports exactly what --apply would remove.
-  const [saves, settingsRows, auths] = await Promise.all([
+  const [saves, careerNodes, settingsRows, auths] = await Promise.all([
     prisma.gameSave.count({ where: { userId: { in: ids } } }),
+    // Reported only — CareerNodeSave cascades from GameSave like UnitSave.
+    prisma.careerNodeSave.count({ where: { gameSave: { userId: { in: ids } } } }),
     prisma.userSettings.count({ where: { userId: { in: ids } } }),
     prisma.authentication.count({ where: { userId: { in: ids } } })
   ]);
   console.log(
-    `Would delete: ${auths} auth row(s), ${saves} save(s) (+cascaded units), ` +
+    `Would delete: ${auths} auth row(s), ${saves} save(s) (+cascaded units, ` +
+      `${careerNodes} career node(s)), ` +
       `${settingsRows} settings row(s), ${ids.length} user(s)`
   );
 
@@ -79,7 +82,7 @@ async function main(): Promise<void> {
 
   // Authentication and GameSave have ON DELETE RESTRICT on User (see the init
   // migration), so their rows must be removed before User itself. UnitSave
-  // cascades from GameSave. UserSettings cascades from User, but is deleted
+  // and CareerNodeSave cascade from GameSave. UserSettings cascades from User, but is deleted
   // explicitly first so this script stays correct even if that FK ever changes.
   await prisma.$transaction([
     prisma.gameSave.deleteMany({ where: { userId: { in: ids } } }),
