@@ -127,3 +127,20 @@ export const MAX_CRIT_MULTIPLIER = Math.max(
 export const MAX_PRODUCTION_BOOSTER_MULTIPLIER = 7; // "frenzy"
 export const MAX_CLICK_BOOSTER_MULTIPLIER = 10; // "clickStorm"
 export const MIN_COST_BOOSTER_MULTIPLIER = 1 - 0.25; // "clearance" (-25%)
+
+// Every booster's base effect, by id — keep in sync with
+// frontend/src/utils/gameConstants.ts's BOOSTER_DEFINITIONS. The envelope
+// derives its booster maxima from these (with the Academic Career's potency
+// nodes applied — see services/economy.ts's getMaxBoosterMultiplier); the
+// three MAX_* constants above are the zero-career baseline of the same table.
+// "instant" (windfall) and "crit" (critStorm) are career-unlocked kinds that
+// never touch a production/click/cost multiplier.
+export type BoosterKind = "production" | "click" | "costReduction" | "instant" | "crit";
+export const BOOSTER_EFFECTS: Record<string, { kind: BoosterKind; multiplier: number }> = {
+  frenzy: { kind: "production", multiplier: 7 },
+  clickStorm: { kind: "click", multiplier: 10 },
+  clearance: { kind: "costReduction", multiplier: 0.25 },
+  windfall: { kind: "instant", multiplier: 0 },
+  critStorm: { kind: "crit", multiplier: 0.5 }
+};
+

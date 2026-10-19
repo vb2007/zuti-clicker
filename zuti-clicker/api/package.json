@@ -11,7 +11,8 @@
     "build": "tsc",
     "prod": "node ./dist/index.js",
     "cleanup:test-users": "tsx scripts/cleanup-test-users.ts",
-    "reset:anticheat-state": "tsx scripts/reset-anticheat-state.ts"
+    "reset:anticheat-state": "tsx scripts/reset-anticheat-state.ts",
+    "generate:career-fixtures": "tsx scripts/generate-career-fixtures.ts"
   },
   "keywords": [
     "javascript",
