@@ -133,7 +133,9 @@ export const buildSwaggerSpec = (): object => {
               phdCount: {
                 type: "integer",
                 minimum: 0,
-                description: "PhDs earned across all prestiges (omit to keep the stored value)",
+                maximum: 9007199254740991,
+                description:
+                  "PhDs currently held — earned through prestige, minus any invested in the Academic Career or lost on the wheel (omit to keep the stored value)",
                 example: 3
               },
               prestigeCount: {

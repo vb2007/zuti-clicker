@@ -40,7 +40,9 @@ model GameSave {
   totalTokensEarned Float           @default(0)
   totalClicks       Int             @default(0)
   elapsedSeconds    Float           @default(0)
-  phdCount          Int             @default(0)
+  // Whole PhDs, stored as DOUBLE (exact up to 2^53): an INT column overflows
+  // for a dedicated player — see the widen_phd_columns migration.
+  phdCount          Float           @default(0)
   prestigeCount     Int             @default(0)
   runTokensEarned   Float           @default(0)
   runClicks         Int             @default(0)
@@ -55,7 +57,7 @@ model GameSave {
   // (payout - stake) over every spin; the save envelope adds it to its PhD
   // bound. upgraderSeq counts spins and doubles as PUT /save's stale-write
   // guard, so an in-flight save can't resurrect PhDs a later spin removed.
-  upgraderNet       Int             @default(0)
+  upgraderNet       Float           @default(0)
   upgraderSeq       Int             @default(0)
   // Academic Career (the persistent PhD tree — see database/models/career.ts).
   // phdInvested is the PhDs currently sunk into CareerNodeSave rows (always
@@ -65,8 +67,8 @@ model GameSave {
   // prestige and closed only by POST /career/close; careerWindowId counts
   // windows ever opened, and a node is refundable iff the window is open and
   // its boughtInWindow equals it.
-  phdInvested       Int             @default(0)
-  phdTotal          Int             @default(0)
+  phdInvested       Float           @default(0)
+  phdTotal          Float           @default(0)
   careerWindowOpen  Boolean         @default(false)
   careerWindowId    Int             @default(0)
   savedAt           DateTime        @default(now())
@@ -119,7 +121,7 @@ model CareerNodeSave {
   gameSaveId     Int
   gameSave       GameSave @relation(fields: [gameSaveId], references: [id], onDelete: Cascade)
   nodeId         String   @db.VarChar(32)
-  cost           Int
+  cost           Float
   boughtInWindow Int
   boughtAt       DateTime @default(now())
 

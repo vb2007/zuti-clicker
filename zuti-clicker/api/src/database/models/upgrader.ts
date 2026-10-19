@@ -3,8 +3,8 @@ import { prisma } from "../prisma";
 import { withWriteConflictRetry } from "../retry";
 import { isWinningRoll, consolationMs, type SpinQuote } from "../../services/upgrader";
 import {
-  INT32_MAX,
-  INT32_MIN,
+  PHD_MAX,
+  PHD_MIN,
   UPGRADER_PPM,
   UPGRADER_CONSOLATION_BOOSTER_ID,
   UPGRADER_CONSOLATION_MAX_REMAINING_MS
@@ -66,17 +66,17 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
         return { ok: false, reason: "insufficient_phd", phdCount: save.phdCount } as const;
       }
 
-      // Refuse a spin whose WIN would overflow either Int column — checked
+      // Refuse a spin whose WIN would pass the PhD columns' exact range — checked
       // before the roll, in plain arithmetic, so the answer never depends on
       // the roll and an out-of-range value never reaches the database.
       const winDelta = quote.payout - stake;
       // phdTotal (held + invested, the "phd" leaderboard metric) moves with
       // phdCount, so it must fit too.
       if (
-        save.phdCount + winDelta > INT32_MAX ||
-        save.phdCount + save.phdInvested + winDelta > INT32_MAX ||
-        save.upgraderNet + winDelta > INT32_MAX ||
-        save.upgraderNet - stake < INT32_MIN
+        save.phdCount + winDelta > PHD_MAX ||
+        save.phdCount + save.phdInvested + winDelta > PHD_MAX ||
+        save.upgraderNet + winDelta > PHD_MAX ||
+        save.upgraderNet - stake < PHD_MIN
       ) {
         return { ok: false, reason: "limit_reached" } as const;
       }

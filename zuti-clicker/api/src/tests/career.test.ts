@@ -445,8 +445,28 @@ describe("Career and the rest of the save", () => {
 });
 
 describe("Career and PUT /save limits", () => {
-  it("refuses (400 PHD_LIMIT) a phdCount that, with the invested PhDs, overflows phdTotal", async () => {
-    const MAX = 2147483647;
+  it("regression: PhD balances past the old INT range are stored exactly", async () => {
+    const big = 3_000_000_000_017; // far past 2147483647, still an exact whole number
+    const { cookie } = await userWithWindow(big);
+    expect((await load(cookie)).phdCount).toBe(big);
+    const bought = await buy(cookie, ROOT);
+    expect(bought.body.phdCount).toBe(big - cost(ROOT));
+    const lb = await api.get("/leaderboard?metric=phd&limit=1").set("Cookie", cookie);
+    expect(lb.body.viewer.value).toBe(big);
+  });
+
+  it("still refuses a fractional phdCount", async () => {
+    const cookie = await registerAndLogin();
+    const put = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send({ ...TestData.VALID_SAVE, phdCount: 10.5 });
+    expect(put.status).toBe(400);
+    expect(put.body.error).toBe(Responses.SAVE.INVALID_PRESTIGE.body.error);
+  });
+
+  it("refuses (400 PHD_LIMIT) a phdCount that, with the invested PhDs, passes 2^53 - 1", async () => {
+    const MAX = Number.MAX_SAFE_INTEGER;
     const { cookie } = await userWithWindow(MAX);
     const bought = await buy(cookie, ROOT);
     expect(bought.status).toBe(200);

@@ -10,6 +10,7 @@ import {
   type IncomingSave
 } from "../services/saveValidator";
 import { applyStrike, recordSoftClamp } from "../database/models/antiCheat";
+import { PHD_MAX } from "../constants/upgrader";
 import { getCareerModifiers } from "../services/careerCore";
 import { toCareerState } from "../database/models/career";
 
@@ -73,8 +74,8 @@ function isValidUpgrades(upgrades: unknown): upgrades is string[] | undefined {
   return new Set(upgrades).size === upgrades.length;
 }
 
-// MySQL/MariaDB signed INT range — phdCount, prestigeCount, and runClicks are
-// all Int columns, and a value outside this range makes Prisma throw, which
+// MySQL/MariaDB signed INT range — prestigeCount, runClicks and totalClicks
+// are Int columns, and a value outside this range makes Prisma throw, which
 // the catch block below would turn into a misleading 500 instead of a 400.
 const MAX_INT32 = 2147483647;
 
@@ -83,6 +84,15 @@ const MAX_INT32 = 2147483647;
 // which the catch block below would turn into a misleading 500 instead of a 400.
 function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_INT32;
+}
+
+// phdCount is a DOUBLE column holding whole PhDs (see the widen_phd_columns
+// migration): still a whole number, but bounded by what stays exact, not by INT.
+function isOptionalPhdCount(value: unknown): value is number | undefined {
+  return (
+    value === undefined ||
+    (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= PHD_MAX)
+  );
 }
 
 // Prestige fields are optional (older clients omit them entirely), but a
@@ -209,7 +219,7 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *           (negative/non-finite, or a fractional totalClicks); tokens
  *           exceeding totalTokensEarned; invalid units, prestige fields,
  *           upgrades, or upgraderSeq; or a phdCount that, with the PhDs
- *           invested in the Academic Career, would exceed 2147483647.
+ *           invested in the Academic Career, would exceed 2^53 - 1.
  *         content:
  *           application/json:
  *             schema:
@@ -311,7 +321,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     }
 
     if (
-      !isOptionalCount(phdCount) ||
+      !isOptionalPhdCount(phdCount) ||
       !isOptionalCount(prestigeCount) ||
       !isOptionalCount(runClicks) ||
       !isOptionalAmount(runTokensEarned) ||

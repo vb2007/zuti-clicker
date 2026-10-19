@@ -301,24 +301,32 @@ describe("Upgrader endpoint - concurrent spins (race condition)", () => {
 });
 
 describe("Upgrader endpoint - overflow guard", () => {
-  // phdCount is a signed 32-bit Int column. The check happens before the roll,
-  // so the answer never depends on luck, and no out-of-range value reaches the DB.
-  it("refuses a spin whose win could overflow the balance: 409 LIMIT_REACHED, nothing changes", async () => {
-    const cookie = await userWithPhds(2_000_000_000);
-    // A win would be 2e9 - 1e9 + 2e9 = 3e9 PhDs, above 2^31 - 1.
-    const res = await spin(cookie, { stake: 1_000_000_000, multiplier: 2 });
+  // phdCount is a DOUBLE column holding whole PhDs, exact up to 2^53 - 1 (the
+  // widen_phd_columns migration). The check happens before the roll, so the
+  // answer never depends on luck, and no inexact value reaches the DB.
+  const NEAR_MAX = Number.MAX_SAFE_INTEGER - 1_000_000_000;
+
+  it("refuses a spin whose win could pass the exact range: 409 LIMIT_REACHED, nothing changes", async () => {
+    const cookie = await userWithPhds(NEAR_MAX);
+    // A win would add 1e9 net PhDs, past 2^53 - 1.
+    const res = await spin(cookie, { stake: 1_000_000_000, multiplier: 2.01 });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe(Responses.UPGRADER.LIMIT_REACHED.body.error);
 
     const save = await api.get("/save").set("Cookie", cookie);
-    expect(save.body.save.phdCount).toBe(2_000_000_000);
+    expect(save.body.save.phdCount).toBe(NEAR_MAX);
     expect(save.body.save.upgraderSeq).toBe(0);
   });
 
   it("still allows a spin at the same balance whose win fits", async () => {
-    const cookie = await userWithPhds(2_000_000_000);
+    const cookie = await userWithPhds(NEAR_MAX);
     const res = await spin(cookie, { stake: 1000, multiplier: 2 });
     expect(res.status).toBe(200);
+  });
+
+  it("regression: balances past the old INT range can spin (and stakes stay capped per spin)", async () => {
+    const cookie = await userWithPhds(5_000_000_000);
+    expect((await spin(cookie, { stake: 2_000_000_000, multiplier: 2 })).status).toBe(200);
   });
 });
 

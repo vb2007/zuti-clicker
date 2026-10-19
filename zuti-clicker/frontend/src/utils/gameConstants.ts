@@ -115,6 +115,11 @@ export const UPGRADER_MIN_MULTIPLIER_HUNDREDTHS = 120;
 export const UPGRADER_MAX_MULTIPLIER_HUNDREDTHS = 10_000;
 // Win chance resolution: a roll in [0, PPM) wins when roll < winPpm.
 export const UPGRADER_PPM = 1_000_000;
+// The most PhDs one spin may stake, and the largest whole PhD balance stored
+// exactly (the PhD columns are DOUBLE since the widen_phd_columns migration).
+// Keep in sync with api/src/constants/upgrader.ts's UPGRADER_MAX_STAKE / PHD_MAX.
+export const UPGRADER_MAX_STAKE = 2_147_483_647;
+export const PHD_MAX = Number.MAX_SAFE_INTEGER;
 // A lost spin grants the existing "frenzy" booster, strictly proportional to the
 // share of the player's PhDs that was put up (no minimum — see
 // api/src/constants/upgrader.ts for why a floor would make it farmable); a buff

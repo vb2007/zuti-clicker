@@ -2,6 +2,7 @@ import { prisma } from "../prisma";
 import { withWriteConflictRetry } from "../retry";
 import type { GameSave } from "../../../generated/prisma/client";
 import { CAREER_WINDOW_RUN_GRACE_SECS } from "../../constants/career";
+import { PHD_MAX } from "../../constants/upgrader";
 
 export interface UnitInput {
   unitId: string;
@@ -47,12 +48,10 @@ export interface CareerWindowState {
 export type UpsertResult =
   | { ok: true; save: GameSave; career: CareerWindowState }
   | { ok: false; reason: "stale" }
-  // held + invested PhDs would overflow phdTotal's Int column — only a forged
-  // phdCount can get here (an honest one is bounded by the envelope).
+  // held + invested PhDs would pass what phdTotal's DOUBLE holds exactly —
+  // only a forged phdCount can get here (an honest one is bounded by the envelope).
   | { ok: false; reason: "phd_limit" };
 
-// MySQL/MariaDB signed INT maximum (phdTotal is an Int column).
-const INT32_MAX = 2147483647;
 
 interface LockedSaveRow {
   id: number;
@@ -170,7 +169,7 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
           return { ok: false, reason: "stale" } as const;
 
         const phdTotal = (data.phdCount ?? locked.phdCount) + locked.phdInvested;
-        if (phdTotal > INT32_MAX) return { ok: false, reason: "phd_limit" } as const;
+        if (phdTotal > PHD_MAX) return { ok: false, reason: "phd_limit" } as const;
 
         // A new window on every detected prestige — also when one is still
         // open (a second prestige before Done): bumping the id makes the old

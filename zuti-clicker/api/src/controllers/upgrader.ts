@@ -1,7 +1,7 @@
 import express from "express";
 import { spin } from "../database/models/upgrader";
 import { toHundredths, quoteSpin } from "../services/upgrader";
-import { INT32_MAX } from "../constants/upgrader";
+import { UPGRADER_MAX_STAKE } from "../constants/upgrader";
 import { Responses } from "../constants/responses";
 
 /**
@@ -82,7 +82,7 @@ export const spinHandler = async (req: express.Request, res: express.Response) =
       multiplier?: unknown;
     };
 
-    if (typeof stake !== "number" || !Number.isInteger(stake) || stake < 1 || stake > INT32_MAX) {
+    if (typeof stake !== "number" || !Number.isInteger(stake) || stake < 1 || stake > UPGRADER_MAX_STAKE) {
       const r = Responses.UPGRADER.INVALID_STAKE;
       res.status(r.status).json(r.body);
       return;

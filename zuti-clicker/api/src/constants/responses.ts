@@ -58,7 +58,7 @@ export class Responses {
       status: 400,
       body: {
         error:
-          "phdCount, prestigeCount, runTokensEarned, runClicks, and runSeconds must be non-negative numbers when provided."
+          "phdCount, prestigeCount, runTokensEarned, runClicks, and runSeconds must be non-negative numbers when provided (whole numbers for the counts)."
       }
     },
     INVALID_UPGRADES: {
@@ -83,11 +83,14 @@ export class Responses {
           "Your progress changed since this save was made (a wheel spin or an Academic Career change elsewhere). Reload to continue from your current progress."
       }
     },
-    // held + invested PhDs would overflow GameSave.phdTotal (an INT column).
-    // Only a forged phdCount gets here — an honest one is bounded far below.
+    // held + invested PhDs would pass 2^53 - 1, the largest whole number
+    // GameSave.phdTotal (a DOUBLE) holds exactly. Only a forged phdCount gets
+    // here — an honest one is bounded far below.
     PHD_LIMIT: {
       status: 400,
-      body: { error: "phdCount plus the PhDs invested in the Academic Career exceeds 2147483647." }
+      body: {
+        error: "phdCount plus the PhDs invested in the Academic Career exceeds 9007199254740991."
+      }
     },
     NOT_FOUND: { status: 404, body: { save: null } },
     SAVE_SUCCESS: { status: 200, body: { message: "Save updated successfully." } },

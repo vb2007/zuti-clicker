@@ -12,10 +12,16 @@ export const UPGRADER_WIN_CHANCE_CAP = 0.8;
 export const UPGRADER_MIN_MULTIPLIER_HUNDREDTHS = 120;
 export const UPGRADER_MAX_MULTIPLIER_HUNDREDTHS = 10_000;
 
-// The Int column limits every PhD-denominated value here is bound by
-// (GameSave.phdCount / upgraderNet).
-export const INT32_MAX = 2_147_483_647;
-export const INT32_MIN = -2_147_483_648;
+// The most PhDs one spin may stake. Kept at the old INT limit even though
+// the PhD columns are now DOUBLE: quoteSpin's integer maths (stake x
+// hundredths, then BigInt for the chance) is proven exact up to here (see
+// upgraderMath.test.ts), and a whale simply spins in chunks.
+export const UPGRADER_MAX_STAKE = 2_147_483_647;
+// The limits every stored PhD value is bound by: GameSave.phdCount /
+// upgraderNet / phdTotal are DOUBLE columns holding whole numbers, exact up to
+// 2^53 (see the widen_phd_columns migration).
+export const PHD_MAX = Number.MAX_SAFE_INTEGER;
+export const PHD_MIN = -Number.MAX_SAFE_INTEGER;
 
 // Win chance resolution: the server rolls an integer in [0, PPM) and a spin
 // wins when roll < winPpm.
