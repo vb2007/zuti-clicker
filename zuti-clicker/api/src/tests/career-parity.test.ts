@@ -116,8 +116,8 @@ describe("Academic Career parity (shared golden fixtures)", () => {
 // Hand-computed — the fixtures are generated from this implementation, so a
 // bug in it would be copied into them; these pin the arithmetic itself.
 describe("Academic Career arithmetic (hand-computed)", () => {
-  it("prices grow x1.68 per level, rounded up, in integers", () => {
-    // 1 -> ceil(1.68)=2 -> ceil(3.36)=4 -> ceil(6.72)=7 -> ceil(11.76)=12
+  it("prices grow x1.6 per early level, rounded up, in integers", () => {
+    // 1 -> ceil(1.6)=2 -> ceil(3.2)=4 -> ceil(6.4)=7 -> ceil(11.2)=12
     expect([0, 1, 2, 3, 4].map(costAtLevel)).toEqual([1, 2, 4, 7, 12]);
   });
 

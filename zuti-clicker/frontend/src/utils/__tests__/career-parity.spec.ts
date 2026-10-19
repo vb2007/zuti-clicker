@@ -92,7 +92,7 @@ describe("Academic Career parity (shared golden fixtures)", () => {
     }
   );
 
-  it("hand-computed: prices x1.68/level rounded up, gain bonus floors exactly", () => {
+  it("hand-computed: prices x1.6/early level rounded up, gain bonus floors exactly", () => {
     expect([0, 1, 2, 3, 4].map(costAtLevel)).toEqual([1, 2, 4, 7, 12]);
     expect(applyPhdGainBonus(20, 1500)).toBe(23); // not 22.999... -> 22
     expect(keptUnitCount(7, 2500)).toBe(1);

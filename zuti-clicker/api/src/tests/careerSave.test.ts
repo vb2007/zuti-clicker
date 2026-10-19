@@ -152,8 +152,10 @@ describe("Academic Career save integration — ANTICHEAT_MODE=enforce", () => {
 
   it("the envelope reads the account's stored nodes: a PhD-gain node lets the extra PhDs through", async () => {
     // 20 prestiges over 20 x SCALE tokens: prestige alone explains
-    // sqrt(20 x 20) + 1 = 21 PhDs. Seeded on the (never-clamping) monitor
-    // server with 23 PhDs, then 1 + 4 of them invested — 18 held.
+    // sqrt(20 x 20) + 1 = 21 PhDs; with the PhD-gain node, (1 + bonus) x 20 + 1.
+    // Seeded on the (never-clamping) monitor server, then two nodes bought.
+    const bonus = CAREER_NODES_BY_ID.get("thesis.doctoralSchool")!.value / 10000;
+    const withBonus = Math.floor((1 + bonus) * 20) + 1;
     const base = {
       tokens: 0,
       totalTokensEarned: 20 * PHD_TOKEN_SCALE,
@@ -167,7 +169,7 @@ describe("Academic Career save integration — ANTICHEAT_MODE=enforce", () => {
       const seed = await monitor
         .put("/save")
         .set("Cookie", cookie)
-        .send({ ...base, phdCount: 23 });
+        .send({ ...base, phdCount: withBonus });
       expect(seed.status).toBe(200);
       await monitor.post("/career/buy").set("Cookie", cookie).send({ nodeId: "habilitation" });
       const res = await monitor
@@ -175,27 +177,36 @@ describe("Academic Career save integration — ANTICHEAT_MODE=enforce", () => {
         .set("Cookie", cookie)
         .send({ nodeId: secondNode });
       expect(res.status).toBe(200);
-      expect(res.body.phdCount).toBe(23 - cost("habilitation") - cost(secondNode));
-      return { cookie, held: res.body.phdCount as number, seq: res.body.upgraderSeq as number };
+      const invested = cost("habilitation") + cost(secondNode);
+      expect(res.body.phdCount).toBe(withBonus - invested);
+      return {
+        cookie,
+        invested,
+        held: res.body.phdCount as number,
+        seq: res.body.upgraderSeq as number
+      };
     }
 
-    // With +10% PhD gain: 1.1 x 20 + 1 - 5 invested = 18 — exactly what's held.
-    const bonus = await seeded("thesis.doctoralSchool");
+    // With the bonus the bound is withBonus - invested — exactly what's held.
+    const b = await seeded("thesis.doctoralSchool");
     const ok = await api
       .put("/save")
-      .set("Cookie", bonus.cookie)
-      .send({ ...base, phdCount: bonus.held, upgraderSeq: bonus.seq });
+      .set("Cookie", b.cookie)
+      .send({ ...base, phdCount: b.held, upgraderSeq: b.seq });
     expect(ok.status).toBe(200);
-    expect((await api.get("/save").set("Cookie", bonus.cookie)).body.save.phdCount).toBe(18);
+    expect((await api.get("/save").set("Cookie", b.cookie)).body.save.phdCount).toBe(b.held);
 
-    // The same balance after a node WITHOUT a PhD-gain bonus: 21 - 5 = 16, so 18 is clamped.
-    const plain = await seeded("research.labAccess");
+    // The same balance after a node WITHOUT a PhD-gain bonus: 21 - invested, so it's clamped.
+    const p = await seeded("research.labAccess");
+    expect(withBonus).toBeGreaterThan(21);
     const clamped = await api
       .put("/save")
-      .set("Cookie", plain.cookie)
-      .send({ ...base, phdCount: plain.held, upgraderSeq: plain.seq });
+      .set("Cookie", p.cookie)
+      .send({ ...base, phdCount: p.held, upgraderSeq: p.seq });
     expect(clamped.status).toBe(200);
-    expect((await api.get("/save").set("Cookie", plain.cookie)).body.save.phdCount).toBe(16);
+    expect((await api.get("/save").set("Cookie", p.cookie)).body.save.phdCount).toBe(
+      21 - p.invested
+    );
   });
 });
 

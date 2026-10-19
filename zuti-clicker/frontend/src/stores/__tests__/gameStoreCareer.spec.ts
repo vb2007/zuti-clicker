@@ -6,6 +6,9 @@ import { CAREER_NODES_BY_ID } from "@/utils/careerCore";
 import { getPhdGain } from "@/utils/prestige";
 
 const cost = (id: string) => CAREER_NODES_BY_ID.get(id)!.cost;
+// A node's effect as a fraction (bp / 10000) — tests derive their expectations
+// from the catalog, so retuning a value doesn't need a test edit to stay true.
+const frac = (id: string) => CAREER_NODES_BY_ID.get(id)!.value / 10000;
 const ROOT = "habilitation";
 
 // A guest's state with an open window and `phd` PhDs to spend.
@@ -122,7 +125,8 @@ describe("gameStore — Academic Career effects", () => {
     unit(game, "beta").owned = 10;
     const base = game.baseTokensPerSecond;
     own(game, [ROOT, "research.labAccess", "research.researchGroup", "research.alphaStudies.1"]);
-    expect(game.baseTokensPerSecond).toBeCloseTo(base + 10 * 0.3 * 0.5, 10);
+    const alphaMult = frac("research.alphaStudies.1");
+    expect(game.baseTokensPerSecond).toBeCloseTo(base + 10 * 0.3 * (alphaMult - 1), 10);
   });
 
   it("the per-PhD bonus strengthens what held PhDs give", () => {
@@ -130,7 +134,10 @@ describe("gameStore — Academic Career effects", () => {
     game.phdCount = 10;
     expect(game.productionMultiplier).toBeCloseTo(1.2, 10);
     own(game, [ROOT, "thesis.doctoralSchool", "thesis.academicPrestige"]);
-    expect(game.productionMultiplier).toBeCloseTo(1 + 0.022 * 10, 10);
+    expect(game.productionMultiplier).toBeCloseTo(
+      1 + (0.02 + frac("thesis.academicPrestige")) * 10,
+      10
+    );
   });
 
   it("unit and upgrade discounts lower prices", () => {
@@ -157,18 +164,20 @@ describe("gameStore — Academic Career effects", () => {
     const game = useGameStore();
     game.runTokensEarned = 400e6; // base gain 20
     expect(game.phdGain).toBe(20);
-    own(game, [ROOT, "thesis.doctoralSchool"]); // +10%
-    expect(game.phdGain).toBe(22);
+    own(game, [ROOT, "thesis.doctoralSchool"]);
+    expect(game.phdGain).toBe(Math.floor(20 * (1 + frac("thesis.doctoralSchool"))));
+    expect(game.phdGain).toBeGreaterThan(20);
   });
 
   it("regression: Teaching Assistant income is credited by tick, never counted as clicks", () => {
     const game = useGameStore();
     const recordClick = vi.spyOn(useAntiCheatStore(), "recordClick");
-    own(game, [ROOT, "lab.teachingAssistant"]); // 1 auto-click/s, worth a base click
-    expect(game.autoClickIncome).toBeCloseTo(1, 10);
+    own(game, [ROOT, "lab.teachingAssistant"]); // auto-clicks/s, each worth a base click
+    const rate = CAREER_NODES_BY_ID.get("lab.teachingAssistant")!.value / 100;
+    expect(game.autoClickIncome).toBeCloseTo(rate, 10);
     game.tick(2);
-    expect(game.tokens).toBeCloseTo(2, 10);
-    expect(game.totalTokensEarned).toBeCloseTo(2, 10);
+    expect(game.tokens).toBeCloseTo(2 * rate, 10);
+    expect(game.totalTokensEarned).toBeCloseTo(2 * rate, 10);
     expect(game.totalClicks).toBe(0);
     expect(game.runClicks).toBe(0);
     expect(recordClick).not.toHaveBeenCalled();
@@ -178,12 +187,16 @@ describe("gameStore — Academic Career effects", () => {
     vi.useFakeTimers();
     try {
       const game = useGameStore();
-      own(game, [ROOT, "lecturing.lecturer", "lecturing.lectureMomentum"]); // x2 click, +25% cap
+      own(game, [ROOT, "lecturing.lecturer", "lecturing.lectureMomentum"]);
       game.clickToken();
       expect(game.momentum).toBeCloseTo(MOMENTUM_PER_CLICK, 10);
-      // The next click is worth x2 x (1 + 0.25 x meter).
+      // The next click is worth the click multiplier x (1 + momentum cap x meter).
       const { earned } = game.clickToken();
-      expect(earned).toBeCloseTo(2 * (1 + 0.25 * MOMENTUM_PER_CLICK * 2), 10);
+      expect(earned).toBeCloseTo(
+        frac("lecturing.lecturer") *
+          (1 + frac("lecturing.lectureMomentum") * MOMENTUM_PER_CLICK * 2),
+        10
+      );
       game.tick(0.5); // within the grace period
       expect(game.momentum).toBeCloseTo(MOMENTUM_PER_CLICK * 2, 10);
       vi.advanceTimersByTime(MOMENTUM_GRACE_MS + 1);
@@ -277,15 +290,17 @@ describe("gameStore — prestige with the Academic Career", () => {
     const game = withWindow(100);
     game.buyCareerNodeLocal(ROOT);
     game.buyCareerNodeLocal("thesis.doctoralSchool");
-    game.runTokensEarned = 400e6; // base 20, +10% -> 22
-    expect(game.prestige()).toBe(22);
+    game.runTokensEarned = 400e6; // base 20, plus the gain bonus
+    const gained = Math.floor(20 * (1 + frac("thesis.doctoralSchool")));
+    expect(game.prestige()).toBe(gained);
     expect(getPhdGain(0)).toBe(0);
     const held = game.phdCount;
     expect(game.forfeitGuestCareer()).toBe(true);
     expect(game.careerNodes).toEqual([]);
     expect(game.careerWindowOpen).toBe(false);
-    // 100 + 22 earned, minus the 2 the guest-only bonus added.
-    expect(game.phdCount).toBe(held + cost(ROOT) + cost("thesis.doctoralSchool") - 2);
+    // The 100 it started with + the 20 prestige alone explains; what the
+    // guest-only bonus added on top is taken back.
+    expect(game.phdCount).toBe(held + cost(ROOT) + cost("thesis.doctoralSchool") - (gained - 20));
     expect(game.phdCount).toBe(120);
     expect(game.forfeitGuestCareer()).toBe(false);
   });

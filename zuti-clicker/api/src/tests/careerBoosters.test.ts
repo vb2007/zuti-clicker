@@ -16,7 +16,12 @@ import {
   rollCooldownMs,
   boosterSpawnDivisor
 } from "../services/boosters.js";
-import { CAREER_CAPS, emptyCareerModifiers, getCareerModifiers } from "../services/careerCore.js";
+import {
+  CAREER_CAPS,
+  emptyCareerModifiers,
+  getCareerModifiers,
+  careerCatalogCost
+} from "../services/careerCore.js";
 import { getWindfallGrant } from "../services/economy.js";
 
 const NONE = new Set<string>();
@@ -93,7 +98,13 @@ async function accountWithNodes(nodes: string[], units = TestData.VALID_SAVE.uni
   const seed = await api
     .put("/save")
     .set("Cookie", cookie)
-    .send({ ...TestData.VALID_SAVE, units, phdCount: 5000, prestigeCount: 1 });
+    // Enough for the nodes at whatever the catalog charges, plus some to hold.
+    .send({
+      ...TestData.VALID_SAVE,
+      units,
+      phdCount: careerCatalogCost(nodes) + 5000,
+      prestigeCount: 1
+    });
   expect(seed.status).toBe(200);
   for (const nodeId of nodes) {
     const res = await api.post("/career/buy").set("Cookie", cookie).send({ nodeId });

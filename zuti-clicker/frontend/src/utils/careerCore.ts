@@ -98,16 +98,28 @@ export interface CareerNode {
 // A node's price is costAtLevel(level) scaled by its track's costScale
 // (percent). Keystones step the level by KEYSTONE_LEVEL_STEP, track tiers by
 // 1 — so each keystone is a big, deliberate saving goal and the tiers
-// hanging off it are a steady drip of cheaper buys.
-export const CAREER_COST_GROWTH_PERCENT = 168;
+// hanging off it are a steady drip of cheaper buys. The curve has two
+// phases: gentle for the first CAREER_EARLY_LEVELS levels, so a new player's
+// first prestiges (worth a PhD or two each) keep unlocking something, then
+// steep, so the deep tree is a long-term goal. Tuned by the balance
+// simulation (frontend/src/utils/__tests__/career-balance.sim.spec.ts, `pnpm
+// sim:balance`): the fastest strategy it found (invest ~10% of held PhDs per
+// window, 3 clicks/s, every booster) maxes the tree at ~130 h; investing half
+// at every window takes ~175 h. Re-run it after any price or effect change.
+export const CAREER_EARLY_LEVELS = 6;
+export const CAREER_EARLY_GROWTH_PERCENT = 160;
+export const CAREER_COST_GROWTH_PERCENT = 265;
 export const KEYSTONE_LEVEL_STEP = 3;
-export const KEYSTONE_COST_SCALE = 200;
+export const KEYSTONE_COST_SCALE = 300;
+export const FIRST_KEYSTONE_COST_SCALE = 150;
 
-/** Base price at a level: 1, then x1.68 per level, in exact integer arithmetic. */
+/** Base price at a level: 1, then x1.6 per early level and x2.3 after, rounded up, in exact integers. */
 export function costAtLevel(level: number): number {
   let cost = 1;
   for (let i = 0; i < level; i++) {
-    cost = Math.floor((cost * CAREER_COST_GROWTH_PERCENT + 99) / 100);
+    const growth =
+      i < CAREER_EARLY_LEVELS ? CAREER_EARLY_GROWTH_PERCENT : CAREER_COST_GROWTH_PERCENT;
+    cost = Math.floor((cost * growth + 99) / 100);
   }
   return cost;
 }
@@ -154,18 +166,18 @@ const BRANCH_DEFS: BranchDef[] = [
   {
     id: "research",
     keystones: [
-      { slug: "labAccess", kind: "productionPct", value: 2500 },
-      { slug: "researchGroup", kind: "productionMult", value: 15000 },
-      { slug: "institute", kind: "productionMult", value: 20000 },
-      { slug: "nationalLab", kind: "productionMult", value: 20000 },
-      { slug: "nobelNomination", kind: "productionMult", value: 30000 }
+      { slug: "labAccess", kind: "productionPct", value: 2000 },
+      { slug: "researchGroup", kind: "productionMult", value: 11500 },
+      { slug: "institute", kind: "productionMult", value: 12000 },
+      { slug: "nationalLab", kind: "productionMult", value: 12000 },
+      { slug: "nobelNomination", kind: "productionMult", value: 13000 }
     ],
     tracks: [
       {
         slug: "grantWriting",
         at: "labAccess",
         kind: "productionPct",
-        values: 500,
+        values: 200,
         tiers: 10,
         costScale: 100
       },
@@ -183,7 +195,7 @@ const BRANCH_DEFS: BranchDef[] = [
         ][i]!,
         kind: "unitProductionMult" as const,
         target: unit,
-        values: 15000,
+        values: 11000,
         tiers: 3,
         costScale: 120
       })),
@@ -191,7 +203,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "peerReviewedPapers",
         at: "institute",
         kind: "productionPct",
-        values: 1000,
+        values: 300,
         tiers: 8,
         costScale: 100
       },
@@ -199,7 +211,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "citationIndex",
         at: "nationalLab",
         kind: "productionMult",
-        values: 11000,
+        values: 10200,
         tiers: 5,
         costScale: 150
       },
@@ -207,7 +219,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "fieldWork",
         at: "nobelNomination",
         kind: "productionPct",
-        values: 2000,
+        values: 500,
         tiers: 8,
         costScale: 100
       }
@@ -216,7 +228,7 @@ const BRANCH_DEFS: BranchDef[] = [
   {
     id: "lecturing",
     keystones: [
-      { slug: "lecturer", kind: "clickMult", value: 20000 },
+      { slug: "lecturer", kind: "clickMult", value: 15000 },
       { slug: "lectureMomentum", kind: "momentumMax", value: 2500 },
       { slug: "seminarLeader", kind: "clickSynergyAdd", value: 100 },
       { slug: "examiner", kind: "critChanceAdd", value: 500 },
@@ -227,7 +239,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "rhetoric",
         at: "lecturer",
         kind: "clickMult",
-        values: 12500,
+        values: 11000,
         tiers: 8,
         costScale: 100
       },
@@ -267,7 +279,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "officeHours",
         at: "standingOvation",
         kind: "clickMult",
-        values: 11000,
+        values: 10500,
         tiers: 6,
         costScale: 120
       }
@@ -407,18 +419,18 @@ const BRANCH_DEFS: BranchDef[] = [
   {
     id: "thesis",
     keystones: [
-      { slug: "doctoralSchool", kind: "phdGainPct", value: 1000 },
-      { slug: "academicPrestige", kind: "phdProductionBonusAdd", value: 20 },
+      { slug: "doctoralSchool", kind: "phdGainPct", value: 500 },
+      { slug: "academicPrestige", kind: "phdProductionBonusAdd", value: 5 },
       { slug: "fundingCommittee", kind: "phdCostCapAdd", value: 500 },
-      { slug: "habilitationCommittee", kind: "phdGainPct", value: 2000 },
-      { slug: "professorEmeritus", kind: "phdProductionBonusAdd", value: 100 }
+      { slug: "habilitationCommittee", kind: "phdGainPct", value: 800 },
+      { slug: "professorEmeritus", kind: "phdProductionBonusAdd", value: 25 }
     ],
     tracks: [
       {
         slug: "citations",
         at: "doctoralSchool",
         kind: "phdGainPct",
-        values: 300,
+        values: 50,
         tiers: 10,
         costScale: 120
       },
@@ -426,7 +438,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "reputation",
         at: "academicPrestige",
         kind: "phdProductionBonusAdd",
-        values: 10,
+        values: 3,
         tiers: 8,
         costScale: 110
       },
@@ -442,7 +454,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "legacy",
         at: "habilitationCommittee",
         kind: "phdGainPct",
-        values: 500,
+        values: 100,
         tiers: 5,
         costScale: 140
       },
@@ -450,7 +462,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "dissertations",
         at: "professorEmeritus",
         kind: "phdGainPct",
-        values: 200,
+        values: 50,
         tiers: 6,
         costScale: 120
       }
@@ -459,17 +471,17 @@ const BRANCH_DEFS: BranchDef[] = [
   {
     id: "lab",
     keystones: [
-      { slug: "teachingAssistant", kind: "autoClickRate", value: 100 },
+      { slug: "teachingAssistant", kind: "autoClickRate", value: 50 },
       { slug: "purchasingOfficer", kind: "autoBuyUnits", value: 1 },
       { slug: "upgradeClerk", kind: "autoBuyUpgrades", value: 1 },
-      { slug: "secondAssistant", kind: "autoClickRate", value: 200 }
+      { slug: "secondAssistant", kind: "autoClickRate", value: 100 }
     ],
     tracks: [
       {
         slug: "taTraining",
         at: "teachingAssistant",
         kind: "autoClickRate",
-        values: 50,
+        values: 25,
         tiers: 10,
         costScale: 100
       },
@@ -477,7 +489,7 @@ const BRANCH_DEFS: BranchDef[] = [
         slug: "taHours",
         at: "secondAssistant",
         kind: "autoClickRate",
-        values: 100,
+        values: 50,
         tiers: 8,
         costScale: 110
       }
@@ -519,7 +531,8 @@ export function expandCatalog(): CareerNode[] {
         kind: k.kind,
         ...(k.target !== undefined ? { target: k.target } : {}),
         value: k.value,
-        cost: scaledCost(level, KEYSTONE_COST_SCALE),
+        // The first ring's keystones are the cheap way into each branch.
+        cost: scaledCost(level, i === 0 ? FIRST_KEYSTONE_COST_SCALE : KEYSTONE_COST_SCALE),
         depth: parent.depth + 1,
         level,
         keystone: true,

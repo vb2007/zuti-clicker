@@ -342,7 +342,7 @@
         }
       ],
       "expected": {
-        "productionPct": 0.4,
+        "productionPct": 0.32,
         "productionMult": 1,
         "unitProductionMult": {},
         "clickMult": 1,
@@ -377,12 +377,12 @@
         }
       ],
       "expected": {
-        "productionPct": 0.35,
-        "productionMult": 1.5,
+        "productionPct": 0.3,
+        "productionMult": 1.15,
         "unitProductionMult": {
-          "alpha": 2.25
+          "alpha": 1.2100000000000002
         },
-        "clickMult": 2.5,
+        "clickMult": 1.6500000000000001,
         "clickSynergyAdd": 0,
         "critChanceAdd": 0,
         "critMultAdd": 0,
@@ -400,10 +400,10 @@
         },
         "unlockedBoosters": [],
         "windfallSecs": 0,
-        "phdGainBp": 1600,
+        "phdGainBp": 600,
         "phdProductionBonusAdd": 0,
         "phdCostCapAdd": 0,
-        "autoClickRate": 1,
+        "autoClickRate": 0.5,
         "autoBuyUnits": false,
         "autoBuyUpgrades": false
       }
@@ -416,12 +416,12 @@
         }
       ],
       "expected": {
-        "productionPct": 0.35,
-        "productionMult": 1.5,
+        "productionPct": 0.3,
+        "productionMult": 1.15,
         "unitProductionMult": {
-          "alpha": 2.25
+          "alpha": 1.2100000000000002
         },
-        "clickMult": 2.5,
+        "clickMult": 1.6500000000000001,
         "clickSynergyAdd": 0,
         "critChanceAdd": 0,
         "critMultAdd": 0,
@@ -439,10 +439,10 @@
         },
         "unlockedBoosters": [],
         "windfallSecs": 0,
-        "phdGainBp": 1600,
+        "phdGainBp": 600,
         "phdProductionBonusAdd": 0,
         "phdCostCapAdd": 0,
-        "autoClickRate": 1,
+        "autoClickRate": 0.5,
         "autoBuyUnits": false,
         "autoBuyUpgrades": false
       }
@@ -455,19 +455,19 @@
         }
       ],
       "expected": {
-        "productionPct": 3.25,
-        "productionMult": 28.989180000000005,
+        "productionPct": 1.14,
+        "productionMult": 2.3768651531289606,
         "unitProductionMult": {
-          "alpha": 3.375,
-          "beta": 3.375,
-          "gamma": 3.375,
-          "delta": 3.375,
-          "epsilon": 3.375,
-          "zeta": 3.375,
-          "eta": 3.375,
-          "theta": 3.375
+          "alpha": 1.3310000000000004,
+          "beta": 1.3310000000000004,
+          "gamma": 1.3310000000000004,
+          "delta": 1.3310000000000004,
+          "epsilon": 1.3310000000000004,
+          "zeta": 1.3310000000000004,
+          "eta": 1.3310000000000004,
+          "theta": 1.3310000000000004
         },
-        "clickMult": 21.118652820587172,
+        "clickMult": 4.308921029360301,
         "clickSynergyAdd": 0.025,
         "critChanceAdd": 0.15,
         "critMultAdd": 5,
@@ -496,10 +496,10 @@
           "critStorm"
         ],
         "windfallSecs": 210,
-        "phdGainBp": 9700,
-        "phdProductionBonusAdd": 0.02,
+        "phdGainBp": 2600,
+        "phdProductionBonusAdd": 0.0054,
         "phdCostCapAdd": 0.2,
-        "autoClickRate": 16,
+        "autoClickRate": 8,
         "autoBuyUnits": true,
         "autoBuyUpgrades": true
       }
@@ -537,14 +537,14 @@
       "args": [
         10
       ],
-      "expected": 293
+      "expected": 1588
     },
     {
       "fn": "costAtLevel",
       "args": [
         21
       ],
-      "expected": 88444
+      "expected": 71888766
     },
     {
       "fn": "applyPhdGainBonus",
@@ -1272,7 +1272,7 @@
           "set": "mixed"
         }
       ],
-      "expected": 2.0250000000000004
+      "expected": 1.4949999999999999
     },
     {
       "fn": "getCareerBaseTps",
@@ -1295,7 +1295,7 @@
           "set": "mixed"
         }
       ],
-      "expected": 90034.875
+      "expected": 90027.075
     },
     {
       "fn": "getCareerUpgradeCost",
@@ -1481,7 +1481,7 @@
           "set": "all"
         }
       ],
-      "expected": 7861102788.376099
+      "expected": 127991523.69906059
     },
     {
       "fn": "getCareerPhdProductionMultiplier",
@@ -1491,7 +1491,7 @@
           "set": "all"
         }
       ],
-      "expected": 2.48
+      "expected": 1.9398
     },
     {
       "fn": "getCareerPhdCostMultiplier",
@@ -1547,7 +1547,7 @@
           "set": "all"
         }
       ],
-      "expected": 19495534915.17272
+      "expected": 248277957.67143774
     },
     {
       "fn": "getCareerPhdProductionMultiplier",
@@ -1557,7 +1557,7 @@
           "set": "all"
         }
       ],
-      "expected": 11
+      "expected": 7.35
     },
     {
       "fn": "getCareerPhdCostMultiplier",
@@ -1613,7 +1613,7 @@
           "set": "all"
         }
       ],
-      "expected": 86472130672.13708
+      "expected": 940737699.1880953
     },
     {
       "fn": "getCareerProductionMultiplier",
@@ -1622,7 +1622,7 @@
           "set": "all"
         }
       ],
-      "expected": 123.20401500000003
+      "expected": 5.086491427695975
     },
     {
       "fn": "getCareerBaseTps",
@@ -1645,7 +1645,7 @@
           "set": "all"
         }
       ],
-      "expected": 303836.0625
+      "expected": 119823.94050000004
     },
     {
       "fn": "getCareerUpgradeCost",
