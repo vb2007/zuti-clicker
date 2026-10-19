@@ -47,7 +47,7 @@ import CareerIcon from "./CareerIcon.vue";
 const props = withDefaults(defineProps<{ selectedId: string | null; bottomInset?: number }>(), {
   bottomInset: 0
 });
-const emit = defineEmits<{ select: [id: string] }>();
+const emit = defineEmits<{ select: [id: string]; legend: [] }>();
 
 const { t } = useI18n();
 const game = useGameStore();
@@ -61,17 +61,37 @@ const MAX_SCALE = 2;
 // so every node is a >= 44px touch target before any pinch.
 const MIN_START_SCALE_COARSE = 1;
 const MIN_START_SCALE_FINE = 0.7;
+// A mouse opens on the whole fan — the root and all six trunks — down to this.
+const OVERVIEW_MIN_SCALE = 0.32;
 // Below this, tier numerals would be a few pixels tall: hidden, shapes only.
 const NUMERAL_MIN_SCALE = 0.5;
 
 const layout = layoutCareerTree(CAREER_NODES);
+
+// The fan: the root sits ROOT_DROP rows below the trunk heads, and each
+// branch climbs higher the further out it is (BRANCH_LIFT rows per step from
+// the middle), so the six root edges visibly radiate upward instead of
+// reading as one flat rail. Rendering only — the grid (careerLayout) and so
+// every parent/child relation stay as tested.
+const ROOT_DROP = 2.5;
+const BRANCH_LIFT = 0.9;
+const branchLiftRows = new Map(
+  CAREER_BRANCHES.map((b, i) => [b, Math.abs(i - (CAREER_BRANCHES.length - 1) / 2) - 0.5])
+);
+const maxLift = Math.max(...[...branchLiftRows.values()]) * BRANCH_LIFT;
 const worldW = (layout.maxCol - layout.minCol) * COL_W + PAD * 2;
-const worldH = layout.maxRow * ROW_H + PAD * 2;
+const worldH = (layout.maxRow + maxLift + ROOT_DROP) * ROW_H + PAD * 2;
 const WORLD_BOX: Box = { minX: 0, minY: 0, maxX: worldW, maxY: worldH };
+// Row 0 (the root) sits at the bottom; everything else is lifted above it.
+const baseY = (layout.maxRow + maxLift + ROOT_DROP) * ROW_H + PAD;
 
 function pos(id: string): { x: number; y: number } {
   const p = layout.nodes.get(id)!;
-  return { x: (p.col - layout.minCol) * COL_W + PAD, y: (layout.maxRow - p.row) * ROW_H + PAD };
+  const node = CAREER_NODES_BY_ID.get(id)!;
+  const x = (p.col - layout.minCol) * COL_W + PAD;
+  if (node.branch === "root") return { x, y: baseY };
+  const lift = (branchLiftRows.get(node.branch) ?? 0) * BRANCH_LIFT;
+  return { x, y: baseY - (p.row - 1 + ROOT_DROP + lift) * ROW_H };
 }
 
 function sizeOf(node: CareerNode): number {
@@ -129,11 +149,11 @@ const edges = computed(() =>
 
 // Branch names sit just under each trunk's first keystone — in screen space
 // (see branchLabels below), so they stay readable at any zoom.
-const BRANCH_ANCHORS = CAREER_BRANCHES.map((b) => ({
-  branch: b,
-  x: (layout.branchCols.get(b)! - layout.minCol) * COL_W + PAD,
-  y: (layout.maxRow - 0.5) * ROW_H + PAD
-}));
+const BRANCH_ANCHORS = CAREER_BRANCHES.map((b) => {
+  const head = CAREER_NODES.find((n) => n.branch === b && n.keystone)!;
+  const p = pos(head.id);
+  return { branch: b, x: p.x, y: p.y + ROW_H * 0.55 };
+});
 
 // ---- View ---------------------------------------------------------------
 
@@ -149,12 +169,24 @@ function setView(v: View): void {
   view.value = clampView(v, WORLD_BOX, vw.value, vh.value);
 }
 
+// A label whose trunk is just past an edge is held inside the canvas (never
+// "ESEARCH"); one whose trunk is far off screen is hidden rather than pinned
+// to the edge over some other branch.
 const branchLabels = computed(() =>
-  BRANCH_ANCHORS.map((a) => ({
-    branch: a.branch,
-    left: a.x * view.value.scale + view.value.x,
-    top: a.y * view.value.scale + view.value.y
-  }))
+  BRANCH_ANCHORS.flatMap((a) => {
+    const text = t(`career.branches.${a.branch}`);
+    const half = text.length * 4.2 + 12;
+    const x = a.x * view.value.scale + view.value.x;
+    if (x < -half || x > vw.value + half) return [];
+    return [
+      {
+        branch: a.branch,
+        text,
+        left: clamp(x, half + 8, Math.max(half + 8, vw.value - half - 8)),
+        top: a.y * view.value.scale + view.value.y
+      }
+    ];
+  })
 );
 const lowZoom = computed(() => view.value.scale < NUMERAL_MIN_SCALE);
 
@@ -168,8 +200,28 @@ function isCoarse(): boolean {
   return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 }
 
-/** Opens on what matters now: everything owned plus what can be reached next. */
+/**
+ * Opens on what matters now. A mouse gets the whole fan — the root and the
+ * six trunk heads — so the tree's shape is the first thing seen; a finger
+ * gets full-size targets around the frontier (Fit shows the whole tree).
+ */
 function initialView(): View {
+  if (!isCoarse()) {
+    const xs = BRANCH_ANCHORS.map((a) => a.x);
+    const root = pos(CAREER_NODES[0]!.id);
+    const top = Math.min(...BRANCH_ANCHORS.map((a) => a.y)) - ROW_H * 3;
+    const fan = fitView(
+      { minX: Math.min(...xs) - 80, maxX: Math.max(...xs) + 80, minY: top, maxY: root.y + 60 },
+      vw.value,
+      vh.value,
+      16,
+      minScale.value,
+      MIN_START_SCALE_FINE
+    );
+    // Root near the bottom edge: the width sets the scale, and the spare
+    // height goes to the tree above it rather than empty canvas below.
+    if (fan.scale >= OVERVIEW_MIN_SCALE) return { ...fan, y: vh.value - 70 - root.y * fan.scale };
+  }
   const frontier = nodes.value.filter((n) => n.state !== "locked");
   const xs = frontier.map((n) => n.x);
   const ys = frontier.map((n) => n.y);
@@ -457,10 +509,32 @@ defineExpose({ zoomBy, fitAll });
       :style="{ transform: `translate3d(${b.left}px, ${b.top}px, 0) translate(-50%, -50%)` }"
       aria-hidden="true"
     >
-      {{ t(`career.branches.${b.branch}`) }}
+      {{ b.text }}
     </span>
 
-    <div class="zoom-controls" @pointerdown.stop>
+    <!-- Lifted above the phone sheet while it is open. -->
+    <div
+      class="zoom-controls"
+      :class="{ lifted: bottomInset > 0 }"
+      :style="bottomInset > 0 ? { transform: `translateY(${-bottomInset}px)` } : undefined"
+      @pointerdown.stop
+    >
+      <button
+        type="button"
+        class="zoom-btn"
+        :aria-label="t('career.legendBtn')"
+        @click="emit('legend')"
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path
+            d="M6 6.2a2 2 0 1 1 2.8 1.8c-.5.2-.8.7-.8 1.2V10M8 12.6v.1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
       <button type="button" class="zoom-btn" :aria-label="t('career.zoomIn')" @click="zoomBy(1.4)">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
           <path
@@ -664,6 +738,7 @@ defineExpose({ zoomBy, fitAll });
 /* ---- Zoom controls -------------------------------------------------------- */
 .zoom-controls {
   position: absolute;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   left: 12px;
   bottom: 12px;
   display: flex;
@@ -691,6 +766,11 @@ defineExpose({ zoomBy, fitAll });
     color: var(--text-primary);
     border-color: var(--accent);
   }
+}
+/* Above an open phone sheet the controls lie in one row: a column that tall
+   would run up under the header. */
+.zoom-controls.lifted {
+  flex-direction: row;
 }
 /* Short screens: one row, so the controls cover less of the tree. */
 @media (max-height: 500px) {

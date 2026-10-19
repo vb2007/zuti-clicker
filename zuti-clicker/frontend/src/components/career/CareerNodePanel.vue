@@ -4,7 +4,10 @@ import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { useCareer } from "@/composables/useCareer";
 import { CAREER_NODES, CAREER_NODES_BY_ID, getCareerModifiers } from "@/utils/careerCore";
-import { getCareerPhdProductionMultiplier } from "@/utils/careerEconomy";
+import {
+  getCareerPhdProductionMultiplier,
+  getCareerProductionMultiplier
+} from "@/utils/careerEconomy";
 import {
   careerNodeName,
   careerNodeFlavor,
@@ -49,13 +52,23 @@ const refundPreview = computed(() =>
 );
 
 const fmtMult = (m: number) => m.toFixed(2);
+// The purchase's whole effect on production: the held-PhD bonus it costs
+// times whatever the node itself adds (its global production effect; a
+// per-unit node's gain depends on that unit's share and isn't counted here).
+// A purchase that loses a big share of production must not look routine.
 const tradeoff = computed(() => {
   if (!node.value || state.value !== "buyable") return null;
-  const after = getCareerPhdProductionMultiplier(
-    game.phdCount - node.value.cost,
-    getCareerModifiers([...game.careerNodeIds, node.value.id])
-  );
-  return { before: fmtMult(game.productionMultiplier), after: fmtMult(after) };
+  const mods = getCareerModifiers([...game.careerNodeIds, node.value.id]);
+  const after = getCareerPhdProductionMultiplier(game.phdCount - node.value.cost, mods);
+  const net =
+    (after * getCareerProductionMultiplier(mods)) /
+    (game.productionMultiplier * game.careerProductionMultiplier);
+  return {
+    before: fmtMult(game.productionMultiplier),
+    after: fmtMult(after),
+    net: net.toFixed(2),
+    severe: net < 0.8
+  };
 });
 
 const busy = ref(false);
@@ -139,18 +152,20 @@ const ownedCount = computed(() => game.careerNodes.length);
       <div class="action">
         <template v-if="state === 'refundable' && refundPreview">
           <p class="hint">{{ t("career.refundNote") }}</p>
-          <button type="button" class="btn-secondary" :disabled="busy" @click="onRefund">
-            {{
-              busy
-                ? t("career.busy")
-                : refundPreview.nodeIds.length > 1
-                  ? t("career.refundCascade", {
-                      count: refundPreview.nodeIds.length,
-                      phd: formatNumber(refundPreview.phd)
-                    })
-                  : t("career.refundOne", { phd: formatNumber(refundPreview.phd) })
-            }}
-          </button>
+          <div class="cta">
+            <button type="button" class="btn-secondary" :disabled="busy" @click="onRefund">
+              {{
+                busy
+                  ? t("career.busy")
+                  : refundPreview.nodeIds.length > 1
+                    ? t("career.refundCascade", {
+                        count: refundPreview.nodeIds.length,
+                        phd: formatNumber(refundPreview.phd)
+                      })
+                    : t("career.refundOne", { phd: formatNumber(refundPreview.phd) })
+              }}
+            </button>
+          </div>
         </template>
         <p v-else-if="state === 'owned'" class="hint owned">{{ t("career.owned") }}</p>
         <p v-else-if="state === 'locked' && parent" class="hint">
@@ -164,9 +179,10 @@ const ownedCount = computed(() => game.careerNodes.length);
         </p>
         <p v-else-if="!game.careerWindowOpen" class="hint">{{ t("career.viewOnly") }}</p>
         <template v-else>
-          <p v-if="tradeoff" class="tradeoff">
-            {{ t("career.tradeoff", tradeoff) }}
-          </p>
+          <div v-if="tradeoff" class="tradeoff" :class="{ severe: tradeoff.severe }">
+            <span>{{ t("career.tradeoff", tradeoff) }}</span>
+            <strong>{{ t("career.netProduction", { mult: tradeoff.net }) }}</strong>
+          </div>
           <p v-else class="hint">
             {{
               t("career.needPhd", {
@@ -175,19 +191,37 @@ const ownedCount = computed(() => game.careerNodes.length);
               })
             }}
           </p>
-          <button
-            type="button"
-            class="btn-primary"
-            :disabled="state !== 'buyable' || busy || game.serverActionPending"
-            @click="onBuy"
-          >
-            {{ busy ? t("career.busy") : t("career.buy", { cost: formatNumber(node.cost) }) }}
-          </button>
+          <div class="cta">
+            <button
+              type="button"
+              class="btn-primary"
+              :disabled="state !== 'buyable' || busy || game.serverActionPending"
+              @click="onBuy"
+            >
+              {{ busy ? t("career.busy") : t("career.buy", { cost: formatNumber(node.cost) }) }}
+            </button>
+          </div>
         </template>
       </div>
     </template>
 
     <template v-else>
+      <header v-if="sheet" class="panel-head">
+        <div class="titles">
+          <h3 class="name">{{ t("career.legendBtn") }}</h3>
+        </div>
+        <button type="button" class="close" :aria-label="t('common.close')" @click="emit('close')">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d="M3 3l10 10M13 3L3 13"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </header>
       <p class="empty">{{ t("career.selectHint") }}</p>
       <ul class="legend">
         <li><span class="swatch state-owned"></span>{{ t("career.legendOwned") }}</li>
@@ -318,6 +352,26 @@ const ownedCount = computed(() => game.careerNodes.length);
   flex-direction: column;
   gap: 10px;
 }
+/* In a sheet the Buy/Undo button stays in view however long the details
+   run — only the button: the price and trade-off above it scroll normally, so
+   a tall trade-off block can never cover the cost. (`display: contents` makes
+   the panel itself the sticky button's containing block.) */
+.sheet .action {
+  display: contents;
+}
+.sheet .cta {
+  position: sticky;
+  bottom: 0;
+  margin: 0 -18px -20px;
+  padding: 10px 18px 16px;
+  background: var(--bg-surface);
+  /* A soft lift rather than a rule, so it never cuts through the cost row. */
+  box-shadow: 0 -10px 12px -10px rgba(0, 0, 0, 0.35);
+}
+.cta {
+  display: flex;
+  flex-direction: column;
+}
 .hint {
   margin: 0;
   font-size: 13px;
@@ -329,11 +383,28 @@ const ownedCount = computed(() => game.careerNodes.length);
   font-weight: 700;
 }
 .tradeoff {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 0;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+.tradeoff strong {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+/* Losing a large share of production: said loudly, in the rare accent. */
+.tradeoff.severe {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--booster-glow);
+  color: var(--text-primary);
+}
+.tradeoff.severe strong {
+  color: var(--booster);
 }
 .link {
   padding: 0;

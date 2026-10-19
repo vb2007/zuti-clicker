@@ -206,6 +206,38 @@ test.describe("Academic Career", () => {
     await expect.poll(async () => (await worldTransform(page)).scale).toBeGreaterThan(before.scale);
   });
 
+  test("a mouse opens on the whole fan: the root and all six branches", async ({ app, page }) => {
+    test.skip(await coarse(page), "mouse devices only");
+    await openWindow(app);
+    await expect(page.locator(".branch-label")).toHaveCount(6);
+    await expect(page.locator('[data-node="habilitation"]')).toBeInViewport();
+  });
+
+  test("the ? button shows the legend (a sheet on phones)", async ({ app, page }) => {
+    await openWindow(app);
+    await page.getByRole("button", { name: /legend/i }).click();
+    const legend = page.locator(".node-panel .legend").last();
+    await expect(legend).toBeVisible();
+    await expect(legend).toBeInViewport();
+    if (compact(page)) {
+      // The zoom controls never end up under the sheet (a bottom sheet lifts
+      // them; a right-docked one leaves them alone)...
+      const sheet = (await page.locator(".career-sheet").boundingBox())!;
+      await expect
+        .poll(async () => {
+          const c = (await page.locator(".zoom-controls").boundingBox())!;
+          return c.y + c.height <= sheet.y + 1 || c.x + c.width <= sheet.x + 1;
+        })
+        .toBe(true);
+      // ...nor under the header.
+      const head = (await page.locator(".career-head").boundingBox())!;
+      const c = (await page.locator(".zoom-controls").boundingBox())!;
+      expect(c.y).toBeGreaterThanOrEqual(head.y + head.height - 1);
+      await page.locator(".node-panel .close").click();
+      await expect(page.locator(".career-sheet")).toHaveCount(0);
+    }
+  });
+
   test("zoom buttons and fit work, and nothing scrolls the page sideways", async ({
     app,
     page

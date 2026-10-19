@@ -151,6 +151,7 @@ export default {
     statsBonusValue: "×{mult} termelés",
     windowIntro:
       "A fokozatszerzés megnyitotta a pályádat. Fektesd be a PhD-ket végleges fejlesztésekbe — vagy tartsd meg őket, hiszen minden birtokolt PhD növeli a termelést. Az új menet akkor indul, amikor végeztél.",
+    windowIntroShort: "Fektesd be a PhD-ket, vagy tartsd meg — a menet utána indul.",
     viewIntro: "A pályád végleges. Új csomópontokat minden fokozatszerzés után vásárolhatsz.",
     skip: "Megtartom a PhD-ket",
     done: "Kész",
@@ -166,6 +167,8 @@ export default {
     viewOnly: "A következő fokozatszerzésed után veheted meg.",
     nextPrestige: "A következő fokozatszerzéstől érvényes.",
     tradeoff: "PhD-bónusz: ×{before} → ×{after}",
+    netProduction: "Termelés összesen: ×{mult}",
+    legendBtn: "Jelmagyarázat",
     cost: "Ár",
     selectHint: "Koppints vagy kattints egy csomópontra a részletekért.",
     zoomIn: "Nagyítás",

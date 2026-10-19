@@ -150,6 +150,7 @@ export default {
     statsBonusValue: "×{mult} production",
     windowIntro:
       "Your prestige opened your career. Invest PhDs in permanent upgrades — or keep them, since every PhD you hold boosts production. The new run starts when you're done.",
+    windowIntroShort: "Invest PhDs now, or keep them — the run starts when you're done.",
     viewIntro: "Your career is permanent. New nodes can be bought right after each prestige.",
     skip: "Keep my PhDs",
     done: "Done",
@@ -165,6 +166,8 @@ export default {
     viewOnly: "You can buy this right after your next prestige.",
     nextPrestige: "Takes effect from your next prestige.",
     tradeoff: "Held PhD bonus: ×{before} → ×{after}",
+    netProduction: "Production overall: ×{mult}",
+    legendBtn: "Legend",
     cost: "Cost",
     selectHint: "Tap or click a node to see what it does.",
     zoomIn: "Zoom in",

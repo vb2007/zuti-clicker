@@ -6,6 +6,7 @@ import { useUiStore } from "@/stores/uiStore";
 import { useCareer } from "@/composables/useCareer";
 import { useOverlay } from "@/composables/useOverlayStack";
 import { useBreakpoint } from "@/composables/useBreakpoint";
+import { useMediaQuery } from "@/composables/useMediaQuery";
 import { CAREER_NODES } from "@/utils/careerCore";
 import { formatNumber } from "@/utils/formatters";
 import CareerCanvas from "./CareerCanvas.vue";
@@ -28,9 +29,26 @@ const game = useGameStore();
 const ui = useUiStore();
 const career = useCareer();
 const { isCompact } = useBreakpoint();
+const { matches: shortScreen } = useMediaQuery("(max-height: 500px)");
 
 const windowMode = computed(() => game.careerWindowOpen);
 const selectedId = ref<string | null>(null);
+// Phones: the "?" button shows the legend (the panel's empty state) as a sheet.
+const legendOpen = ref(false);
+watch(selectedId, (id) => {
+  if (id) legendOpen.value = false;
+});
+const sheetOpen = computed(
+  () => isCompact.value && (selectedId.value !== null || legendOpen.value)
+);
+function showLegend(): void {
+  selectedId.value = null;
+  legendOpen.value = isCompact.value;
+}
+function closeSheet(): void {
+  selectedId.value = null;
+  legendOpen.value = false;
+}
 const closing = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
 
@@ -53,10 +71,7 @@ watch(sheetEl, (el) => {
 });
 // Docked to the right on short screens (see the max-height media query): no inset.
 const bottomInset = computed(() =>
-  isCompact.value &&
-  selectedId.value &&
-  typeof matchMedia === "function" &&
-  !matchMedia("(max-height: 500px)").matches
+  sheetOpen.value && typeof matchMedia === "function" && !matchMedia("(max-height: 500px)").matches
     ? sheetHeight.value
     : 0
 );
@@ -83,6 +98,7 @@ useOverlay(
   () => true,
   () => {
     if (selectedId.value) selectedId.value = null;
+    else if (legendOpen.value) legendOpen.value = false;
     else if (!windowMode.value) closeView();
   },
   1150 // keep in sync with .career-overlay's z-index
@@ -134,7 +150,7 @@ onUnmounted(() => {
     it costs, invest or keep, then start the new run.
     FIRST VIEWPORT: the frontier around the root; detail panel right (sheet on
     phones); in the purchase window a footer with Skip/Done.
-    FORM: pan/zoom canvas, user-pinned.
+    FORM: pan/zoom canvas — user-pinned, no concept roll (no seed key).
     FINISH: unreviewed is unfinished; this build ends with the finish review and
     its verdict.
   -->
@@ -153,6 +169,7 @@ onUnmounted(() => {
           <div class="title-block">
             <h2 id="career-title" class="title">{{ t("career.title") }}</h2>
             <p class="intro">{{ windowMode ? t("career.windowIntro") : t("career.viewIntro") }}</p>
+            <p v-if="windowMode" class="intro-short">{{ t("career.windowIntroShort") }}</p>
           </div>
           <button
             v-if="!windowMode"
@@ -204,24 +221,28 @@ onUnmounted(() => {
           :selected-id="selectedId"
           :bottom-inset="bottomInset"
           @select="selectedId = $event"
+          @legend="showLegend"
         />
         <aside v-if="!isCompact" class="side">
           <CareerNodePanel :node-id="selectedId" @select="selectedId = $event" />
         </aside>
         <Transition name="sheet">
-          <div v-if="isCompact && selectedId" ref="sheetEl" class="career-sheet">
+          <div v-if="sheetOpen" ref="sheetEl" class="career-sheet">
             <CareerNodePanel
               :node-id="selectedId"
               sheet
               @select="selectedId = $event"
-              @close="selectedId = null"
+              @close="closeSheet"
             />
           </div>
         </Transition>
       </div>
 
       <footer v-if="windowMode" class="career-foot">
-        <p class="foot-note">{{ t("career.footerNote") }}</p>
+        <!-- Short screens hide the header intro: the short version lives here. -->
+        <p class="foot-note">
+          {{ shortScreen ? t("career.windowIntroShort") : t("career.footerNote") }}
+        </p>
         <button
           type="button"
           class="finish"
@@ -294,6 +315,12 @@ onUnmounted(() => {
   line-height: 1.45;
   color: var(--text-secondary);
   max-width: 72ch;
+}
+.intro-short {
+  display: none;
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 .head-close {
   flex: none;
@@ -453,6 +480,9 @@ onUnmounted(() => {
 .compact .intro {
   display: none;
 }
+.compact .intro-short {
+  display: block;
+}
 .compact .stats {
   gap: 16px;
   width: 100%;
@@ -502,7 +532,11 @@ onUnmounted(() => {
   .stat dd {
     font-size: 12.5px;
   }
-  .compact .stat:nth-child(3) {
+  /* Keep the held-PhD bonus — the number the window is about. */
+  .compact .stat:nth-child(2) {
+    display: none;
+  }
+  .compact .intro-short {
     display: none;
   }
   .career-foot {
