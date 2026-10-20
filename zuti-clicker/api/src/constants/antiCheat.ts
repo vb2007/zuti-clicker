@@ -61,6 +61,17 @@ export const ANTICHEAT_MODE: AntiCheatMode = resolveAntiCheatMode({
 // without ever tightening the window a legitimate player gets.
 export const CLOCK_GRACE_SECS = 5;
 
+// How much of a first-ever save's own claimed playtime counts as elapsed time.
+// A guest plays before the account exists, so anchoring that save to the
+// account's creation alone rejected every guest who registered after playing
+// longer than the account was old (and struck them for it). The guest's
+// playtime is unwitnessed, so it is credited only up to this cap: a forged
+// first save gains no more than a throwaway account that simply waited this
+// long — the same envelope any long gap between two saves already gets — and
+// can claim at most this much playtime on the leaderboard. Guests can't
+// prestige, so the progress being bounded is always one run.
+export const FIRST_SAVE_PLAYTIME_CREDIT_SECS = 24 * 3600;
+
 // Hard ceiling on clicks/sec used to bound how many clicks could have been
 // registered in an interval. This is a generous envelope backstop, not the
 // statistical detector's flag threshold (see SUSTAINED_RATE_CPS below) — a

@@ -9,7 +9,12 @@ import {
   MAX_CLICK_BOOSTER_MULTIPLIER,
   PHD_TOKEN_SCALE
 } from "../constants/gameBalance.js";
-import { EARNED_ACCEPT_MARGIN, REJECT_MULTIPLIER, CLOCK_GRACE_SECS } from "../constants/antiCheat.js";
+import {
+  EARNED_ACCEPT_MARGIN,
+  REJECT_MULTIPLIER,
+  CLOCK_GRACE_SECS,
+  FIRST_SAVE_PLAYTIME_CREDIT_SECS
+} from "../constants/antiCheat.js";
 
 // Pure unit tests — no live server or database, unlike most of src/tests/.
 // The HTTP-level wiring (save.ts calling this, clamping the actual response,
@@ -47,6 +52,139 @@ const MAX_CLICK_VALUE_NO_UNITS =
     clickSynergy: 0,
     boosterClickMultiplier: MAX_CLICK_BOOSTER_MULTIPLIER
   }) * MAX_CRIT_MULTIPLIER;
+
+// Honest single-run guest states (no prestige — guests can't), captured from
+// the real frontend game store playing 3 clicks/s, buying greedily and
+// claiming every booster. A guest plays before the account exists, so these
+// arrive as the brand-new account's first save.
+const ALL_UNIT_IDS = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
+function guestRun(
+  tokens: number,
+  totalTokensEarned: number,
+  elapsedSeconds: number,
+  owned: number[],
+  upgrades: string[]
+): IncomingSave {
+  return freshSave({
+    tokens,
+    totalTokensEarned,
+    totalClicks: elapsedSeconds * 3,
+    elapsedSeconds,
+    units: ALL_UNIT_IDS.map((unitId, i) => ({ unitId, owned: owned[i] ?? 0 })),
+    upgrades
+  });
+}
+const EARLY_UPGRADES = ["chalk", "firmHandshake", "redPen", "morningCoffee", "laserPointer", "luckyGuess"];
+const LATE_UPGRADES = [
+  ...EARLY_UPGRADES,
+  "officeHours",
+  "lectureNotes",
+  "overheadProjector",
+  "conferenceBadge",
+  "openBookExam",
+  "tenure",
+  "seminarRoom",
+  "departmentNewsletter",
+  "researchGrant",
+  "honoraryDegree",
+  "peerReview"
+];
+const GUEST_10_MIN = guestRun(33402.62, 459923.8, 600, [20, 15, 13, 7, 1], EARLY_UPGRADES);
+const GUEST_6_H = guestRun(
+  1107348513.37,
+  8218201116.28,
+  21600,
+  [51, 46, 44, 38, 33, 26, 18, 9],
+  LATE_UPGRADES
+);
+const GUEST_30_H = guestRun(
+  5297026191.28,
+  201348380373.58,
+  108000,
+  [73, 68, 66, 61, 55, 48, 40, 32],
+  [...LATE_UPGRADES, "facultyBoard"]
+);
+// An account registered just now — the guest's first autosave lands 30 s later.
+const JUST_REGISTERED = new Date(NOW.getTime() - 30_000);
+
+describe("evaluateSaveEnvelope — a guest's first save after registering", () => {
+  // Regression: the first save used to be anchored to the account's creation
+  // alone, so every guest who had played longer than the account was old was
+  // rejected (elapsed_exceeds_wallclock) and struck for it.
+  it("accepts 10 minutes of honest guest play on a 30-second-old account", () => {
+    expect(evaluateSaveEnvelope(null, JUST_REGISTERED, NOW, GUEST_10_MIN)).toEqual({
+      outcome: "accept"
+    });
+  });
+
+  it("accepts 6 hours of honest guest play on a 30-second-old account", () => {
+    expect(evaluateSaveEnvelope(null, JUST_REGISTERED, NOW, GUEST_6_H)).toEqual({
+      outcome: "accept"
+    });
+  });
+
+  it("uses the account's age when that is longer than the playtime claimed", () => {
+    // Registered an hour ago, played 60 s since: an hour of clicks still fits.
+    const hourOld = new Date(NOW.getTime() - 3600_000);
+    const verdict = evaluateSaveEnvelope(
+      null,
+      hourOld,
+      NOW,
+      freshSave({ totalClicks: 40 * 3000, elapsedSeconds: 60 })
+    );
+    expect(verdict.outcome).toBe("accept");
+  });
+
+  it("credits at most FIRST_SAVE_PLAYTIME_CREDIT_SECS: 30 h of play is clamped to the cap", () => {
+    const verdict = evaluateSaveEnvelope(null, JUST_REGISTERED, NOW, GUEST_30_H);
+    expect(verdict.outcome).toBe("clamp");
+    if (verdict.outcome === "clamp") {
+      expect(verdict.reasons).toContain("elapsed_exceeds_wallclock");
+      expect(verdict.clamped.elapsedSeconds).toBeCloseTo(
+        FIRST_SAVE_PLAYTIME_CREDIT_SECS + CLOCK_GRACE_SECS,
+        6
+      );
+    }
+  });
+
+  it("rejects a playtime claim more than REJECT_MULTIPLIER times the cap", () => {
+    const verdict = evaluateSaveEnvelope(
+      null,
+      JUST_REGISTERED,
+      NOW,
+      freshSave({ elapsedSeconds: FIRST_SAVE_PLAYTIME_CREDIT_SECS * REJECT_MULTIPLIER + 3600 })
+    );
+    expect(verdict.outcome).toBe("reject");
+    if (verdict.outcome === "reject") expect(verdict.reason).toBe("elapsed_exceeds_wallclock");
+  });
+
+  it("still rejects a forged first save: the credit is time, not trust", () => {
+    const forged = { ...GUEST_10_MIN, totalTokensEarned: 1e12, tokens: 1e12 };
+    const verdict = evaluateSaveEnvelope(null, JUST_REGISTERED, NOW, forged);
+    expect(verdict.outcome).toBe("reject");
+    if (verdict.outcome === "reject") expect(verdict.reason).toBe("earnings_exceed_max_possible");
+  });
+
+  it("never credits playtime to a later save: those stay on the wall clock", () => {
+    const prev: PrevSaveSnapshot = {
+      tokens: 0,
+      totalTokensEarned: 0,
+      totalClicks: 0,
+      elapsedSeconds: 0,
+      phdCount: 0,
+      prestigeCount: 0,
+      upgraderNet: 0,
+      phdInvested: 0,
+      savedAt: JUST_REGISTERED,
+      units: [],
+      upgrades: [],
+      career: emptyCareerModifiers()
+    };
+    const verdict = evaluateSaveEnvelope(prev, JUST_REGISTERED, NOW, GUEST_10_MIN);
+    expect(verdict.outcome).toBe("reject");
+    if (verdict.outcome === "reject") expect(verdict.reason).toBe("elapsed_exceeds_wallclock");
+  });
+});
 
 describe("evaluateSaveEnvelope — first-ever save (prev = null)", () => {
   it("accepts a modest, clearly-achievable save", () => {
