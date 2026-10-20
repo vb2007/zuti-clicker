@@ -518,7 +518,15 @@ lebegőpontos toleranciája 1.7.3 óta a **költés** nagyságával arányos, ne
 maradékkal: két nagy szám különbségének hibája velük arányos — egy ~10¹⁴-et
 összegyűjtő, majd a költség-boosterrel szinte mindet elköltő játékosnál
 tucatnyi token sodródás korábban elutasítást és strike-ot okozott, pusztán
-kerekítésből.
+kerekítésből. 1.7.4 óta a költségvetés a kliens **összeadásainak** kerekítését is
+elnyeli: a kliens minden kattintást és minden tick termelését külön adja a
+`tokens`-hez és a `totalTokensEarned`-hez, és ~10¹⁵ életút-token fölött egy
+lebegőpontos lépés már egész token — a kettő összeadásonként egy lépésnyit
+eltávolodhat. Vásárlás nélküli intervallumban ez korábban minden mentésnél
+*érdemi* korrekció volt, tíz után strike egy becsületesen kattintó játékosnak (a
+1.7.4-es élő teszt találta meg 5·10¹⁵-nél; az éles ranglista-vezető ma 1,7·10¹⁴-en
+áll). A ráhagyás az intervallum lehetséges összeadásainak száma (kattintások +
+`Δelapsed × TICK_RATE`) × a lebegőpontos lépés az életút-összeg méreténél.
 
 **Vendég → fiók.** Egy vendég a fiók létrehozása *előtt* játszik, így az első
 mentése rendszerint több játékidőt hordoz, mint amennyi idős a fiók. Korábban

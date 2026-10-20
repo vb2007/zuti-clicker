@@ -146,6 +146,15 @@ function isKeptUpgrade(upgradeId: string, mods: CareerModifiers): boolean {
 // for the production incident that made a fixed floor insufficient once
 // balances grew large.
 const REJECT_ABS_SLACK = 1e-3;
+
+// The client's tick rate — keep in sync with frontend/src/utils/gameConstants.ts's
+// TICK_RATE. Every tick adds its production to tokens and totalTokensEarned.
+const CLIENT_TICK_RATE = 20;
+
+// The gap between two adjacent doubles around x — generous by up to 2x.
+function floatStep(x: number): number {
+  return x > 0 ? 2 ** (Math.ceil(Math.log2(x)) - 52) : 0;
+}
 function checkBound(
   actual: number,
   rawBound: number
@@ -638,7 +647,22 @@ export function evaluateSaveEnvelope(
     Math.max(0, incoming.phdCount - prevPhdCount),
     Math.floor(Math.max(0, effectiveDeltaEarned) / PHD_TOKEN_SCALE) + 1
   );
-  const availableBudget = prevTokens + effectiveDeltaEarned + mods.startingTokens * startFunds;
+  // The client adds every click and every tick to tokens and to the lifetime
+  // total separately, and each addition rounds at that number's own size: by
+  // ~1e15 lifetime tokens a float step is a whole token, so the two drift
+  // apart by up to a step per addition (a real false strike, found in the
+  // 1.7.4 review: honest clicking at 5e15, a material clamp every save).
+  // Bounded by the additions the interval can hold — a cheat gains at most
+  // that many float steps.
+  const additions =
+    Math.max(0, effectiveDeltaClicks) +
+    Math.max(0, Math.min(deltaElapsed, dtSecs)) * CLIENT_TICK_RATE +
+    2;
+  const roundingSlack =
+    additions *
+    floatStep(Math.max(incoming.totalTokensEarned, incoming.tokens, prevTotalTokensEarned));
+  const availableBudget =
+    prevTokens + effectiveDeltaEarned + mods.startingTokens * startFunds + roundingSlack;
   detail["spendBudget"] = { minSpend, availableBudget };
   if (minSpend > availableBudget + floatTolerance(minSpend, availableBudget)) {
     return { outcome: "reject", reason: "spend_exceeds_available_budget", detail };
