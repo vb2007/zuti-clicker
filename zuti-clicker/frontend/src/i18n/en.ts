@@ -413,6 +413,7 @@ export default {
     staleReloaded: "Your progress changed elsewhere (another tab?), so the latest save was loaded.",
     implausibleReloaded:
       "Your latest progress couldn't be verified, so your last verified save was loaded.",
+    implausibleReloadFailed: "Couldn't load your last verified save yet — retrying.",
     firstSaveRejected: {
       title: "Your guest progress couldn't move to this account",
       body:

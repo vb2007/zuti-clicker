@@ -44,6 +44,10 @@ export const useSaveStore = defineStore("save", () => {
   // the player picks one of FirstSaveRejectedModal's two ways out: resending
   // the same progress would only be refused again.
   const carryOverRejected = ref(false);
+  // The server refused this progress and reloading its last verified save
+  // failed (offline, say). Until a reload succeeds the refused progress must
+  // not be sent again — it would only be refused, and struck, again.
+  let reloadAfterRefusal = false;
 
   let _timer: ReturnType<typeof setInterval> | null = null;
 
@@ -89,6 +93,7 @@ export const useSaveStore = defineStore("save", () => {
         toast.push("error", i18n.global.t("career.guestTreeDropped"));
       }
       carryOverRejected.value = false;
+      reloadAfterRefusal = false;
     }
   );
 
@@ -104,6 +109,27 @@ export const useSaveStore = defineStore("save", () => {
       return true;
     } catch {
       // No save yet — start fresh — or the request failed; either way nothing was applied.
+      return false;
+    }
+  }
+
+  /**
+   * After the server refused this progress: take exactly what the server holds
+   * — its last verified save, or a fresh game if it has none (strike 5 deletes
+   * the save). Resolves false if the server couldn't be reached.
+   */
+  async function adoptServerSave(): Promise<boolean> {
+    try {
+      const data = await api.save.load();
+      if (data.save) {
+        game.loadFromSave(data.save);
+        lastSyncedAt.value = new Date(data.save.savedAt);
+      } else {
+        game.hardReset();
+        lastSyncedAt.value = null;
+      }
+      return true;
+    } catch {
       return false;
     }
   }
@@ -126,6 +152,19 @@ export const useSaveStore = defineStore("save", () => {
   async function _performSync(): Promise<SyncOutcome> {
     isSyncing.value = true;
     syncError.value = null;
+    if (reloadAfterRefusal) {
+      try {
+        if (await adoptServerSave()) {
+          reloadAfterRefusal = false;
+          toast.push("error", i18n.global.t("save.implausibleReloaded"));
+          return "stale";
+        }
+        syncError.value = i18n.global.t("save.implausibleReloadFailed");
+        return "error";
+      } finally {
+        isSyncing.value = false;
+      }
+    }
     try {
       const payload = game.toSavePayload();
       const result = await api.save.store(payload);
@@ -158,8 +197,11 @@ export const useSaveStore = defineStore("save", () => {
       // way a stale save does. Reported as "stale": the server's state has been
       // adopted, and a caller waiting on the flush must not go ahead.
       if (isImplausibleSaveError(e)) {
-        if (await load()) toast.push("error", i18n.global.t("save.implausibleReloaded"));
-        else syncError.value = (e as ApiError).message;
+        if (await adoptServerSave()) toast.push("error", i18n.global.t("save.implausibleReloaded"));
+        else {
+          reloadAfterRefusal = true;
+          syncError.value = (e as ApiError).message;
+        }
         return "stale";
       }
       syncError.value = (e as ApiError).message;
@@ -295,6 +337,7 @@ export const useSaveStore = defineStore("save", () => {
         ui.prestigeCeremonyOpen = false;
       }
       carryOverRejected.value = false;
+      reloadAfterRefusal = false;
       lastSyncedAt.value = null;
       syncError.value = null;
     };

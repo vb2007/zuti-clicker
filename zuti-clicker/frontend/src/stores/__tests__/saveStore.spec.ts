@@ -227,7 +227,52 @@ describe("saveStore", () => {
       await expect(save.withSyncLock(async () => "ran")).rejects.toMatchObject({ stale: true });
     });
 
-    it("regression: the envelope's own 409 (no stale code) is a real sync error and does NOT reload", async () => {
+    it("a failed reload never resends the refused progress; the next sync retries", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 100;
+      vi.mocked(api.save.store).mockRejectedValue(
+        new ApiError(409, "could not be verified", { code: SAVE_IMPLAUSIBLE_CODE })
+      );
+      vi.mocked(api.save.load).mockRejectedValueOnce(new Error("offline"));
+
+      const save = useSaveStore();
+      await save.sync();
+      expect(api.save.store).toHaveBeenCalledTimes(1);
+      expect(game.phdCount).toBe(100);
+
+      vi.mocked(api.save.load).mockResolvedValue(loadedSave);
+      await save.sync();
+      expect(api.save.store).toHaveBeenCalledTimes(1); // not resent
+      expect(game.phdCount).toBe(40);
+      expect(useToastStore().toasts.at(-1)?.message).toBe(
+        i18n.global.t("save.implausibleReloaded")
+      );
+
+      vi.mocked(api.save.store).mockResolvedValue({
+        message: "ok",
+        savedAt: new Date().toISOString()
+      });
+      await save.sync(); // back to normal
+      expect(api.save.store).toHaveBeenCalledTimes(2);
+    });
+
+    it("with no stored save at all (strike 5 deletes it), the game starts fresh", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 500;
+      game.phdCount = 100;
+      vi.mocked(api.save.store).mockRejectedValue(
+        new ApiError(409, "could not be verified", { code: SAVE_IMPLAUSIBLE_CODE })
+      );
+      vi.mocked(api.save.load).mockResolvedValue({ save: null });
+
+      await useSaveStore().sync();
+      expect(game.tokens).toBe(0);
+      expect(game.phdCount).toBe(0);
+    });
+
+    it("regression: a 409 without a known code is a sync error and does NOT reload", async () => {
       loginAs();
       const game = useGameStore();
       game.phdCount = 100;
