@@ -260,9 +260,20 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
   );
 };
 
-export const deleteSave = async (userId: number) => {
+/**
+ * Deletes the account's save and records when (User.saveResetAt): the next
+ * save is a first save again, and its envelope is anchored at the reset
+ * rather than at the account's creation — otherwise an old account could
+ * wipe its save and claim its whole age as playtime. `resetAt` is the strike's
+ * own time when the strike ladder wipes the save (see applyStrike), which is
+ * how the PUT /save controller tells that wipe apart from the player's own.
+ */
+export const deleteSave = async (userId: number, resetAt: Date = new Date()) => {
   // deleteMany is idempotent — no error if no save exists.
   // Cascade in the DB removes associated UnitSave/UpgradeSave/ActiveBooster/
   // CareerNodeSave rows.
-  return prisma.gameSave.deleteMany({ where: { userId } });
+  return prisma.$transaction([
+    prisma.gameSave.deleteMany({ where: { userId } }),
+    prisma.user.update({ where: { id: userId }, data: { saveResetAt: resetAt } })
+  ]);
 };

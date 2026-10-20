@@ -17,7 +17,7 @@ import {
 import { decideGraceLead, type GraceLeadDecision } from "../services/graceLead";
 import {
   applyStrike,
-  getStoredStrikeCount,
+  getStoredStrikeState,
   logAntiCheatEvent,
   recordSoftClamp
 } from "../database/models/antiCheat";
@@ -292,7 +292,11 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *           made as a guest) an envelope rejection or a material clamp is
  *           never a strike, writes nothing and carries code
  *           "save_first_unverifiable": the client offers to start the account
- *           fresh or to log out and keep the guest progress.
+ *           fresh or to log out and keep the guest progress. The same goes
+ *           for the first save after the player deleted their own save
+ *           (DELETE /save) since their last strike — a second device may still
+ *           hold the old progress. A first save after a reset is anchored at
+ *           the reset, never at the account's creation.
  *         content:
  *           application/json:
  *             schema:
@@ -485,8 +489,15 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       // identity.createdAt anchors a first-ever save's dt (together with the
       // guest playtime it claims, capped — see FIRST_SAVE_PLAYTIME_CREDIT_SECS),
       // so "register then immediately PUT a maxed save" gets no more than that.
+      // A save that was deleted since (DELETE /save, the strike ladder's wipe)
+      // makes the next one a first save again — anchored at the reset, like a
+      // brand-new account's, never at the account's creation: an old account
+      // could otherwise wipe its save and claim its whole age as playtime.
       const now = new Date();
       evaluatedAt = now;
+      const resetAt = identity.saveResetAt;
+      const firstSaveAnchor =
+        resetAt && resetAt.getTime() > identity.createdAt.getTime() ? resetAt : identity.createdAt;
 
       // The clock grace comes out of one budget per save chain (see
       // services/graceLead.ts): how far the chain's claims already run ahead
@@ -502,7 +513,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
 
       const verdict = evaluateSaveEnvelope(
         prevSnapshot,
-        identity.createdAt,
+        firstSaveAnchor,
         now,
         incomingSnapshot,
         lead?.graceSecs
@@ -516,10 +527,19 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       // ever land on honest players. "Can't verify" includes a MATERIAL clamp:
       // the client never learns the clamped values, so its next save would
       // carry the unclamped ones again — no longer a first save, and struck.
-      // Only an account that was never struck qualifies: a save wiped by the
-      // strike ladder (or deleted by a struck player) must not turn every
-      // later reject into a free one.
-      const firstSave = previous === null && (await getStoredStrikeCount(userId)) === 0;
+      // Only an account that was never struck qualifies — a save wiped by the
+      // strike ladder must not turn every later reject into a free one — or
+      // one whose player deleted their save themselves after their last
+      // strike: what such an account sends next may be the old progress from
+      // a second device that hasn't heard of the reset, never a reason to
+      // strike. The ladder's own wipe is recorded at the strike's own time.
+      const strikeState = previous === null ? await getStoredStrikeState(userId) : null;
+      const firstSave =
+        strikeState !== null &&
+        (strikeState.strikeCount === 0 ||
+          (resetAt !== null &&
+            (strikeState.lastStrikeAt === null ||
+              resetAt.getTime() > strikeState.lastStrikeAt.getTime())));
       const refuseFirstSave =
         firstSave &&
         (verdict.outcome === "reject" || (verdict.outcome === "clamp" && verdict.material));
@@ -677,6 +697,10 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
  *     tags:
  *       - Save
  *     summary: Reset (delete) the current user's game save
+ *     description: >
+ *       Also records when the save was reset: the next PUT /save is a first
+ *       save again, verified against the time since this reset (plus the
+ *       capped guest credit), never against the account's age.
  *     security:
  *       - cookieAuth: []
  *     responses:
