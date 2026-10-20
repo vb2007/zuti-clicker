@@ -2,9 +2,11 @@ import { describe, it, expect } from "@jest/globals";
 import { readFileSync } from "fs";
 import {
   evaluateSaveEnvelope,
+  graceLeadNeeds,
   type PrevSaveSnapshot,
   type IncomingSave
 } from "../services/saveValidator.js";
+import { decideGraceLead } from "../services/graceLead.js";
 import { getCareerModifiers } from "../services/careerCore.js";
 
 // The honest-play gate (CI's "Honest play" job). Every false ban so far came
@@ -35,12 +37,34 @@ interface Stream {
   }[];
 }
 
-// The server measures an interval from when it WROTE the previous save, the
-// client from when it took it: a slow previous request (a mobile network, a
-// wait behind a spin's row lock) makes the server's interval shorter than the
-// play it covers. CLOCK_GRACE_SECS (5 s) absorbs that; every interval must
-// still pass with this much of it already used up.
+// The server measures an interval from when it EVALUATED the previous save,
+// the client from when it took it: a slow previous upload (a mobile network)
+// makes the server's interval shorter than the play it covers. Every interval
+// must pass with this much of the fixed CLOCK_GRACE_SECS (5 s) already used
+// up — even before the grace lead lends it more.
 const LATENCY_MARGIN_MS = 4000;
+
+function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Upload latency (snapshot taken -> server evaluates): lognormal around 120 ms
+// with a heavy tail, plus 1% stalls of 2-20 s (20 s is the client's timeout).
+function latencyModel(seed: number): () => number {
+  const random = seededRandom(seed);
+  return () => {
+    if (random() < 0.01) return 2 + random() * 18;
+    const z = Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
+    return 0.12 * Math.exp(1.2 * z);
+  };
+}
 
 (file ? describe : describe.skip)("honest-play gate", () => {
   const stream = file ? (JSON.parse(readFileSync(file, "utf8")) as Stream) : null;
@@ -70,6 +94,67 @@ const LATENCY_MARGIN_MS = 4000;
         );
       }
     }
+    expect(failures.slice(0, 10)).toEqual([]);
+    expect(failures).toHaveLength(0);
+  });
+
+  // The grace lead is a property of a whole save chain, so each scenario is
+  // replayed in order, over a network that delays every upload differently.
+  // The client sends one save at a time: its next snapshot comes after the
+  // previous reply, and its playtime keeps ticking while it waits (shifted
+  // into both saves, which only ever makes a claim larger). No save may be
+  // refused, earnings must never have refused one, and every verdict at the
+  // grace the lead allows must still accept.
+  it("every save chain fits its grace budget, over a heavy-tailed network", () => {
+    const now = new Date(Date.UTC(2026, 9, 20, 12));
+    const failures: string[] = [];
+    let maxLead = 0;
+    let maxNeed = 0;
+    for (const source of new Set(stream!.pairs.map((p) => p.source))) {
+      const upload = latencyModel(source.length * 7919);
+      const download = latencyModel(source.length * 104729);
+      let simAt = 0; // the sim's own clock at the previous save
+      let offset = 0; // how far real time has drifted past the sim's, waiting on replies
+      let evaluatedAt = upload(); // when the server evaluated the previous save
+      let prevOffset = 0;
+      let lead = 0;
+      for (const pair of stream!.pairs.filter((p) => p.source === source)) {
+        const simNow = simAt + pair.dtMs / 1000;
+        const takenAt = Math.max(simNow + offset, evaluatedAt + download());
+        offset = takenAt - simNow;
+        const at = takenAt + upload();
+        const dtReal = at - evaluatedAt;
+        const prev: PrevSaveSnapshot = {
+          ...pair.prev,
+          elapsedSeconds: pair.prev.elapsedSeconds + prevOffset,
+          savedAt: new Date(now.getTime() - dtReal * 1000),
+          career: getCareerModifiers(stream!.purchaseOrder.slice(0, pair.nodes))
+        };
+        const incoming = {
+          ...pair.incoming,
+          elapsedSeconds: pair.incoming.elapsedSeconds + offset
+        };
+        const d = decideGraceLead(lead, dtReal, graceLeadNeeds(prev, incoming, dtReal));
+        const verdict = evaluateSaveEnvelope(prev, new Date(0), now, incoming, d.graceSecs);
+        const where =
+          `${pair.source} @${pair.hours}h ` +
+          `(lead ${d.lead.toFixed(2)} s, dt ${dtReal.toFixed(2)} s)`;
+        if (d.overBy > 0) failures.push(`${where}: refused, over by ${d.overBy}`);
+        if (d.earningsWouldRefuse) failures.push(`${where}: earnings would refuse`);
+        if (verdict.outcome === "reject" || (verdict.outcome === "clamp" && verdict.material)) {
+          failures.push(`${where}: ${JSON.stringify(verdict)}`);
+        }
+        maxLead = Math.max(maxLead, d.nextLead);
+        maxNeed = Math.max(maxNeed, d.need);
+        lead = d.nextLead;
+        evaluatedAt = at;
+        simAt = simNow;
+        prevOffset = offset;
+      }
+    }
+    console.log(
+      `honest-play gate: largest grace lead ${maxLead.toFixed(2)} s, need ${maxNeed.toFixed(2)} s`
+    );
     expect(failures.slice(0, 10)).toEqual([]);
     expect(failures).toHaveLength(0);
   });
