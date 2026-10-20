@@ -64,13 +64,15 @@ const DEFAULT_SCENARIOS: Scenario[] = [
 const GATE_SCENARIOS: Scenario[] = [
   // 80 h: the deep tree (200+ nodes) only arrives in the second half.
   { source: "gate-autosaveOff-cps8", autosaveSecs: 0, cps: 8, prestiged: 0, plain: 0, hours: 80 },
+  // Deep enough into the tree that spins land on a big economy too.
   {
-    source: "gate-autosave30-cps3-spins",
+    source: "gate-autosave30-cps8-spins",
     autosaveSecs: 30,
-    cps: 3,
+    cps: 8,
     prestiged: 0,
     plain: 0,
-    spinEverySecs: 120
+    spinEverySecs: 120,
+    hours: 50
   },
   { source: "gate-autosave15-cps20", autosaveSecs: 15, cps: 20, prestiged: 0, plain: 0 }
 ];

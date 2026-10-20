@@ -35,38 +35,60 @@ interface Stream {
   }[];
 }
 
+// The server measures an interval from when it WROTE the previous save, the
+// client from when it took it: a slow previous request (a mobile network, a
+// wait behind a spin's row lock) makes the server's interval shorter than the
+// play it covers. CLOCK_GRACE_SECS (5 s) absorbs that; every interval must
+// still pass with this much of it already used up.
+const LATENCY_MARGIN_MS = 4000;
+
 (file ? describe : describe.skip)("honest-play gate", () => {
-  it("every honest interval passes the envelope: no reject, no material clamp", () => {
-    const stream = JSON.parse(readFileSync(file!, "utf8")) as Stream;
+  const stream = file ? (JSON.parse(readFileSync(file, "utf8")) as Stream) : null;
+
+  it("every honest interval passes the envelope, even with network latency", () => {
     const now = new Date(Date.UTC(2026, 9, 20, 12));
     const failures: string[] = [];
-    let prestiged = 0;
-    for (const pair of stream.pairs) {
-      if (pair.prestiged) prestiged++;
-      const prev: PrevSaveSnapshot = {
-        ...pair.prev,
-        savedAt: new Date(now.getTime() - pair.dtMs),
-        career: getCareerModifiers(stream.purchaseOrder.slice(0, pair.nodes))
-      };
-      const verdict = evaluateSaveEnvelope(prev, new Date(0), now, pair.incoming);
-      const failed =
-        verdict.outcome === "reject" || (verdict.outcome === "clamp" && verdict.material);
-      if (failed) {
+    for (const pair of stream!.pairs) {
+      const career = getCareerModifiers(stream!.purchaseOrder.slice(0, pair.nodes));
+      for (const latencyMs of [0, LATENCY_MARGIN_MS]) {
+        const prev: PrevSaveSnapshot = {
+          ...pair.prev,
+          savedAt: new Date(now.getTime() - Math.max(0, pair.dtMs - latencyMs)),
+          career
+        };
+        const verdict = evaluateSaveEnvelope(prev, new Date(0), now, pair.incoming);
+        if (verdict.outcome === "accept" || (verdict.outcome === "clamp" && !verdict.material)) {
+          continue;
+        }
         const what =
           verdict.outcome === "reject"
             ? `reject ${verdict.reason}`
             : `material clamp ${verdict.reasons.join("+")}`;
         failures.push(
-          `${pair.source} @${pair.hours}h (${pair.prestiged ? "prestige" : "plain"}): ${what} ` +
-            JSON.stringify(verdict.detail)
+          `${pair.source} @${pair.hours}h (${pair.prestiged ? "prestige" : "plain"}, ` +
+            `latency ${latencyMs} ms): ${what} ${JSON.stringify(verdict.detail)}`
         );
       }
     }
-    // The stream must actually exercise the hard case, or a passing gate
-    // means nothing.
-    expect(stream.pairs.length).toBeGreaterThan(10_000);
-    expect(prestiged).toBeGreaterThan(1_000);
     expect(failures.slice(0, 10)).toEqual([]);
     expect(failures).toHaveLength(0);
+  });
+
+  // A passing gate means nothing if the sim stopped exercising what it is for.
+  it("the stream covers what it is meant to", () => {
+    const pairs = stream!.pairs;
+    const bySource = (name: string) => pairs.filter((p) => p.source.includes(name));
+    for (const source of new Set(pairs.map((p) => p.source))) {
+      expect(pairs.filter((p) => p.source === source).length).toBeGreaterThan(1_000);
+    }
+    // Whole runs between saves, deep into the Academic Career.
+    const wholeRuns = bySource("autosaveOff");
+    expect(wholeRuns.filter((p) => p.prestiged).length).toBeGreaterThan(5_000);
+    expect(Math.max(...wholeRuns.map((p) => p.nodes))).toBeGreaterThan(200);
+    // Wheel spins that actually moved PhDs between saves.
+    const spun = bySource("spins").filter((p) => p.prev.upgraderNet !== 0);
+    expect(spun.length).toBeGreaterThan(100);
+    // A heavy clicker.
+    expect(bySource("cps20").length).toBeGreaterThan(1_000);
   });
 });
