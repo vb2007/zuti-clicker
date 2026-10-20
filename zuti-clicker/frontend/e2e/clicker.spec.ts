@@ -47,3 +47,47 @@ test.describe("booster pickups", () => {
     }
   });
 });
+
+// Regression: on a native <button> every OS key-repeat of a held Enter fires
+// another trusted click, so holding the key auto-clicked at the OS repeat rate
+// with no tool at all. A held key is one press; separate presses still count.
+test.describe("keyboard clicking", () => {
+  const ENTER = {
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+    nativeVirtualKeyCode: 13,
+    text: "\r",
+    unmodifiedText: "\r"
+  };
+  // The numpad's Enter: same key, its own code, and it activates a button too.
+  const NUMPAD_ENTER = { ...ENTER, code: "NumpadEnter", location: 3 };
+
+  for (const [name, KEY] of [
+    ["Enter", ENTER],
+    ["Numpad Enter", NUMPAD_ENTER]
+  ] as const) {
+    test(`holding ${name} on the clicker earns one click, not one per key repeat`, async ({
+      app,
+      page
+    }) => {
+      await app.open();
+      await app.dismissGuestWarning();
+      await page.locator(".circle-wrap").focus();
+      const cdp = await page.context().newCDPSession(page);
+
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...KEY });
+      for (let i = 0; i < 20; i++) {
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", autoRepeat: true, ...KEY });
+      }
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...KEY });
+      await expect.poll(() => app.seed((s) => s.game.totalClicks)).toBe(1);
+
+      for (let i = 0; i < 3; i++) {
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", ...KEY });
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...KEY });
+      }
+      await expect.poll(() => app.seed((s) => s.game.totalClicks)).toBe(4);
+    });
+  }
+});

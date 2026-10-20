@@ -432,7 +432,11 @@ kisegítő eszköz sosem ér hozzá. A kattintásaid ritmusát a rendszer figyel
 egy gyors vagy szokatlanul egyenletes kattintás önmagában **soha** nem vezet
 korlátozáshoz, és a böngésződ bővítményei sem. Ha egy mentés az adott idő alatt
 elérhetetlen haladást mutat, a szerver nem fogadja el (vagy a lehetséges
-értékre igazítja).
+értékre igazítja); ilyenkor a játék magától betölti a legutóbbi ellenőrzött
+mentésedet. Ha két lapon vagy két eszközön játszol egyszerre, a később mentő
+lap az újabb haladást tölti be („a haladásod máshol megváltozott") — ez sosem
+számít ellened. Egy lenyomva tartott Enter egy kattintásnak számít — minden
+kattintáshoz külön lenyomás kell.
 
 Ha a rendszer ilyen jelet észlel:
 

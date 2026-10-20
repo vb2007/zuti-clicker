@@ -418,7 +418,7 @@ valós idővel, a szerver-oldali gazdaság-tükör (`services/economy.ts`,
 `upgrades.ts` és `gameConstants.ts` kézzel tartott másolata, "keep in sync
 with" kommentekkel) segítségével:
 
-- **Monotonitás** (életút-számlálók sosem csökkenhetnek) → mindig azonnali elutasítás.
+- **Monotonitás** (életút-számlálók sosem csökkenhetnek) → elutasítás. 1.7.3 óta ez `409` `code: "save_stale"` és **sosem strike**: a tároltnál alacsonyabb érték az, amit egy második lap vagy eszköz küld (a korábban betöltött haladást) — elavult másolat, nem csalás; semmi nem íródik, és egy életút-érték csökkentésével nem lehet nyerni semmit (`stale_copy` info-esemény).
 - **Eltelt idő**: `Δelapsedseconds ≤ dt` (nincs offline progresszió, a tick csak csatolt fül mellett fut).
 - **Első mentés** (a fióknak még nincs mentése, és sosem kapott strike-ot): a `dt` kezdőpontja a fiók létrehozása **vagy** a mentés saját, vendégként játszott ideje közül a korábbi — ez utóbbi legfeljebb `FIRST_SAVE_PLAYTIME_CREDIT_SECS` (24 óra) erejéig (lásd lent, "Vendég → fiók").
 - **Kattintásszám**: `Δclicks ≤ 45 · dt` (a burkoló-réteg saját, nagyvonalú felső korlátja — nem a statisztikai detektor jelzési küszöbe, lásd lent).
@@ -494,8 +494,27 @@ valódi játékos sose szoruljon korlátozásba. Kimenet:
 |---|---|
 | a határon belül | elfogadás változatlanul |
 | a határ 1×–2×-szerese közt | csendes korrekció a határértékre, `200`, `AntiCheatEvent` info-bejegyzés |
-| a határ 2×-szerese fölött, vagy monotonitás-sértés | `409`, semmi nem íródik, azonnali *strike* (lásd 4. réteg) |
+| a határ 2×-szerese fölött | `409` `code: "save_implausible"`, semmi nem íródik, azonnali *strike* (lásd 4. réteg) |
+| monotonitás-sértés (a tároltnál alacsonyabb életút-érték — második lap/eszköz) | `409` `code: "save_stale"`, semmi nem íródik, **nincs strike** |
 | ugyanez — vagy egy *érdemi* (material) korrekció — a fiók **első** mentésénél (nincs tárolt mentés, és a fiók sosem kapott strike-ot) | `409` `code: "save_first_unverifiable"`, semmi nem íródik, **nincs strike** — csak egy `first_save_reject` info-esemény |
+
+Egy elutasított mentésre (`409`, `code: "save_implausible"`) a kliens 1.7.3 óta
+**újratölti** a szerver utolsó ellenőrzött mentését (mint egy `save_stale`-nél),
+ahelyett, hogy ugyanazt a haladást küldené újra — korábban minden korlátozás
+lejártakor újabb strike jött ugyanarra (a 2026-10-20-i ban-hurok). A játékos az
+utolsó *elfogadott* mentés óta elért haladást veszíti (autosave mellett ez
+másodperceknyi); a szerver hiteles marad, az első strike megmarad. Ha az
+újratöltés nem sikerül (pl. nincs internet), a kliens a következő mentési
+alkalommal újra a betöltést próbálja, és sosem küldi újra az elutasított
+haladást; ha a szervernek nincs mentése (az 5. strike törli), friss játékkal
+indul (`adoptServerSave`).
+
+A maradék-token ellenőrzés (`tokens ≤ költségvetés − minimális költés`)
+lebegőpontos toleranciája 1.7.3 óta a **költés** nagyságával arányos, nem a
+maradékkal: két nagy szám különbségének hibája velük arányos — egy ~10¹⁴-et
+összegyűjtő, majd a költség-boosterrel szinte mindet elköltő játékosnál
+tucatnyi token sodródás korábban elutasítást és strike-ot okozott, pusztán
+kerekítésből.
 
 **Vendég → fiók.** Egy vendég a fiók létrehozása *előtt* játszik, így az első
 mentése rendszerint több játékidőt hordoz, mint amennyi idős a fiók. Korábban
@@ -514,6 +533,7 @@ volna). Most:
 
 - **`event.isTrusted`**: `ClickerCircle.vue`, `UnitCard.vue`, `UpgradeTile.vue` és `usePrestige.ts confirmPrestige` mind az eredeti eseményből olvassák — egy szkript által `dispatchEvent`/`el.click()`-kel indított kattintás sosem ér célba, és `untrustedClicks`-ként számít a telemetriában.
 - **Rejtett/fókusz nélküli dokumentum**: `document.hidden || !document.hasFocus()` → a kattintás el sem indul, még `untrustedClicks`-be sem számít (valódi bemenet fizikailag nem juthatna el egy rejtett laphoz).
+- **Lenyomva tartott billentyű**: egy natív gombon a lenyomva tartott Enter minden operációs rendszer szintű ismétlése újabb (megbízható, `isTrusted`) kattintást váltana ki — eszköz nélküli auto-clicker az ismétlési rátán (Linuxon 100+/s is beállítható). A `ClickerCircle` ezért az ismételt (`repeat`) Enter/Space `keydown`-t elnyeli: csak egy új lenyomás számít.
 - **Csendes burst-korlát**: 45 kattintás/másodperc fölött a kattintás eldobódik — nincs token, nincs jelzés, a játékos észre sem veszi.
 - **Script-integritás és csali (honeypot)** (`utils/integrityChecks.ts`): natív függvények (`dispatchEvent`, `click`, `bind`, `setInterval`, `Date.now`) `toString()`-jét ellenőrzi `"[native code]"` jelenlétére — ezt a modul betöltéskor, még egy oldal-injektált szkript előtt menti el. Egy inert globális (`window.__zutiGame.addTokens`) és egy képernyőn kívüli, `aria-hidden`, nem tab-elérhető csapda-elem egyike sem érhető el valódi egér/billentyűzet/AT úton — bármelyik megérintése egyértelmű bizonyíték. Ezek a jelek **döntőek** (nem kell hozzájuk másik jel).
 - **Pointer-fizika** (`utils/pointerPhysics.ts`), csak egérre: `getCoalescedEvents()` üres marad valódi mozgás mellett, `movementX`/`Y` nulla marad, miközben `clientX`/`Y` látszólag változik, vagy a nyomás (`pressure`) egyetlen nem-nulla értéken fagy — ezek a CDP-alapú automatizálás (Playwright/Puppeteer) jelei, amik `isTrusted: true` eseményt produkálnak, de elvesztik ezt a metaadatot. **Nem** döntőek önmagukban (lásd lent).
@@ -1038,7 +1058,7 @@ Két GitHub Actions workflow fut a self-hosted runneren (`vbServer`, bare metal,
 
 ### `ci.yml` – tesztek PR-en
 
-Minden `main`-re nyíló pull request-en lefut, öt jobban. Négy közülük (`typecheck`, `verify-migrations`, `frontend-tests`, `frontend-e2e`) egymástól független (egyetlen runner miatt sorban futnak, de a State külön látszik); az `api-tests` a `verify-migrations`-tól függ, hogy már migrált, ellenőrzött adatbázison fusson:
+Minden `main`-re nyíló pull request-en lefut, hat jobban. Öt közülük (`typecheck`, `verify-migrations`, `frontend-tests`, `frontend-e2e`, `honest-play`) egymástól független (egyetlen runner miatt sorban futnak, de a State külön látszik); az `api-tests` a `verify-migrations`-tól függ, hogy már migrált, ellenőrzött adatbázison fusson:
 
 | Job | Mit ellenőriz |
 |---|---|
@@ -1046,6 +1066,7 @@ Minden `main`-re nyíló pull request-en lefut, öt jobban. Négy közülük (`t
 | `verify-migrations` | `prisma migrate deploy` + `prisma migrate diff --exit-code` a dedikált `zutiClickerTest` adatbázis ellen — a merge előtti bizonyíték arra, hogy egy migráció nemcsak létezik, hanem helyes is (lásd lent, `deploy.yml`) |
 | `frontend-tests` | Vitest (`src/**/__tests__/*.spec.ts`), szerver/adatbázis nélkül |
 | `frontend-e2e` | Playwright (`frontend/e2e/`), a böngészőben kimockolt API-val (nincs adatbázis, nincs élő szerver) — a reszponzív/elrendezési regressziók, lásd fent, "E2E tesztek". Rendszerszintű Chromiumot keres (`chromium`, `chromium-browser`, `google-chrome[-stable]`), és csak ennek hiányában tölti le a sajátját. Hiba esetén a nyomokat (`test-results/`) `e2e-traces-<futás>` artifactként feltölti (szándékosan nem `junit-*` nevűként, mert a `reports` job ezt a mintát gyűjti) |
+| `honest-play` | **Becsületes-játék kapu**: a frontend `pnpm sim:honest-play-gate` szimulációja a valódi `gameStore`-ral, a valódi kliens mentési ütemében játszik (gyors fokozatszerzés automatikus vásárlókkal és a teljes Tudományos pályáig, kerék-pörgetések, 20 katt/s-es kattintó), és minden mentési intervallumot kiír; az `api/src/tests/honestPlayGate.test.ts` mindegyiket (~20 000) a valódi mentés-burkon játssza vissza — egyetlen elutasítás vagy érdemi korrekció is bukás. Minden eddigi téves anti-cheat tiltás abból fakadt, hogy a burok nem illett valamire, amit egy becsületes kliens ténylegesen csinál; ez a kapu merge előtt fogja meg az ilyet. Nincs adatbázis, nincs szerver. |
 | `api-tests` | Jest, éles szerver a `:2710` porton ugyanazon `zutiClickerTest` adatbázis ellen — a `verify-migrations`-tól függ, hogy már migrált adatbázison fusson |
 
 Az `api-tests` és a `verify-migrations` job egyaránt egy futtatáshoz kötött, runner-lokális `.env` fájlt vár `/mnt/raid1/zuti-clicker-ci/.env.ci` alatt (sosem GitHub secret) — ez tartalmazza a `zutiClickerTest` / `zutiClickerTestShadow` adatbázisok elérését és egy eldobható `CRYPTO_SECRET_KEY`-t. **Ennek a fájlnak tartalmaznia kell az `ANTICHEAT_MODE=monitor` sort is** (lásd fent, "Tesztek futtatása" és lent, "Anti-cheat modell") — enélkül az `api-tests` job elbukik, mert a meglévő `save`/`leaderboard`/`booster` tesztek fixture-jei nem férnek bele a mentés-hitelesség-ellenőrzésbe `enforce` módban. A teszt lefutása után az `api-tests` job a `cleanup:test-users --apply` scriptet futtatja, hogy a `test_<random>@example.com` felhasználók ne halmozódjanak.

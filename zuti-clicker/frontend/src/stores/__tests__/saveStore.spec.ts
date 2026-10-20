@@ -7,7 +7,14 @@ import { useGameStore } from "@/stores/gameStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { SyncFlushError } from "@/stores/saveStore";
-import { api, ApiError, SAVE_STALE_CODE, SAVE_FIRST_UNVERIFIABLE_CODE } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  SAVE_STALE_CODE,
+  SAVE_FIRST_UNVERIFIABLE_CODE,
+  SAVE_IMPLAUSIBLE_CODE
+} from "@/lib/api";
+import { i18n } from "@/i18n";
 import { useUiStore } from "@/stores/uiStore";
 
 // Only `api` is replaced; the real ApiError / isStaleSaveError stay, so a test
@@ -193,7 +200,79 @@ describe("saveStore", () => {
       expect(useToastStore().toasts[0]!.kind).toBe("error");
     });
 
-    it("regression: the envelope's own 409 (no stale code) is a real sync error and does NOT reload", async () => {
+    // Regression (2026-10-20): after a refused save the client kept resending
+    // the same progress, and each resend after a restriction ended was struck
+    // again — a ban loop. It now takes the server's last verified save.
+    it("regression: a refused (implausible) save reloads the stored one, never resends", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 100; // the refused local progress
+      vi.mocked(api.save.store).mockRejectedValue(
+        new ApiError(409, "could not be verified", { code: SAVE_IMPLAUSIBLE_CODE })
+      );
+      vi.mocked(api.save.load).mockResolvedValue(loadedSave);
+
+      const save = useSaveStore();
+      await save.sync();
+
+      expect(api.save.load).toHaveBeenCalledTimes(1);
+      expect(game.phdCount).toBe(40);
+      expect(save.syncError).toBeNull();
+      expect(useToastStore().toasts.map((t) => t.message)).toEqual([
+        i18n.global.t("save.implausibleReloaded")
+      ]);
+
+      // A pre-action flush on the same refusal aborts the action (the state it
+      // was meant to protect was just replaced) and says nothing more.
+      await expect(save.withSyncLock(async () => "ran")).rejects.toMatchObject({ stale: true });
+    });
+
+    it("a failed reload never resends the refused progress; the next sync retries", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 100;
+      vi.mocked(api.save.store).mockRejectedValue(
+        new ApiError(409, "could not be verified", { code: SAVE_IMPLAUSIBLE_CODE })
+      );
+      vi.mocked(api.save.load).mockRejectedValueOnce(new Error("offline"));
+
+      const save = useSaveStore();
+      await save.sync();
+      expect(api.save.store).toHaveBeenCalledTimes(1);
+      expect(game.phdCount).toBe(100);
+
+      vi.mocked(api.save.load).mockResolvedValue(loadedSave);
+      await save.sync();
+      expect(api.save.store).toHaveBeenCalledTimes(1); // not resent
+      expect(game.phdCount).toBe(40);
+      expect(useToastStore().toasts.at(-1)?.message).toBe(
+        i18n.global.t("save.implausibleReloaded")
+      );
+
+      vi.mocked(api.save.store).mockResolvedValue({
+        message: "ok",
+        savedAt: new Date().toISOString()
+      });
+      await save.sync(); // back to normal
+      expect(api.save.store).toHaveBeenCalledTimes(2);
+    });
+
+    it("with no stored save at all (strike 5 deletes it), the game starts fresh", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 500;
+      game.phdCount = 100;
+      vi.mocked(api.save.store).mockRejectedValue(
+        new ApiError(409, "could not be verified", { code: SAVE_IMPLAUSIBLE_CODE })
+      );
+      vi.mocked(api.save.load).mockResolvedValue({ save: null });
+
+      await useSaveStore().sync();
+      expect(game.tokens).toBe(0);
+      expect(game.phdCount).toBe(0);
+    });
+
+    it("regression: a 409 without a known code is a sync error and does NOT reload", async () => {
       loginAs();
       const game = useGameStore();
       game.phdCount = 100;

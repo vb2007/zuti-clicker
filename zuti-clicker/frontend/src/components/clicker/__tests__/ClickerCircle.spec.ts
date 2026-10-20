@@ -187,6 +187,31 @@ describe("ClickerCircle", () => {
     expect(spy).toHaveBeenLastCalledWith(true, "other");
   });
 
+  // Regression: on a native <button> every OS key-repeat of a held Enter fires
+  // another trusted click — holding the key auto-clicked at the OS repeat
+  // rate. A repeated keydown is now cancelled before it can activate.
+  it("regression: a held (repeating) Enter/Space keydown is cancelled; a fresh press is not", () => {
+    const wrapper = mount(ClickerCircle);
+    const keys = [
+      { key: "Enter", code: "Enter" },
+      { key: "Enter", code: "NumpadEnter" }, // the numpad's Enter — same activation
+      { key: " ", code: "Space" }
+    ];
+    for (const k of keys) {
+      const fresh = new KeyboardEvent("keydown", { ...k, bubbles: true, cancelable: true });
+      wrapper.element.dispatchEvent(fresh);
+      expect(fresh.defaultPrevented).toBe(false);
+      const repeat = new KeyboardEvent("keydown", {
+        ...k,
+        repeat: true,
+        bubbles: true,
+        cancelable: true
+      });
+      wrapper.element.dispatchEvent(repeat);
+      expect(repeat.defaultPrevented).toBe(true);
+    }
+  });
+
   it("a keydown's method attribution is consumed by its click, not reused by a later unrelated one", async () => {
     const antiCheat = useAntiCheatStore();
     const spy = vi.spyOn(antiCheat, "recordClick");

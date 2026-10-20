@@ -1,6 +1,12 @@
 import { describe, it, expect } from "@jest/globals";
 import { evaluateSaveEnvelope, type PrevSaveSnapshot, type IncomingSave } from "../services/saveValidator.js";
-import { getClickValue } from "../services/economy.js";
+import {
+  getClickValue,
+  getBulkCost,
+  getCareerUnitCostMultiplier,
+  getMaxBoosterMultiplier
+} from "../services/economy.js";
+import { getUnitDefinition } from "../constants/gameBalance.js";
 import { emptyCareerModifiers } from "../services/careerCore.js";
 import {
   BASE_TOKENS_PER_CLICK,
@@ -490,6 +496,44 @@ describe("evaluateSaveEnvelope — clamp materiality", () => {
 });
 
 describe("evaluateSaveEnvelope — spend / free units", () => {
+  // Regression (review of 1.7.3): the leftover-tokens check scaled its float
+  // tolerance with the small LEFTOVER, not the size of the spend. Saving up
+  // ~1e14 and buying with the cost booster (spend == the cheapest possible
+  // price) leaves float drift of tens of tokens in the client's balance — a
+  // reject and a strike when the leftover was small, purely from rounding.
+  it("regression: float drift in a huge spend is not a reject when little is left over", () => {
+    const mods = emptyCareerModifiers();
+    const booster = getMaxBoosterMultiplier("costReduction", mods);
+    const best = getCareerUnitCostMultiplier(0, mods, booster);
+    const theta = getUnitDefinition("theta")!;
+    const spend = getBulkCost(theta, 0, 80, best); // ~1e14, the cheapest it can cost
+    const prev: PrevSaveSnapshot = {
+      tokens: spend + 10,
+      totalTokensEarned: spend + 10,
+      totalClicks: 0,
+      elapsedSeconds: 100,
+      phdCount: 0,
+      prestigeCount: 0,
+      upgraderNet: 0,
+      phdInvested: 0,
+      career: mods,
+      savedAt: new Date(NOW.getTime() - 2000),
+      units: [],
+      upgrades: []
+    };
+    expect(spend).toBeGreaterThan(1e13);
+    const verdict = evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, {
+      ...freshSave({
+        tokens: 10 + 53, // 53 tokens of accumulated float drift on ~1e14
+        totalTokensEarned: prev.totalTokensEarned,
+        elapsedSeconds: 101
+      }),
+      units: [{ unitId: "theta", owned: 80 }]
+    });
+    if (verdict.outcome === "reject") throw new Error(`rejected: ${verdict.reason}`);
+    if (verdict.outcome === "clamp") expect(verdict.material).toBe(false);
+  });
+
   it("rejects units granted without a matching token deduction", () => {
     const prev: PrevSaveSnapshot = {
       tokens: 5,

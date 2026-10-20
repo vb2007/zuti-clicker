@@ -235,12 +235,15 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *         $ref: '#/components/responses/Restricted'
  *       '409':
  *         description: >
- *           Rejected by the save plausibility envelope: a monotonicity
- *           break, or a value more than twice what's achievable since the
- *           last save (see docs/developer/final.md's "Anti-cheat modell"
- *           section). Nothing is written — GET /save still returns the last
- *           verified state. Never returned when ANTICHEAT_MODE is "off" or
- *           "monitor". ALSO returned (in every ANTICHEAT_MODE, and never a
+ *           Rejected by the save plausibility envelope: a value more than
+ *           twice what's achievable since the last save, with code
+ *           "save_implausible" (see docs/developer/final.md's "Anti-cheat
+ *           modell" section); the client reloads its last verified save.
+ *           Nothing is written — GET /save still returns the last verified
+ *           state. Never returned when ANTICHEAT_MODE is "off" or "monitor".
+ *           A save BEHIND the stored one (a lower lifetime total — a second
+ *           tab or device) is refused with code "save_stale" and never
+ *           struck. ALSO returned (in every ANTICHEAT_MODE, and never a
  *           strike, with code "save_stale") when upgraderSeq does not match
  *           the account's current value — the save was made before a later
  *           wheel spin (or from a copy of the game that predates the
@@ -446,7 +449,24 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       const refuseFirstSave =
         firstSave &&
         (verdict.outcome === "reject" || (verdict.outcome === "clamp" && verdict.material));
-      if (refuseFirstSave) {
+      // A save BEHIND the stored one — a lower lifetime total than what was
+      // already accepted — is what a second tab or device sends when it saves
+      // the progress it loaded earlier: a stale copy, not a cheat (a refusal
+      // writes nothing, and lowering a total gains nothing anyway). Answered
+      // like any stale save — 409 save_stale, the client reloads — and never
+      // struck.
+      const staleCopy =
+        !firstSave && verdict.outcome === "reject" && verdict.reason === "monotonicity_violation";
+      if (staleCopy) {
+        await logAntiCheatEvent({
+          userId,
+          kind: "stale_copy",
+          severity: "info",
+          mode: ANTICHEAT_MODE,
+          detail: { reason: verdict.reason, ...verdict.detail },
+          enforced
+        }).catch((e: unknown) => console.error("Failed to log a stale copy:", e));
+      } else if (refuseFirstSave) {
         await logAntiCheatEvent({
           userId,
           kind: "first_save_reject",
@@ -474,6 +494,11 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       }
 
       if (enforced) {
+        if (staleCopy) {
+          const r = Responses.SAVE.STALE;
+          res.status(r.status).json(r.body);
+          return;
+        }
         if (refuseFirstSave) {
           const r = Responses.SAVE.FIRST_SAVE_UNVERIFIABLE;
           res.status(r.status).json(r.body);

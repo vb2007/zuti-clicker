@@ -220,26 +220,35 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=enforce", () =
         .send({ ...TEN_MINUTE_GUEST, tokens: 1e12, totalTokensEarned: 1e12 });
       expect(res.status).toBe(Responses.SAVE.IMPLAUSIBLE.status);
       expect(res.body.error).toBe(Responses.SAVE.IMPLAUSIBLE.body.error);
-      expect(res.body.code).toBeUndefined();
+      expect(res.body.code).toBe(Responses.SAVE.IMPLAUSIBLE.body.code);
       expect((await strikes(cookie)).strikeCount).toBe(1);
     });
   });
 
-  it("rejects a monotonicity violation and keeps the last verified save intact", async () => {
+  // Regression (review of 1.7.3): a save BEHIND the stored one is what a second
+  // tab or device sends — the progress it loaded before the other one saved.
+  // It used to be a monotonicity reject and an immediate strike; it is a stale
+  // copy: refused with save_stale (the client reloads), nothing written, never
+  // a strike.
+  it("a save behind the stored one (a second tab) is stale, never struck", async () => {
     const cookie = await registerAndLogin();
-    await api
-      .put("/save")
-      .set("Cookie", cookie)
-      .send({ tokens: 2, totalTokensEarned: 2, totalClicks: 1, elapsedSeconds: 1, units: [] });
-
-    const res = await api
-      .put("/save")
-      .set("Cookie", cookie)
-      .send({ tokens: 0, totalTokensEarned: 1, totalClicks: 1, elapsedSeconds: 1, units: [] });
-    expect(res.status).toBe(409);
+    const base = { tokens: 2, totalTokensEarned: 2, totalClicks: 1, elapsedSeconds: 1, units: [] };
+    expect((await api.put("/save").set("Cookie", cookie).send(base)).status).toBe(200);
+    // Tab A plays on and saves first.
+    const tabA = { ...base, tokens: 6, totalTokensEarned: 6, totalClicks: 4, elapsedSeconds: 3 };
+    expect((await api.put("/save").set("Cookie", cookie).send(tabA)).status).toBe(200);
+    // Tab B, loaded from `base`, played less and saves after.
+    const tabB = { ...base, tokens: 4, totalTokensEarned: 4, totalClicks: 2, elapsedSeconds: 2 };
+    for (let i = 0; i < 3; i++) {
+      const res = await api.put("/save").set("Cookie", cookie).send(tabB);
+      expect(res.status).toBe(Responses.SAVE.STALE.status);
+      expect(res.body.code).toBe(Responses.SAVE.STALE.body.code);
+    }
 
     const getRes = await api.get("/save").set("Cookie", cookie);
-    expect(getRes.body.save.totalTokensEarned).toBe(2);
+    expect(getRes.body.save.totalTokensEarned).toBe(6); // tab A's save, untouched
+    const status = await api.get("/anticheat/status").set("Cookie", cookie);
+    expect(status.body).toMatchObject({ strikeCount: 0, isRestricted: false });
   });
 
   it("silently clamps a save between 1x and 2x over the bound, returning 200", async () => {
