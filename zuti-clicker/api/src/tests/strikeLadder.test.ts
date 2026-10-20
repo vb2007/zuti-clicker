@@ -367,6 +367,13 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
 
   it("an envelope reject on PUT /save also strikes immediately, no repetition needed", async () => {
     const cookie = await registerAndLogin();
+    // Not the account's first save — that one is never struck (see
+    // envelopeEnforcement.test.ts's "a guest's first save after registering").
+    const first = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send({ tokens: 1, totalTokensEarned: 1, totalClicks: 1, elapsedSeconds: 1, units: [] });
+    expect(first.status).toBe(200);
     await api
       .put("/save")
       .set("Cookie", cookie)
