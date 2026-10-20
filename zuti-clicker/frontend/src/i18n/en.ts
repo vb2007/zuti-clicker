@@ -218,8 +218,7 @@ export default {
       lecturer: { name: "Lecturer", desc: "Your own course, your own lecture hall." },
       lectureMomentum: {
         name: "Lecture Momentum",
-        desc:
-          "Keep clicking and the room warms up: momentum builds a click bonus that fades when you pause."
+        desc: "Keep clicking and the room warms up: momentum builds a click bonus that fades when you pause."
       },
       seminarLeader: {
         name: "Seminar Leader",
@@ -523,8 +522,7 @@ export default {
   },
   anticheat: {
     title: "Progress paused",
-    body:
-      "Automated or unusually fast input was detected on this account. Clicking, purchases, and prestige are paused until the timer below runs out.",
+    body: "Automated or unusually fast input was detected on this account. Clicking, purchases, and prestige are paused until the timer below runs out.",
     timeRemaining: "Time remaining",
     strikeNote:
       "This has happened {count} times on this account. Restrictions get longer each time.",

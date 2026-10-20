@@ -168,4 +168,32 @@ test.describe("account boundary", () => {
     await expect(page.locator(".save-guest-btn")).toBeVisible();
     expect(await app.seed((s) => s.game.tokens)).toBe(777);
   });
+
+  // Regression (review of 1.7.1): logging out before the first autosave made
+  // the logout's own flush the first save; its refusal opened both dialogs.
+  test("logging out when the first save is refused shows only its own dialog", async ({
+    app,
+    page
+  }) => {
+    await page.route("**/api/save", (route) =>
+      route.request().method() === "PUT"
+        ? route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({ code: "save_first_unverifiable", error: "Not verified." })
+          })
+        : route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({ save: null })
+          })
+    );
+    await app.open();
+    await page.locator(".user-btn").click();
+    await page.locator(".dropdown-item", { hasText: "Log out" }).click();
+    await expect(
+      page.locator("[role='alertdialog']", { hasText: "couldn't move to this account" })
+    ).toBeVisible();
+    await expect(page.locator("[role='alertdialog']", { hasText: "without saving" })).toHaveCount(0);
+  });
 });

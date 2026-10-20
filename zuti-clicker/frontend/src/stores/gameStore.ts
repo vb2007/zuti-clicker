@@ -141,8 +141,9 @@ export const useGameStore = defineStore("game", () => {
   const unitStates = ref<UnitState[]>(UNIT_DEFINITIONS.map((d) => ({ id: d.id, owned: 0 })));
 
   // Academic Career — the persistent PhD tree. Survives prestige; cleared only
-  // by hardReset. Logged in, every change comes from the server (applyCareerState);
-  // a guest's is settled locally (buyCareerNodeLocal & co.). `refundable` marks
+  // by hardReset. Every change comes from the server (applyCareerState) — the
+  // tree needs an account; buyCareerNodeLocal & co. apply the same rules
+  // without one, for the balance simulation and specs. `refundable` marks
   // nodes bought in the still-open current purchase window.
   const careerNodes = ref<{ nodeId: string; cost: number; refundable: boolean }[]>([]);
   const careerWindowOpen = ref(false);

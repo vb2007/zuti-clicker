@@ -219,8 +219,7 @@ export default {
       lecturer: { name: "Előadó", desc: "Saját kurzus, saját előadóterem." },
       lectureMomentum: {
         name: "Előadói lendület",
-        desc:
-          "Kattints folyamatosan, és a terem bemelegszik: a lendület kattintásbónuszt épít, ami szünetben elhalványul."
+        desc: "Kattints folyamatosan, és a terem bemelegszik: a lendület kattintásbónuszt épít, ami szünetben elhalványul."
       },
       seminarLeader: {
         name: "Szemináriumvezető",
@@ -528,8 +527,7 @@ export default {
   },
   anticheat: {
     title: "Haladás szüneteltetve",
-    body:
-      "Ezen a fiókon automatizált vagy szokatlanul gyors bevitelt észleltünk. A kattintás, a vásárlás és a fokozat az alábbi visszaszámlálás lejártáig szünetel.",
+    body: "Ezen a fiókon automatizált vagy szokatlanul gyors bevitelt észleltünk. A kattintás, a vásárlás és a fokozat az alábbi visszaszámlálás lejártáig szünetel.",
     timeRemaining: "Hátralévő idő",
     strikeNote:
       "Ez már {count}. alkalommal történt meg ezen a fiókon. A korlátozás minden alkalommal hosszabb.",

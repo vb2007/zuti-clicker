@@ -269,24 +269,30 @@ export const useSaveStore = defineStore("save", () => {
     keepProgress = false
   }: { force?: boolean; keepProgress?: boolean } = {}): Promise<boolean> {
     if (!auth.isLoggedIn) return true;
-    if (!force && !keepProgress) {
-      try {
-        await withSyncLock(async () => {});
-      } catch (e) {
-        if (!(e instanceof SyncFlushError && e.stale)) return false;
+    // Logged out and reset while still holding the sync lock: a sync that
+    // asks meanwhile (autosave, a queued one) runs only after the release —
+    // when there is no account any more — instead of landing on the fresh
+    // guest's state halfway through.
+    const leave = async () => {
+      if (_inflight) await _inflight;
+      await auth.logout();
+      if (!keepProgress) {
+        game.hardReset();
+        ui.careerOpen = false;
+        ui.upgraderOpen = false;
+        ui.prestigeConfirmOpen = false;
+        ui.prestigeCeremonyOpen = false;
       }
+      carryOverRejected.value = false;
+      lastSyncedAt.value = null;
+      syncError.value = null;
+    };
+    try {
+      await withSyncLock(leave, { flush: !force && !keepProgress });
+    } catch (e) {
+      if (!(e instanceof SyncFlushError && e.stale)) return false;
+      await withSyncLock(leave, { flush: false });
     }
-    await auth.logout();
-    if (!keepProgress) {
-      game.hardReset();
-      ui.careerOpen = false;
-      ui.upgraderOpen = false;
-      ui.prestigeConfirmOpen = false;
-      ui.prestigeCeremonyOpen = false;
-    }
-    carryOverRejected.value = false;
-    lastSyncedAt.value = null;
-    syncError.value = null;
     return true;
   }
 

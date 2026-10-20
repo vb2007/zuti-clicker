@@ -644,6 +644,36 @@ describe("saveStore", () => {
       expect(useAuthStore().isLoggedIn).toBe(false);
     });
 
+    // Regression (review of 1.7.1): the lock used to be released before the
+    // logout, so a sync asked for meanwhile could go out — still logged in —
+    // and land on the fresh guest's state.
+    it("regression: a sync asked for during logout never goes out", async () => {
+      loginAs();
+      let releaseLogout!: () => void;
+      const auth = useAuthStore();
+      vi.spyOn(auth, "logout").mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseLogout = () => {
+              auth.user = null;
+              resolve();
+            };
+          })
+      );
+      vi.mocked(api.save.store).mockResolvedValue(saved());
+
+      const save = useSaveStore();
+      const out = save.logout();
+      await vi.waitFor(() => expect(releaseLogout).toBeTypeOf("function"));
+      void save.sync(); // an autosave tick during the HTTP logout
+      releaseLogout();
+      await out;
+      await nextTick();
+
+      expect(api.save.store).toHaveBeenCalledTimes(1); // the pre-logout flush only
+      expect(save.lastSyncedAt).toBeNull();
+    });
+
     it("keepProgress logs out without saving or resetting", async () => {
       loginAs();
       const game = useGameStore();
