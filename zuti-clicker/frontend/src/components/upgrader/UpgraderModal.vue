@@ -37,7 +37,9 @@ import {
   UPGRADER_RTP,
   UPGRADER_WIN_CHANCE_CAP,
   UPGRADER_PRESET_MULTIPLIERS,
-  UPGRADER_CONSOLATION_BOOSTER_ID
+  UPGRADER_CONSOLATION_BOOSTER_ID,
+  UPGRADER_MAX_STAKE,
+  PHD_MAX
 } from "@/utils/gameConstants";
 import BaseModal from "@/components/modals/BaseModal.vue";
 
@@ -72,7 +74,6 @@ const busy = computed(() => phase.value === "requesting" || phase.value === "spi
 
 const SPIN_MS = 3200;
 const SPIN_TURNS = 5;
-const INT32_MAX = 2_147_483_647; // keep in sync with api/src/constants/upgrader.ts
 const STAKE_PERCENTS = [10, 25, 50, 100] as const;
 
 const multiplier = ref(2);
@@ -87,6 +88,8 @@ const spinBtn = ref<HTMLButtonElement | null>(null);
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
 const owned = computed(() => game.phdCount);
+// One spin stakes at most UPGRADER_MAX_STAKE, however many PhDs are held.
+const maxStake = computed(() => Math.min(owned.value, UPGRADER_MAX_STAKE));
 const stake = computed(() => (/^\d+$/.test(stakeText.value) ? Number(stakeText.value) : NaN));
 const hundredths = computed(() => toHundredths(multiplier.value));
 const quote = computed(() =>
@@ -103,8 +106,8 @@ const problem = computed<string | null>(() => {
   if (antiCheat.isRestricted) return t("upgrader.problems.restricted");
   if (owned.value < 1) return t("upgrader.problems.noPhd");
   if (!(stake.value >= 1)) return t("upgrader.problems.enterStake");
-  if (stake.value > owned.value) {
-    return t("upgrader.problems.tooMany", { owned: fmt(owned.value) });
+  if (stake.value > maxStake.value) {
+    return t("upgrader.problems.tooMany", { owned: fmt(maxStake.value) });
   }
   if (quote.value === null) {
     return t("upgrader.problems.tooSmall", {
@@ -112,7 +115,8 @@ const problem = computed<string | null>(() => {
       mult: formatMult(multiplier.value)
     });
   }
-  if (owned.value - stake.value + quote.value.payout > INT32_MAX) {
+  // The server checks held + invested (phdTotal) too.
+  if (owned.value + game.phdInvested - stake.value + quote.value.payout > PHD_MAX) {
     return t("upgrader.errors.limit");
   }
   return null;
@@ -199,13 +203,13 @@ const resultLine = computed(() => {
 function defaultStake(): string {
   if (owned.value < 1) return "";
   const floor = minStake(hundredths.value ?? 120);
-  return String(Math.min(owned.value, Math.max(floor, Math.floor(owned.value / 10))));
+  return String(Math.min(maxStake.value, Math.max(floor, Math.floor(owned.value / 10))));
 }
 
 function setStakePercent(p: number): void {
   if (owned.value < 1) return;
   const share = Math.max(1, Math.floor((owned.value * p) / 100));
-  stakeText.value = String(p === 100 ? owned.value : share);
+  stakeText.value = String(Math.min(maxStake.value, p === 100 ? owned.value : share));
 }
 
 function onStakeInput(e: Event): void {

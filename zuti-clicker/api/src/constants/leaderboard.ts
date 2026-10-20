@@ -7,7 +7,9 @@
 export const LEADERBOARD_METRICS = {
   tokens: { field: "totalTokensEarned" },
   clicks: { field: "totalClicks" },
-  phd: { field: "phdCount" },
+  // Held + invested PhDs (GameSave.phdTotal): investing in the Academic
+  // Career tree must never cost a player their rank.
+  phd: { field: "phdTotal" },
   playtime: { field: "elapsedSeconds" }
 } as const;
 

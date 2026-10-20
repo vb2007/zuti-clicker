@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { CPS_WINDOW_MS } from "@/utils/gameConstants";
+import { formatPercent } from "@/utils/formatters";
 import ClickerCircle from "./ClickerCircle.vue";
 import FloatingNumber from "./FloatingNumber.vue";
 import BoosterPickup from "./BoosterPickup.vue";
@@ -117,6 +118,24 @@ function onCircleClick({ x, y }: { x: number; y: number }) {
           <div v-if="cps > 0" class="cps-pill">
             <span class="cps-val">{{ cps.toFixed(1) }}</span>
             <span class="cps-unit">{{ t("clicker.cps") }}</span>
+            <!-- Lecture momentum (an Academic Career node): the meter fills as
+                 clicks keep coming and drains after a pause. -->
+            <template v-if="game.careerModifiers.momentumMax > 0">
+              <span class="momentum-sep" aria-hidden="true">·</span>
+              <span class="momentum-track" aria-hidden="true">
+                <span
+                  class="momentum-fill"
+                  :style="{ transform: `scaleX(${game.momentum})` }"
+                ></span>
+              </span>
+              <span class="momentum-val">
+                {{
+                  t("career.momentum", {
+                    pct: formatPercent((game.momentumMultiplier - 1) * 100)
+                  })
+                }}
+              </span>
+            </template>
           </div>
         </Transition>
       </div>
@@ -247,6 +266,33 @@ function onCircleClick({ x, y }: { x: number; y: number }) {
   font-size: 11px;
   color: var(--text-secondary);
   font-weight: 500;
+}
+
+.momentum-sep {
+  margin: 0 4px;
+  color: var(--text-muted);
+}
+.momentum-track {
+  position: relative;
+  width: 34px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.momentum-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--booster);
+  transform-origin: left;
+  transition: transform 160ms ease-out;
+}
+.momentum-val {
+  margin-left: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .cps-fade-enter-active,

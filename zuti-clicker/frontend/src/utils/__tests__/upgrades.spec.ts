@@ -1,3 +1,4 @@
+import { getCareerModifiers } from "@/utils/careerCore";
 import { describe, it, expect } from "vitest";
 import {
   getFlatClickBonus,
@@ -214,24 +215,41 @@ describe("rollCrit", () => {
 });
 
 describe("pickWeightedBoosterId", () => {
-  const totalWeight = BOOSTER_DEFINITIONS.reduce((sum, d) => sum + d.weight, 0);
+  // Without an Academic Career unlock only the base boosters are in the pool.
+  const basePool = BOOSTER_DEFINITIONS.filter((d) => !d.career);
+  const totalWeight = basePool.reduce((sum, d) => sum + d.weight, 0);
 
   it("picks the first definition at roll 0", () => {
     expect(pickWeightedBoosterId(() => 0)).toBe(BOOSTER_DEFINITIONS[0]!.id);
   });
 
-  it("picks the last definition just under the top of the weight range", () => {
+  it("picks the last base definition just under the top of the weight range", () => {
     expect(pickWeightedBoosterId(() => (totalWeight - 0.001) / totalWeight)).toBe(
-      BOOSTER_DEFINITIONS[BOOSTER_DEFINITIONS.length - 1]!.id
+      basePool[basePool.length - 1]!.id
     );
   });
 
-  it("always returns a known booster id across a dense sweep of [0, 1)", () => {
-    const knownIds = new Set(BOOSTER_DEFINITIONS.map((d) => d.id));
+  it("always returns a base booster id across a dense sweep of [0, 1) until one is unlocked", () => {
+    const baseIds = new Set(basePool.map((d) => d.id));
     for (let i = 0; i < 1000; i++) {
       const roll = i / 1000;
-      expect(knownIds.has(pickWeightedBoosterId(() => roll))).toBe(true);
+      expect(baseIds.has(pickWeightedBoosterId(() => roll))).toBe(true);
     }
+  });
+
+  it("adds the career boosters the tree unlocked to the end of the pool", () => {
+    const mods = getCareerModifiers([
+      "habilitation",
+      "conferences.conferenceSeason",
+      "conferences.callForPapers",
+      "conferences.posterSession",
+      "conferences.keynoteSpeaker",
+      "conferences.symposium"
+    ]);
+    const all = BOOSTER_DEFINITIONS.reduce((sum, d) => sum + d.weight, 0);
+    expect(pickWeightedBoosterId(() => (all - 0.001) / all, mods)).toBe("critStorm");
+    // Windfall's slice starts right after the base pool's.
+    expect(pickWeightedBoosterId(() => (totalWeight + 0.5) / all, mods)).toBe("windfall");
   });
 });
 

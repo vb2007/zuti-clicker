@@ -6,6 +6,7 @@ import { useUiStore } from "@/stores/uiStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { formatNumber } from "@/utils/formatters";
 import { PHD_TOKEN_SCALE, UNIT_REVEAL_FRACTION } from "@/utils/gameConstants";
+import { CAREER_NODES } from "@/utils/careerCore";
 
 const { t } = useI18n();
 const game = useGameStore();
@@ -80,14 +81,15 @@ const progressLabel = computed(() =>
       <!-- Keyed to prestigeCount (monotonic) rather than the PhD balance, so it
            is a one-way discovery gate like the panel itself: spending or losing
            every PhD on the wheel never hides it again. -->
-      <button
-        v-if="game.prestigeCount >= 1"
-        class="upgrader-btn"
-        type="button"
-        @click="ui.upgraderOpen = true"
-      >
-        {{ t("upgrader.openBtn") }}
-      </button>
+      <div v-if="game.prestigeCount >= 1" class="secondary-row">
+        <button class="career-btn" type="button" @click="ui.careerOpen = true">
+          <span>{{ t("career.openBtn") }}</span>
+          <span class="career-count">{{ game.careerNodes.length }}/{{ CAREER_NODES.length }}</span>
+        </button>
+        <button class="upgrader-btn" type="button" @click="ui.upgraderOpen = true">
+          {{ t("upgrader.openBtn") }}
+        </button>
+      </div>
     </div>
   </section>
 </template>
@@ -231,7 +233,8 @@ const progressLabel = computed(() =>
   }
 }
 
-.upgrader-btn {
+.upgrader-btn,
+.career-btn {
   padding: 8px 14px;
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
@@ -245,17 +248,37 @@ const progressLabel = computed(() =>
     color var(--transition-fast);
 }
 @media (hover: hover) {
-  .upgrader-btn:hover {
+  .upgrader-btn:hover,
+  .career-btn:hover {
     border-color: var(--accent);
     color: var(--accent-text);
     background: var(--bg-hover);
   }
 }
 
+.secondary-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.career-btn {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+}
+.career-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Touch (mobile sheet, or a tablet's coarse pointer): 44px targets. */
 @media (max-width: 759px), (pointer: coarse) {
   .prestige-btn,
-  .upgrader-btn {
+  .upgrader-btn,
+  .career-btn {
     min-height: 44px;
   }
 }

@@ -308,7 +308,7 @@ describe("Save endpoints - prestige validation", () => {
     expect(res.body.error).toBe(Responses.SAVE.INVALID_PRESTIGE.body.error);
   });
 
-  it("rejects a phdCount beyond the Int column range with 400, not a 500", async () => {
+  it("rejects a phdCount beyond what the column holds exactly (2^53) with 400, not a 500", async () => {
     const res = await api
       .put("/save")
       .set("Cookie", cookie)

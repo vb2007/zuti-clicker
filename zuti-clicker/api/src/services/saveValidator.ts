@@ -15,20 +15,23 @@ import {
   getUnitDefinition,
   getUpgradeDefinition,
   PHD_TOKEN_SCALE,
-  MAX_CRIT_MULTIPLIER,
-  MAX_PRODUCTION_BOOSTER_MULTIPLIER,
-  MAX_CLICK_BOOSTER_MULTIPLIER,
-  MIN_COST_BOOSTER_MULTIPLIER
+  MAX_CRIT_MULTIPLIER
 } from "../constants/gameBalance";
 import {
   getBulkCost,
-  getProductionMultiplier,
-  getCostMultiplier,
   getFlatClickBonus,
   getClickMultiplier,
   getClickSynergy,
-  getClickValue
+  getClickValue,
+  getCareerPhdProductionMultiplier,
+  getCareerProductionMultiplier,
+  getCareerBaseTps,
+  getCareerUnitCostMultiplier,
+  getCareerUpgradeCost,
+  getCareerClickSynergy,
+  getMaxBoosterMultiplier
 } from "./economy";
+import { emptyCareerModifiers, keptUnitCount, type CareerModifiers } from "./careerCore";
 import {
   CLOCK_GRACE_SECS,
   ENVELOPE_MAX_CPS,
@@ -55,9 +58,17 @@ export interface PrevSaveSnapshot {
   // GameSave.upgraderNet: the signed sum of (payout - stake) across every
   // upgrader spin. Written only by POST /upgrader/spin, never by the client.
   upgraderNet: number;
+  // GameSave.phdInvested: PhDs sunk into the Academic Career tree. Written
+  // only by POST /career/*, never by the client.
+  phdInvested: number;
   savedAt: Date;
   units: UnitSnapshot[];
   upgrades: string[];
+  // The tree's modifiers, folded from the account's own CareerNodeSave rows
+  // (never from the request). Nodes only change through POST /career/*, which
+  // bumps upgraderSeq, so between two accepted saves the tree is fixed — the
+  // same modifiers apply to both the pre- and post-prestige economies below.
+  career: CareerModifiers;
 }
 
 export interface IncomingSave {
@@ -100,6 +111,15 @@ export type EnvelopeVerdict =
 
 function unitMap(units: UnitSnapshot[]): Map<string, number> {
   return new Map(units.map((u) => [u.unitId, u.owned]));
+}
+
+// Whether an upgrade survives a prestige thanks to a keepUpgradeFamily node.
+// "booster" covers both booster perks (see careerCore's KeptUpgradeFamily).
+function isKeptUpgrade(upgradeId: string, mods: CareerModifiers): boolean {
+  const family = getUpgradeDefinition(upgradeId)?.family;
+  if (!family) return false;
+  const kept = family === "boosterDuration" || family === "boosterSpawn" ? "booster" : family;
+  return mods.keepUpgradeFamilies.includes(kept);
 }
 
 // The two-tier bound every envelope dimension shares: within `bound` is
@@ -150,32 +170,47 @@ function checkBound(
 // rolls unconditionally assumed to have landed every time. Extracted so the
 // earnings bound can evaluate it against both a pre- and a post-prestige
 // state without two hand-copied blocks silently drifting apart.
-function maxEconomy(state: {
-  units: UnitSnapshot[];
-  upgrades: string[];
-  phdCount: number;
-}): { maxTps: number; maxClickValue: number } {
-  const maxBaseTps = state.units.reduce((sum, u) => {
-    const def = getUnitDefinition(u.unitId);
-    return def ? sum + u.owned * def.baseProduction : sum;
-  }, 0);
-  const maxProdMultiplier = getProductionMultiplier(state.phdCount) * MAX_PRODUCTION_BOOSTER_MULTIPLIER;
+//
+// The Academic Career tree (`mods`) widens every part of it: per-unit and
+// global production multipliers, the stronger per-PhD bonus, booster potency
+// (and any booster the tree unlocked), click multiplier, synergy, a higher
+// crit multiplier and the Lecture momentum cap. maxAutoIncome is the Teaching
+// Assistants' passive click income per second — credited by the client's
+// tick(), never through totalClicks, so it is bounded by time, not clicks.
+function maxEconomy(
+  state: {
+    units: UnitSnapshot[];
+    upgrades: string[];
+    phdCount: number;
+  },
+  mods: CareerModifiers
+): { maxTps: number; maxClickValue: number; maxAutoIncome: number } {
+  const maxBaseTps = getCareerBaseTps(state.units, mods);
+  const maxProdMultiplier =
+    getCareerPhdProductionMultiplier(state.phdCount, mods) *
+    getCareerProductionMultiplier(mods) *
+    getMaxBoosterMultiplier("production", mods);
   const maxTps = maxBaseTps * maxProdMultiplier;
 
-  const flatClickBonus = getFlatClickBonus(state.upgrades);
-  const clickMultiplier = getClickMultiplier(state.upgrades);
-  const clickSynergy = getClickSynergy(state.upgrades);
+  const clickParams = {
+    flatClickBonus: getFlatClickBonus(state.upgrades),
+    clickMultiplier: getClickMultiplier(state.upgrades) * mods.clickMult,
+    phdProductionMultiplier: maxProdMultiplier,
+    tokensPerSecond: maxTps,
+    clickSynergy: getCareerClickSynergy(getClickSynergy(state.upgrades), mods)
+  };
   const maxClickValue =
     getClickValue({
-      flatClickBonus,
-      clickMultiplier,
-      phdProductionMultiplier: maxProdMultiplier,
-      tokensPerSecond: maxTps,
-      clickSynergy,
-      boosterClickMultiplier: MAX_CLICK_BOOSTER_MULTIPLIER
-    }) * MAX_CRIT_MULTIPLIER;
+      ...clickParams,
+      boosterClickMultiplier: getMaxBoosterMultiplier("click", mods)
+    }) *
+    (MAX_CRIT_MULTIPLIER + mods.critMultAdd) *
+    (1 + mods.momentumMax);
+  // Auto-clicks never crit, carry no momentum and no click booster.
+  const maxAutoIncome =
+    mods.autoClickRate * getClickValue({ ...clickParams, boosterClickMultiplier: 1 });
 
-  return { maxTps, maxClickValue };
+  return { maxTps, maxClickValue, maxAutoIncome };
 }
 
 export function evaluateSaveEnvelope(
@@ -191,6 +226,7 @@ export function evaluateSaveEnvelope(
   const prevPhdCount = prev?.phdCount ?? 0;
   const prevPrestigeCount = prev?.prestigeCount ?? 0;
   const prevUnits = unitMap(prev?.units ?? []);
+  const mods = prev?.career ?? emptyCareerModifiers();
   const anchor = prev?.savedAt ?? userCreatedAt;
 
   // --- Hard monotonicity — these can never legitimately decrease. ---------
@@ -290,25 +326,36 @@ export function evaluateSaveEnvelope(
   //     at whichever rate is larger only ever loosens the bound, never
   //     tightens it) and stays well inside what a genuine client could
   //     have produced. ------------------------------------------------------
-  const postEconomy = maxEconomy({
-    units: incoming.units,
-    upgrades: incoming.upgrades,
-    phdCount: incoming.phdCount
-  });
+  const postEconomy = maxEconomy(
+    {
+      units: incoming.units,
+      upgrades: incoming.upgrades,
+      phdCount: incoming.phdCount
+    },
+    mods
+  );
   const preEconomy = prestiged
-    ? maxEconomy({
-        units: prev?.units ?? [],
-        upgrades: prev?.upgrades ?? [],
-        phdCount: prevPhdCount
-      })
+    ? maxEconomy(
+        {
+          units: prev?.units ?? [],
+          upgrades: prev?.upgrades ?? [],
+          phdCount: prevPhdCount
+        },
+        mods
+      )
     : null;
   const maxTps = preEconomy ? Math.max(preEconomy.maxTps, postEconomy.maxTps) : postEconomy.maxTps;
   const maxClickValue = preEconomy
     ? Math.max(preEconomy.maxClickValue, postEconomy.maxClickValue)
     : postEconomy.maxClickValue;
+  const maxAutoIncome = preEconomy
+    ? Math.max(preEconomy.maxAutoIncome, postEconomy.maxAutoIncome)
+    : postEconomy.maxAutoIncome;
 
   const deltaEarned = incoming.totalTokensEarned - prevTotalTokensEarned;
-  const earnedBound = (maxTps * dtSecs + effectiveDeltaClicks * maxClickValue) * EARNED_ACCEPT_MARGIN;
+  const earnedBound =
+    ((maxTps + maxAutoIncome) * dtSecs + effectiveDeltaClicks * maxClickValue) *
+    EARNED_ACCEPT_MARGIN;
   const earnedCheck = checkBound(deltaEarned, earnedBound);
   detail["earned"] = { deltaEarned, bound: earnedBound, outcome: earnedCheck.outcome, prestiged };
   if (earnedCheck.outcome === "reject") {
@@ -330,22 +377,39 @@ export function evaluateSaveEnvelope(
   //     without a matching token deduction). A prestige within this interval
   //     resets owned units/upgrades to 0, so `before` is taken as 0 in that
   //     case — a strictly lower (still valid, more generous) bound on spend,
-  //     since the true pre-reset owned counts are no longer relevant. ------
-  const bestCostMultiplier = getCostMultiplier(incoming.phdCount) * MIN_COST_BOOSTER_MULTIPLIER;
+  //     since the true pre-reset owned counts are no longer relevant.
+  //
+  //     The Academic Career tree changes what a prestige resets: a share of
+  //     every unit (keepUnitsBp) and whole upgrade families survive it for
+  //     free, and each new run starts with a token fund. Kept units count as
+  //     `before` = floor(prevOwned x keep) — a valid lower bound for any
+  //     number of prestiges in the interval, since units are never sold, a
+  //     unit's price only rises with the count, and what's kept never exceeds
+  //     that share of what was owned at the prestige. -----------------------
+  const bestCostMultiplier = getCareerUnitCostMultiplier(
+    incoming.phdCount,
+    mods,
+    getMaxBoosterMultiplier("costReduction", mods)
+  );
   let minSpend = 0;
   for (const u of incoming.units) {
-    const before = prestiged ? 0 : (prevUnits.get(u.unitId) ?? 0);
+    const prevOwned = prevUnits.get(u.unitId) ?? 0;
+    const before = prestiged ? keptUnitCount(prevOwned, mods.keepUnitsBp) : prevOwned;
     const delta = u.owned - before;
     if (delta <= 0) continue;
     const def = getUnitDefinition(u.unitId);
     if (!def) continue;
     minSpend += getBulkCost(def, before, delta, bestCostMultiplier);
   }
-  const prevUpgradeSet = new Set(prestiged ? [] : (prev?.upgrades ?? []));
+  const prevUpgradeSet = new Set(
+    prestiged
+      ? (prev?.upgrades ?? []).filter((id) => isKeptUpgrade(id, mods))
+      : (prev?.upgrades ?? [])
+  );
   for (const upgradeId of incoming.upgrades) {
     if (prevUpgradeSet.has(upgradeId)) continue;
     const def = getUpgradeDefinition(upgradeId);
-    if (def) minSpend += def.cost * bestCostMultiplier;
+    if (def) minSpend += getCareerUpgradeCost(def.cost, mods) * bestCostMultiplier;
   }
 
   // The claimed purchase itself must have been affordable, independent of
@@ -357,7 +421,23 @@ export function evaluateSaveEnvelope(
   // sensible way to "partially clamp" an owned-units claim (which unit would
   // give some back?), so this is a straight reject beyond a tiny float-noise
   // epsilon, not a two-tier checkBound.
-  const availableBudget = prevTokens + effectiveDeltaEarned;
+  // The start fund: one per prestige in the interval, but never more than
+  // the earnings could have paid for (each prestige needs a run of at least
+  // PHD_TOKEN_SCALE tokens). That cap matters because prestigeCount is only
+  // bounded further below — an uncapped fund x a forged prestigeCount would
+  // otherwise buy unlimited free units.
+  //
+  // Only prestiges that each gained a PhD count: an honest one always does,
+  // and nothing else can lower phdCount between two saves (every other PhD
+  // change is server-written and already in `prev`) — so a bare
+  // prestigeCount bump earns no fund.
+  const deltaPrestige = Math.max(0, incoming.prestigeCount - prevPrestigeCount);
+  const startFunds = Math.min(
+    deltaPrestige,
+    Math.max(0, incoming.phdCount - prevPhdCount),
+    Math.floor(Math.max(0, effectiveDeltaEarned) / PHD_TOKEN_SCALE) + 1
+  );
+  const availableBudget = prevTokens + effectiveDeltaEarned + mods.startingTokens * startFunds;
   detail["spendBudget"] = { minSpend, availableBudget };
   if (minSpend > availableBudget + floatTolerance(minSpend, availableBudget)) {
     return { outcome: "reject", reason: "spend_exceeds_available_budget", detail };
@@ -418,13 +498,20 @@ export function evaluateSaveEnvelope(
   //     through prestige (<= the Cauchy bound) + upgraderNet. A net loser's
   //     bound shrinks accordingly, and it is floored at 0 so a forged huge
   //     negative net can never produce a negative clamp target. ------------
+  //     The Academic Career moves PhDs too: each prestige's gain is scaled
+  //     by the tree's PhD-gain bonus (at most the current one — earlier-window
+  //     nodes are permanent, and a refundable node is never in effect at a
+  //     prestige), and PhDs sunk into the tree are no longer held. -----------
   const phdBound = Math.max(
     0,
-    Math.sqrt(
-      (Math.max(0, effectivePrestigeCount) * Math.max(0, effectiveTotalTokensEarned)) / PHD_TOKEN_SCALE
-    ) +
+    (1 + mods.phdGainBp / 10000) *
+      Math.sqrt(
+        (Math.max(0, effectivePrestigeCount) * Math.max(0, effectiveTotalTokensEarned)) /
+          PHD_TOKEN_SCALE
+      ) +
       PHD_BOUND_SLACK +
-      (prev?.upgraderNet ?? 0)
+      (prev?.upgraderNet ?? 0) -
+      (prev?.phdInvested ?? 0)
   );
   const phdCheck = checkBound(incoming.phdCount, phdBound);
   detail["phd"] = { phdCount: incoming.phdCount, bound: phdBound, outcome: phdCheck.outcome };

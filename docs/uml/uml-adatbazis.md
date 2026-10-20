@@ -25,15 +25,19 @@ erDiagram
         Float   totalTokensEarned    "Összes szerzett token (életút)"
         Int     totalClicks          "Összes kattintás (életút)"
         Float   elapsedSeconds       "Eltelt játékidő, életút (másodperc)"
-        Int     phdCount             "Összegyűjtött PhD-k száma"
+        Float   phdCount             "Birtokolt PhD-k száma (egész szám, DOUBLE oszlop)"
         Int     prestigeCount        "Fokozatszerzések (prestige) száma"
         Float   runTokensEarned      "Aktuális menetben szerzett token"
         Int     runClicks            "Aktuális menetbeli kattintások"
         Float   runSeconds           "Aktuális menet ideje (másodperc)"
         Int     boostersCollected    "Összes begyűjtött booster száma (életút)"
         DateTime nextBoosterAt       "Legkorábbi időpont, amikor a következő booster igényelhető"
-        Int     upgraderNet          "Az Upgrader pörgetések (nyeremény − tét) előjeles összege"
-        Int     upgraderSeq          "Az Upgrader pörgetések száma (egyben a PUT /save elavult-írás védelme)"
+        Float   upgraderNet          "Az Upgrader pörgetések (nyeremény − tét) előjeles összege"
+        Int     upgraderSeq          "Szerver-oldali PhD-/token-változások számlálója (pörgetés, pálya-vásárlás, windfall) — a PUT /save elavult-írás védelme"
+        Float   phdInvested          "A Tudományos pályába befektetett PhD-k"
+        Float   phdTotal             "Birtokolt + befektetett PhD (a phd ranglista mezője)"
+        Boolean careerWindowOpen     "Nyitva van-e a Tudományos pálya vásárlási ablaka"
+        Int     careerWindowId       "Az eddig megnyitott vásárlási ablakok száma"
         DateTime savedAt             "Utolsó mentés ideje"
         DateTime updatedAt           "Automatikus frissítés"
     }
@@ -49,6 +53,15 @@ erDiagram
         Int     id          PK  "Egyedi azonosító (auto)"
         Int     gameSaveId  FK  "Kapcsolódó mentés"
         String  upgradeId       "Fejlesztés azonosítója (pl. chalk)"
+    }
+
+    CareerNodeSave {
+        Int      id              PK  "Egyedi azonosító (auto)"
+        Int      gameSaveId      FK  "Kapcsolódó mentés"
+        String   nodeId              "Csomópont azonosítója (pl. research.labAccess)"
+        Float    cost                "A ténylegesen fizetett PhD"
+        Int      boughtInWindow      "A vásárlási ablak azonosítója a vásárláskor"
+        DateTime boughtAt            "Vásárlás ideje"
     }
 
     ActiveBooster {
@@ -104,6 +117,7 @@ erDiagram
     GameSave ||--o{ UnitSave    : "tartalmaz"
     GameSave ||--o{ UpgradeSave : "tartalmaz"
     GameSave ||--o{ ActiveBooster : "tartalmaz"
+    GameSave ||--o{ CareerNodeSave : "tartalmaz"
 ```
 
 ## Táblák leírása
@@ -119,7 +133,11 @@ Felhasználónként legfeljebb egy mentés létezhet (1:1 kapcsolat a `User` tá
 
 A `totalTokensEarned`/`totalClicks`/`elapsedSeconds` mezők **életút-szintűek**: soha nem állnak vissza. A `phdCount`/`prestigeCount` mezők a prestige-rendszer (lásd `PUT /save` és a frontend `gameStore.prestige()`) által megszerzett, szintén életút-szintű PhD-kat és fokozatszerzéseket számolják. A `runTokensEarned`/`runClicks`/`runSeconds` mezők az **aktuális menetre** vonatkoznak: fokozatszerzéskor (`prestige()`) nullázódnak, míg a fenti életút-mezők változatlanok maradnak. Egy PhD-t korábban nem használt (a prestige-rendszer bevezetése előtti) mentésnél a `run*` mezők a megfelelő életút-mezőkből lettek visszatöltve, mivel egyetlen, még le nem zárt menetnek felelnek meg.
 
-A `totalTokensEarned`, `totalClicks`, `phdCount` és `elapsedSeconds` mezőkön egy-egy index (`@@index`) is létezik — ezek szolgálják ki a `GET /leaderboard` rangsoroló (`ORDER BY ... DESC LIMIT`) lekérdezéseit.
+A `totalTokensEarned`, `totalClicks`, `phdTotal` és `elapsedSeconds` mezőkön egy-egy index (`@@index`) is létezik — ezek szolgálják ki a `GET /leaderboard` rangsoroló (`ORDER BY ... DESC LIMIT`) lekérdezéseit. A `phdCount` indexe is megmaradt (a Tudományos pálya előtti API még az szerint rangsorolt; az elhagyása nem lett volna additív).
+
+A PhD-mezők (`phdCount`, `upgraderNet`, `phdInvested`, `phdTotal`, `CareerNodeSave.cost`) `DOUBLE` típusúak, de mindig egész számot tárolnak: egy hatékony játékos PhD-száma több száz óra alatt túlnőne az `INT` tartományon, a `DOUBLE` viszont 2^53-ig pontosan tárolja az egész számokat — ugyanaddig, ameddig egy JS szám. (A `20261019120000_widen_phd_columns` migráció szélesítette őket `INT`-ről; a meglévő értékek változatlanok.)
+
+A `phdInvested`, `phdTotal`, `careerWindowOpen` és `careerWindowId` mezők a Tudományos pálya (a végleges PhD-fa; lásd a fejlesztői dokumentáció "Anti-cheat modell" → "Tudományos pálya" szakaszát) állapotát tárolják. A `phdCount` a **birtokolt** PhD-kat jelenti: amit a játékos a fába fektet, az átkerül a `phdInvested`-be (és onnantól nem ad termelési bónuszt). A `phdTotal` a kettő összege — a `phd` ranglista ez szerint rangsorol, így a befektetés nem ront a helyezésen; minden író, amely a `phdCount`-ot módosítja (`PUT /save`, `POST /upgrader/spin`, `POST /career/*`), abszolút értékkel írja újra. A vásárlási ablakot kizárólag egy fokozatszerzést hordozó `PUT /save` nyitja meg (`careerWindowOpen = true`, `careerWindowId` növelve), és a `POST /career/close` zárja be — vagy a szerver, ha egy mentés szerint az új menet már elindult. A mezőket bevezető migráció ablakot nem nyitott: a korábban fokozatot szerzett játékosok a következő fokozatszerzéskor kapják az elsőt.
 
 A `boostersCollected` és `nextBoosterAt` mezők a booster-rendszer (lásd `POST /boosters/claim` és a fejlesztői dokumentáció "Anti-cheat modell" → "Boosterek" szakasza) állapotát tárolják. A `nextBoosterAt` az egyetlen kapu, amely eldönti, mikor igényelhető a következő booster — ezt kizárólag a szerver módosítja, a `PUT /save` sosem írja. Egy meglévő mentésnél a mezőt bevezető migráció a jelenlegi időre állította be az alapértéket, így minden korábbi mentés azonnal jogosulttá vált az első booster igénylésére.
 
@@ -130,6 +148,9 @@ Az egyes egységtípusokhoz tartozó megvásárolt darabszámokat tárolja. Egy 
 
 ### `UpgradeSave`
 Az egyszeri megvásárlású kattintás-erő fejlesztéseket (upgrade-eket) tárolja — egy sor jelenléte jelenti, hogy a fejlesztés meg van véve, nincs külön darabszám-mező (ellentétben a `UnitSave`-vel). A `gameSaveId + upgradeId` páros egyedi kényszert kapott. Fokozatszerzéskor (prestige) a frontend `gameStore.prestige()` az összes ehhez a mentéshez tartozó sort törli (a következő `PUT /save` hívás rögzíti az üres listát), ugyanúgy, mint az egységeknél. Ha a szülő `GameSave` törlésre kerül, az összes kapcsolódó sor automatikusan törlődik (`ON DELETE CASCADE`).
+
+### `CareerNodeSave`
+A Tudományos pálya megvett csomópontjait tárolja. **Kizárólag** a `POST /career/buy` és `/career/refund` végpont írja, a `PUT /save` sosem. A `gameSaveId + nodeId` páros egyedi kényszert kapott. A `cost` a ténylegesen fizetett ár (a visszaváltás pontosan ennyit ad vissza, akkor is, ha a katalógus ára azóta változott), a `boughtInWindow` a vásárláskori `GameSave.careerWindowId` — egy csomópont csak addig váltható vissza, amíg ugyanez az ablak nyitva van, így egy újabb ablak megnyitása a régebbi vásárlásokat sorok átírása nélkül teszi véglegessé. Az egységekkel és fejlesztésekkel ellentétben a fokozatszerzés **nem** törli ezeket a sorokat. Ha a szülő `GameSave` törlésre kerül, az összes kapcsolódó sor automatikusan törlődik (`ON DELETE CASCADE`).
 
 ### `ActiveBooster`
 A jelenleg aktív, időzített booster-bónuszokat tárolja. **Kizárólag** a `POST /boosters/claim` végpont hozhatja létre vagy frissítheti (lásd a fejlesztői dokumentáció "Anti-cheat modell" → "Boosterek" szakaszát) — a `PUT /save` sosem ír ebbe a táblába. A `gameSaveId + boosterId` páros egyedi kényszert kapott: egy már aktív típus újra-igénylése a meglévő sor `expiresAt` mezőjét frissíti, nem hoz létre új sort. A `GET /save` csak a még nem lejárt (`expiresAt` a jelenlegi időnél későbbi) sorokat adja vissza, és `remainingMs` hátralévő időként, sosem abszolút időpontként — a kliens ezt a saját órájához rögzíti, hogy egy óraeltérés se hosszabbíthassa meg a bónuszt. Ha a szülő `GameSave` törlésre kerül, az összes kapcsolódó sor automatikusan törlődik (`ON DELETE CASCADE`).

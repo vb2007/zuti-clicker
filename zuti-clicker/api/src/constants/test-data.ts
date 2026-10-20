@@ -208,14 +208,15 @@ export class TestData {
     units: []
   };
 
-  // Exceeds MySQL's signed INT range (2147483647) — must be rejected with a
-  // 400 rather than reaching Prisma and causing a 500.
+  // Past 2^53 - 1, the largest whole number the DOUBLE phdCount column (and a
+  // JS number) holds exactly — must be rejected with a 400. (Values past the
+  // old INT range are fine since the widen_phd_columns migration.)
   static readonly SAVE_PHD_TOO_LARGE = {
     tokens: 1,
     totalTokensEarned: 1,
     totalClicks: 1,
     elapsedSeconds: 1,
-    phdCount: 3000000000,
+    phdCount: 9007199254740992,
     units: []
   };
 

@@ -16,12 +16,14 @@ import ConfirmModal from "@/components/modals/ConfirmModal.vue";
 import SettingsModal from "@/components/modals/SettingsModal.vue";
 import LeaderboardModal from "@/components/modals/LeaderboardModal.vue";
 import UpgraderModal from "@/components/upgrader/UpgraderModal.vue";
+import CareerOverlay from "@/components/career/CareerOverlay.vue";
 import ToastHost from "@/components/layout/ToastHost.vue";
 import PrestigeConfirmModal from "@/components/prestige/PrestigeConfirmModal.vue";
 import PrestigeCeremony from "@/components/prestige/PrestigeCeremony.vue";
 import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import { useGameLoop } from "@/composables/useGameLoop";
 import { useAntiCheat } from "@/composables/useAntiCheat";
+import { useAutoBuyer } from "@/composables/useAutoBuyer";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import { useOverlay, initOverlayStack } from "@/composables/useOverlayStack";
 import { QUICK_RESET_ENABLED, shouldQuickReset } from "@/utils/featureFlags";
@@ -37,6 +39,7 @@ const { isCompact } = useBreakpoint();
 
 useGameLoop();
 useAntiCheat();
+useAutoBuyer();
 
 // If the sheet was left open and the viewport widens back past the compact
 // breakpoint (e.g. rotating a tablet, or resizing a desktop window that had
@@ -101,7 +104,7 @@ watch(
 // Widened beyond totalClicks so a pure idler (units doing all the work, zero
 // manual clicks) still gets the unsaved-progress warning.
 const hasProgress = computed(
-  () => game.totalClicks > 0 || game.totalTokensEarned > 0 || game.phdCount > 0
+  () => game.totalClicks > 0 || game.totalTokensEarned > 0 || game.phdTotal > 0
 );
 
 function handleBeforeUnload(e: BeforeUnloadEvent) {
@@ -112,6 +115,14 @@ function handleBeforeUnload(e: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", handleBeforeUnload));
 onUnmounted(() => window.removeEventListener("beforeunload", handleBeforeUnload));
+
+// The Academic Career: its purchase window (a prestige opened it) shows on its
+// own — after the prestige confirm and ceremony, and again after a reload until
+// it is finished — and the view mode when opened from the Prestige panel.
+const showCareer = computed(
+  () =>
+    (game.careerWindowOpen && !ui.prestigeConfirmOpen && !ui.prestigeCeremonyOpen) || ui.careerOpen
+);
 
 async function onConfirmDelete() {
   try {
@@ -167,6 +178,7 @@ async function onConfirmDelete() {
   />
   <PrestigeConfirmModal v-if="ui.prestigeConfirmOpen" />
   <PrestigeCeremony v-if="ui.prestigeCeremonyOpen" />
+  <CareerOverlay v-if="showCareer" />
   <CheatWarningModal />
   <ToastHost />
 </template>

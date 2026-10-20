@@ -1,42 +1,24 @@
-import { prisma } from "../prisma";
+import { withSaveTransaction } from "../saveTransaction";
+import { WINDFALL_BOOSTER_ID, type AnyBoosterId } from "../../constants/boosters";
 import {
-  BOOSTER_IDS,
-  BOOSTER_WEIGHTS,
-  BOOSTER_DURATION_SECS,
-  BOOSTER_COOLDOWN_MIN_SECS,
-  BOOSTER_COOLDOWN_MAX_SECS,
-  type BoosterId
-} from "../../constants/boosters";
-import { CONFERENCE_BADGE_DURATION_BONUS, DEPARTMENT_NEWSLETTER_COOLDOWN_BONUS } from "../../constants/upgrades";
-
-// Keep this algorithm in sync with frontend/src/utils/upgrades.ts's
-// pickWeightedBoosterId (the guest-mode mirror of this same selection) —
-// the BOOSTER_WEIGHTS constants already carry a sync comment, but the
-// selection logic itself doesn't share one across the boundary.
-function pickWeightedBoosterId(): BoosterId {
-  const totalWeight = BOOSTER_IDS.reduce((sum, id) => sum + BOOSTER_WEIGHTS[id], 0);
-  let roll = Math.random() * totalWeight;
-  for (const id of BOOSTER_IDS) {
-    roll -= BOOSTER_WEIGHTS[id];
-    if (roll < 0) return id;
-  }
-  // Floating-point fallback — should be unreachable, the loop above covers
-  // the full [0, totalWeight) range.
-  return BOOSTER_IDS[BOOSTER_IDS.length - 1]!;
-}
-
-/** A fresh random cooldown, shortened by departmentNewsletter if owned. */
-function rollCooldownMs(ownedUpgradeIds: Set<string>): number {
-  const base =
-    BOOSTER_COOLDOWN_MIN_SECS + Math.random() * (BOOSTER_COOLDOWN_MAX_SECS - BOOSTER_COOLDOWN_MIN_SECS);
-  const multiplier = ownedUpgradeIds.has("departmentNewsletter")
-    ? 1 + DEPARTMENT_NEWSLETTER_COOLDOWN_BONUS
-    : 1;
-  return (base / multiplier) * 1000;
-}
+  buildBoosterPool,
+  pickWeightedBoosterId,
+  boosterDurationMs,
+  rollCooldownMs
+} from "../../services/boosters";
+import { getCareerModifiers } from "../../services/careerCore";
+import { getWindfallGrant } from "../../services/economy";
 
 export type ClaimResult =
-  | { ok: true; boosterId: BoosterId; remainingMs: number; nextAvailableInMs: number }
+  | {
+      ok: true;
+      boosterId: AnyBoosterId;
+      remainingMs: number;
+      nextAvailableInMs: number;
+      // Windfall only: the tokens this claim credited, and the bumped
+      // upgraderSeq the client must adopt (the grant changed its save).
+      windfall?: { granted: number; upgraderSeq: number };
+    }
   | { ok: false; reason: "no_save" }
   | { ok: false; reason: "on_cooldown"; nextAvailableInMs: number };
 
@@ -51,10 +33,18 @@ export type ClaimResult =
 export async function claimBooster(userId: number): Promise<ClaimResult> {
   const now = new Date();
 
-  return prisma.$transaction(async (tx) => {
+  return withSaveTransaction(userId, async (tx, saveId) => {
+    // Lock the row first (GameSave before any child row, like every other
+    // writer) — by id, never by userId (see database/saveTransaction.ts).
+    // Besides serialising concurrent claims, it means the read below takes
+    // its snapshot only after any PUT /save holding the lock (a prestige,
+    // say) has committed — so a windfall is always computed from the live
+    // units and PhDs, never an older snapshot of them.
+    if (saveId === null) return { ok: false, reason: "no_save" };
+    await tx.$queryRaw`SELECT id FROM GameSave WHERE id = ${saveId} FOR UPDATE`;
     const save = await tx.gameSave.findUnique({
-      where: { userId },
-      include: { upgrades: true }
+      where: { id: saveId },
+      include: { upgrades: true, units: true, careerNodes: true }
     });
     if (!save) return { ok: false, reason: "no_save" };
 
@@ -71,16 +61,29 @@ export async function claimBooster(userId: number): Promise<ClaimResult> {
     // documented limitation: a forged upgrade only ever grants what could
     // have been bought legitimately, never more.
     const ownedUpgradeIds = new Set(save.upgrades.map((u) => u.upgradeId));
+    // The Academic Career's booster nodes (duration, spawn rate, unlocked
+    // boosters) — from the account's own stored nodes, never the request.
+    const mods = getCareerModifiers(save.careerNodes.map((n) => n.nodeId));
 
-    const boosterId = pickWeightedBoosterId();
-    const durationMultiplier = ownedUpgradeIds.has("conferenceBadge")
-      ? 1 + CONFERENCE_BADGE_DURATION_BONUS
-      : 1;
-    const remainingMs = BOOSTER_DURATION_SECS[boosterId] * 1000 * durationMultiplier;
+    const boosterId = pickWeightedBoosterId(buildBoosterPool(mods));
+    const isWindfall = boosterId === WINDFALL_BOOSTER_ID;
+    const remainingMs = isWindfall ? 0 : boosterDurationMs(boosterId, ownedUpgradeIds, mods);
     const expiresAt = new Date(now.getTime() + remainingMs);
 
-    const nextAvailableInMs = rollCooldownMs(ownedUpgradeIds);
+    const nextAvailableInMs = rollCooldownMs(ownedUpgradeIds, mods);
     const nextBoosterAt = new Date(now.getTime() + nextAvailableInMs);
+
+    // Windfall is an instant grant the save envelope could never explain on
+    // its own, so the server credits it here, from the stored state (the
+    // client flushes its save first — see useBoosters), and bumps upgraderSeq
+    // so a save made before this claim can't overwrite the credited tokens.
+    const granted = isWindfall
+      ? getWindfallGrant(
+          save.units.map((u) => ({ unitId: u.unitId, owned: u.owned })),
+          save.phdCount,
+          mods
+        )
+      : 0;
 
     // Atomic conditional claim — this, not the read above, is what actually
     // enforces the cooldown: the WHERE clause is re-checked against the
@@ -90,7 +93,18 @@ export async function claimBooster(userId: number): Promise<ClaimResult> {
     // nextBoosterAt moves into the future; the loser's count is 0.
     const claimed = await tx.gameSave.updateMany({
       where: { id: save.id, nextBoosterAt: { lte: now } },
-      data: { nextBoosterAt, boostersCollected: { increment: 1 } }
+      data: {
+        nextBoosterAt,
+        boostersCollected: { increment: 1 },
+        ...(isWindfall
+          ? {
+              tokens: { increment: granted },
+              totalTokensEarned: { increment: granted },
+              runTokensEarned: { increment: granted },
+              upgraderSeq: { increment: 1 }
+            }
+          : {})
+      }
     });
 
     if (claimed.count === 0) {
@@ -102,6 +116,17 @@ export async function claimBooster(userId: number): Promise<ClaimResult> {
         ok: false,
         reason: "on_cooldown",
         nextAvailableInMs: Math.max(0, fresh.nextBoosterAt.getTime() - Date.now())
+      };
+    }
+
+    if (isWindfall) {
+      const fresh = await tx.gameSave.findUniqueOrThrow({ where: { id: save.id } });
+      return {
+        ok: true,
+        boosterId,
+        remainingMs,
+        nextAvailableInMs,
+        windfall: { granted, upgraderSeq: fresh.upgraderSeq }
       };
     }
 

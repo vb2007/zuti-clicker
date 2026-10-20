@@ -86,10 +86,16 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
 // after a uniform random wait, stays on screen (and can be missed) for a
 // short window, and — once claimed — applies its effect for its duration.
 // Keep the id/effect set in sync with api/src/constants/boosters.ts.
+// The career boosters (career: true) mirror api/src/constants/boosters.ts's
+// CAREER_BOOSTER_* and api/src/constants/gameBalance.ts's BOOSTER_EFFECTS:
+// windfall's "multiplier" is unused (its grant is careerModifiers.windfallSecs
+// of production, credited by the server), critStorm's is the crit chance it adds.
 export const BOOSTER_DEFINITIONS: BoosterDefinition[] = [
   { id: "frenzy", kind: "production", multiplier: 7, durationSecs: 60, weight: 4 },
   { id: "clickStorm", kind: "click", multiplier: 10, durationSecs: 90, weight: 4 },
-  { id: "clearance", kind: "costReduction", multiplier: 0.25, durationSecs: 120, weight: 3 }
+  { id: "clearance", kind: "costReduction", multiplier: 0.25, durationSecs: 120, weight: 3 },
+  { id: "windfall", kind: "instant", multiplier: 0, durationSecs: 0, weight: 3, career: true },
+  { id: "critStorm", kind: "crit", multiplier: 0.5, durationSecs: 30, weight: 3, career: true }
 ];
 
 export const BOOSTER_SPAWN_MIN_SECS = 60;
@@ -109,6 +115,11 @@ export const UPGRADER_MIN_MULTIPLIER_HUNDREDTHS = 120;
 export const UPGRADER_MAX_MULTIPLIER_HUNDREDTHS = 10_000;
 // Win chance resolution: a roll in [0, PPM) wins when roll < winPpm.
 export const UPGRADER_PPM = 1_000_000;
+// The most PhDs one spin may stake, and the largest whole PhD balance stored
+// exactly (the PhD columns are DOUBLE since the widen_phd_columns migration).
+// Keep in sync with api/src/constants/upgrader.ts's UPGRADER_MAX_STAKE / PHD_MAX.
+export const UPGRADER_MAX_STAKE = 2_147_483_647;
+export const PHD_MAX = Number.MAX_SAFE_INTEGER;
 // A lost spin grants the existing "frenzy" booster, strictly proportional to the
 // share of the player's PhDs that was put up (no minimum — see
 // api/src/constants/upgrader.ts for why a floor would make it farmable); a buff

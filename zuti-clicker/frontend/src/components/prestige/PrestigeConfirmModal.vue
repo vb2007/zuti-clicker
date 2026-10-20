@@ -6,7 +6,8 @@ import { useAuthStore } from "@/stores/authStore";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { getPrestigeOutcome } from "@/utils/prestige";
-import { formatPercent } from "@/utils/formatters";
+import { formatPercent, formatNumber } from "@/utils/formatters";
+import { formatBp } from "@/utils/careerText";
 import BaseModal from "@/components/modals/BaseModal.vue";
 
 const { t } = useI18n();
@@ -19,7 +20,28 @@ const { cancelPrestige, confirmPrestige } = usePrestige();
 // same getPrestigeOutcome PrestigePanel.vue uses for the "after" values,
 // rather than re-deriving either, so a future balance tweak can't leave
 // this preview silently out of sync with what prestige() actually applies.
-const outcome = computed(() => getPrestigeOutcome(game.phdCount, game.phdGain));
+const outcome = computed(() =>
+  getPrestigeOutcome(game.phdCount, game.phdGain, game.careerModifiers)
+);
+
+// What the Academic Career carries into the new run — said here, next to
+// "everything resets", so the reset is never overstated.
+const careerKeeps = computed(() => {
+  const m = game.careerModifiers;
+  const parts: string[] = [];
+  if (m.keepUnitsBp > 0) parts.push(t("career.keepsUnits", { pct: formatBp(m.keepUnitsBp) }));
+  if (m.keepUpgradeFamilies.length > 0) {
+    parts.push(
+      t("career.keepsFamilies", {
+        families: m.keepUpgradeFamilies.map((f) => t(`career.families.${f}`)).join(", ")
+      })
+    );
+  }
+  if (m.startingTokens > 0) {
+    parts.push(t("career.startsWith", { amount: formatNumber(m.startingTokens) }));
+  }
+  return parts.length > 0 ? t("career.prestigeKeeps", { list: parts.join("; ") }) : "";
+});
 const productionBefore = computed(() => `x${game.productionMultiplier.toFixed(2)}`);
 const productionAfter = computed(() => `x${outcome.value.productionMultiplier.toFixed(2)}`);
 // formatPercent (not Math.round): the cost discount steps by 0.5% per PhD, so
@@ -51,6 +73,7 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
     </div>
 
     <p class="modal-body">{{ t("confirm.prestigeLose") }}</p>
+    <p v-if="careerKeeps" class="career-keeps">{{ careerKeeps }}</p>
 
     <p v-if="!auth.isLoggedIn" class="guest-warning">
       {{ t("confirm.prestigeGuestWarning") }}
@@ -111,6 +134,14 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
   color: var(--text-secondary);
   line-height: 1.6;
   margin-bottom: 14px;
+}
+
+.career-keeps {
+  margin: -6px 0 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--accent-text);
+  font-weight: 600;
 }
 
 .guest-warning {

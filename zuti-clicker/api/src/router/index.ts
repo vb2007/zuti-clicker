@@ -6,6 +6,7 @@ import settings from "./settings";
 import leaderboard from "./leaderboard";
 import boosters from "./boosters";
 import upgrader from "./upgrader";
+import career from "./career";
 import anticheat from "./anticheat";
 import meta from "./meta";
 
@@ -18,6 +19,7 @@ export default (): express.Router => {
   leaderboard(router);
   boosters(router);
   upgrader(router);
+  career(router);
   anticheat(router);
   meta(router);
 

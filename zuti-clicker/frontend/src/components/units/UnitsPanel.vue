@@ -11,6 +11,7 @@ import ShopTabs from "./ShopTabs.vue";
 import UpgradesPanel from "./UpgradesPanel.vue";
 import type { Multiplier } from "@/types";
 import { useBreakpoint } from "@/composables/useBreakpoint";
+import { useAutoBuyStore } from "@/stores/autoBuyStore";
 
 const { t } = useI18n();
 const ui = useUiStore();
@@ -19,14 +20,32 @@ const game = useGameStore();
 const multiplier = ref<Multiplier>(1);
 
 // The clearance booster only ever discounts UNIT costs (buyUpgrade/
-// canAffordUpgrade use each upgrade's raw def.cost, never
-// effectiveCostMultiplier) — so this chip is scoped to the Units tab only,
+// canAffordUpgrade use getUpgradeCost — the base price with only the Academic
+// Career's upgrade discount — never effectiveCostMultiplier) — so this chip is
+// scoped to the Units tab only,
 // never shown while Upgrades is active, to avoid implying a discount that
 // doesn't apply there.
 const unitPricesDiscounted = computed(
   () => ui.shopTab === "units" && game.boosterCostReductionActive
 );
 const discountPercent = computed(() => formatPercent((1 - game.boosterCostMultiplier) * 100));
+
+// The Academic Career's auto-buyers, switchable per tab once their node is owned.
+const autoBuy = useAutoBuyStore();
+const autoBuyToggle = computed(() => {
+  const mods = game.careerModifiers;
+  if (ui.shopTab === "units" && mods.autoBuyUnits) {
+    return { on: autoBuy.unitsEnabled, label: t("career.autoBuyUnits") };
+  }
+  if (ui.shopTab === "upgrades" && mods.autoBuyUpgrades) {
+    return { on: autoBuy.upgradesEnabled, label: t("career.autoBuyUpgrades") };
+  }
+  return null;
+});
+function toggleAutoBuy(): void {
+  if (ui.shopTab === "units") autoBuy.unitsEnabled = !autoBuy.unitsEnabled;
+  else autoBuy.upgradesEnabled = !autoBuy.upgradesEnabled;
+}
 </script>
 
 <template>
@@ -36,6 +55,19 @@ const discountPercent = computed(() => formatPercent((1 - game.boosterCostMultip
       <span v-if="unitPricesDiscounted" class="discount-chip">
         {{ t("units.pricesDiscounted", { pct: discountPercent }) }}
       </span>
+      <button
+        v-if="autoBuyToggle"
+        type="button"
+        class="auto-toggle"
+        :class="{ on: autoBuyToggle.on }"
+        :aria-pressed="autoBuyToggle.on"
+        :aria-label="autoBuyToggle.label"
+        :title="autoBuyToggle.label"
+        @click="toggleAutoBuy"
+      >
+        <span class="auto-dot" aria-hidden="true"></span>
+        {{ t("career.autoBuy") }}
+      </button>
       <!-- Only on the mobile sheet (compact viewports): the rail is a slide-up
            sheet there, and the tab bar button was its only way out. -->
       <button
@@ -136,6 +168,48 @@ const discountPercent = computed(() => formatPercent((1 - game.boosterCostMultip
 @media (hover: hover) {
   .sheet-close:hover {
     color: var(--text-primary);
+  }
+}
+
+.auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 3px 10px;
+  min-height: 26px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+.auto-toggle.on {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.auto-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+.auto-toggle.on .auto-dot {
+  background: currentColor;
+}
+/* Both want the far right on phones: the toggle takes the free space, the ✕ follows it. */
+.auto-toggle + .sheet-close {
+  margin-left: 8px;
+}
+@media (max-width: 759px), (pointer: coarse) {
+  .auto-toggle {
+    min-height: 44px;
+    margin-top: -10px;
+    margin-bottom: -10px;
   }
 }
 

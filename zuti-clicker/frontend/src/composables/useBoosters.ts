@@ -3,8 +3,12 @@ import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useToastStore } from "@/stores/toastStore";
-import { api, ApiError } from "@/lib/api";
+import { useSaveStore, SyncFlushError } from "@/stores/saveStore";
+import { api, ApiError, type ClaimBoosterResponse } from "@/lib/api";
 import { pickWeightedBoosterId } from "@/utils/upgrades";
+import { getWindfallGrant } from "@/utils/careerEconomy";
+import { CAREER_CAPS } from "@/utils/careerCore";
+import { formatNumber } from "@/utils/formatters";
 import { randomSafePosition, DEFAULT_LAYOUT, type PlacementLayout } from "@/utils/boosterPlacement";
 import { getBoosterEffectText } from "@/utils/boosterEffectText";
 import {
@@ -35,12 +39,16 @@ export function useBoosters(getLayout?: () => PlacementLayout | null) {
   const game = useGameStore();
   const auth = useAuthStore();
   const toast = useToastStore();
+  const save = useSaveStore();
   const { t } = useI18n();
 
-  function announce(boosterId: string): void {
+  function announce(boosterId: string, granted?: number): void {
     const name = t(`boosters.names.${boosterId}` as Parameters<typeof t>[0]);
     const def = BOOSTER_DEFINITIONS.find((d) => d.id === boosterId);
-    const effect = getBoosterEffectText(t, def);
+    const effect =
+      granted !== undefined
+        ? t("boosters.effect.instantAmount", { amount: formatNumber(granted) })
+        : getBoosterEffectText(t, def, game.careerModifiers);
     // Falls back to the plain "activated!" toast if the id isn't one of
     // BOOSTER_DEFINITIONS (getBoosterEffectText returns "") — a client/
     // server BOOSTER_DEFINITIONS desync shouldn't render a toast with a
@@ -77,16 +85,27 @@ export function useBoosters(getLayout?: () => PlacementLayout | null) {
   function scheduleNextSpawn(delayMs?: number): void {
     if (spawnTimer !== null) clearTimeout(spawnTimer);
     const baseWait = randomMs(BOOSTER_SPAWN_MIN_SECS, BOOSTER_SPAWN_MAX_SECS);
-    // departmentNewsletter shortens the average wait between spawns.
-    const wait = delayMs ?? baseWait / game.boosterSpawnMultiplier;
+    // departmentNewsletter and the Academic Career shorten the average wait
+    // between spawns (the same capped divisor and floor the server applies).
+    const wait =
+      delayMs ??
+      Math.max(CAREER_CAPS.boosterCooldownFloorSecs * 1000, baseWait / game.boosterSpawnMultiplier);
     spawnTimer = setTimeout(showPickup, Math.max(0, wait));
   }
 
   function showPickup(): void {
+    // Nothing spawns while the Academic Career purchase window is open — the
+    // game is paused behind it, and a buff would only burn down unused.
+    if (game.careerWindowOpen) {
+      scheduleNextSpawn();
+      return;
+    }
     // Measured at spawn time (not cached): the area and circle resize with the
     // viewport, and a pickup must clear the circle as it is *now*.
     pickupPosition.value = randomSafePosition(getLayout?.() ?? DEFAULT_LAYOUT);
-    visibleWindowMs.value = randomMs(BOOSTER_VISIBLE_MIN_SECS, BOOSTER_VISIBLE_MAX_SECS);
+    // Poster Session nodes keep a pickup on screen longer.
+    visibleWindowMs.value =
+      randomMs(BOOSTER_VISIBLE_MIN_SECS, BOOSTER_VISIBLE_MAX_SECS) * game.boosterWindowMultiplier;
     pickupVisible.value = true;
     visibleTimer = setTimeout(missPickup, visibleWindowMs.value);
   }
@@ -107,12 +126,41 @@ export function useBoosters(getLayout?: () => PlacementLayout | null) {
 
     if (auth.isLoggedIn) {
       try {
-        const res = await api.boosters.claim();
-        game.grantBooster(res.boosterId, res.remainingMs);
-        announce(res.boosterId);
+        // Once the Academic Career unlocked windfall, a claim may come back as
+        // an instant token grant the server credits to the save itself — so,
+        // like an Upgrader spin, the save is flushed first and no other save
+        // goes out until the grant has been applied here (an in-between save
+        // would carry the old balance and an outdated counter).
+        const claim = (): Promise<ClaimBoosterResponse> => api.boosters.claim();
+        let applied = false;
+        const res = game.careerModifiers.unlockedBoosters.includes("windfall")
+          ? await save.withSyncLock(async () => {
+              const r = await claim();
+              if (r.windfall) game.applyWindfall(r.windfall.granted, r.windfall.upgraderSeq);
+              applied = true;
+              return r;
+            })
+          : await claim();
+        // A windfall can come back even without the lock (this tab's tree was
+        // out of date — another tab unlocked it): the server has credited it
+        // either way, so it is applied either way.
+        if (res.windfall && !applied) {
+          game.applyWindfall(res.windfall.granted, res.windfall.upgraderSeq);
+        }
+        if (res.windfall) {
+          announce(res.boosterId, res.windfall.granted);
+        } else {
+          game.grantBooster(res.boosterId, res.remainingMs);
+          announce(res.boosterId);
+        }
         scheduleNextSpawn(res.nextAvailableInMs);
       } catch (e) {
-        if (e instanceof ApiError && e.status === 409) {
+        if (e instanceof SyncFlushError) {
+          // The pre-claim save couldn't be made (a stale save has already
+          // reloaded and said so) — nothing was claimed; try again later.
+          if (!e.stale) toast.push("error", t("boosters.claimFailed"));
+          scheduleNextSpawn();
+        } else if (e instanceof ApiError && e.status === 409) {
           // The local schedule fired slightly ahead of the server's actual
           // cooldown (see module doc) — no tokens or progress are at stake,
           // just re-sync from the server's own remaining time.
@@ -136,11 +184,21 @@ export function useBoosters(getLayout?: () => PlacementLayout | null) {
     } else {
       // Guest: fully local, matching the server's own weighting/duration
       // logic (see utils/upgrades.ts) so play feels identical either way.
-      const boosterId = pickWeightedBoosterId();
+      const boosterId = pickWeightedBoosterId(Math.random, game.careerModifiers);
       const def = BOOSTER_DEFINITIONS.find((d) => d.id === boosterId);
-      const durationMs = (def?.durationSecs ?? 0) * 1000 * game.boosterDurationMultiplier;
-      game.grantBooster(boosterId, durationMs);
-      announce(boosterId);
+      if (def?.kind === "instant") {
+        const granted = getWindfallGrant(
+          game.unitStates.map((u) => ({ unitId: u.id, owned: u.owned })),
+          game.phdCount,
+          game.careerModifiers
+        );
+        game.applyWindfall(granted);
+        announce(boosterId, granted);
+      } else {
+        const durationMs = (def?.durationSecs ?? 0) * 1000 * game.boosterDurationMultiplier;
+        game.grantBooster(boosterId, durationMs);
+        announce(boosterId);
+      }
       scheduleNextSpawn();
     }
   }

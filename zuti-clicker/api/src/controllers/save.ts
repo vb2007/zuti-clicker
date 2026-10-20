@@ -10,6 +10,9 @@ import {
   type IncomingSave
 } from "../services/saveValidator";
 import { applyStrike, recordSoftClamp } from "../database/models/antiCheat";
+import { PHD_MAX } from "../constants/upgrader";
+import { getCareerModifiers } from "../services/careerCore";
+import { toCareerState } from "../database/models/career";
 
 interface SaveBody {
   tokens?: unknown;
@@ -71,8 +74,8 @@ function isValidUpgrades(upgrades: unknown): upgrades is string[] | undefined {
   return new Set(upgrades).size === upgrades.length;
 }
 
-// MySQL/MariaDB signed INT range — phdCount, prestigeCount, and runClicks are
-// all Int columns, and a value outside this range makes Prisma throw, which
+// MySQL/MariaDB signed INT range — prestigeCount, runClicks and totalClicks
+// are Int columns, and a value outside this range makes Prisma throw, which
 // the catch block below would turn into a misleading 500 instead of a 400.
 const MAX_INT32 = 2147483647;
 
@@ -81,6 +84,15 @@ const MAX_INT32 = 2147483647;
 // which the catch block below would turn into a misleading 500 instead of a 400.
 function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_INT32;
+}
+
+// phdCount is a DOUBLE column holding whole PhDs (see the widen_phd_columns
+// migration): still a whole number, but bounded by what stays exact, not by INT.
+function isOptionalPhdCount(value: unknown): value is number | undefined {
+  return (
+    value === undefined ||
+    (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= PHD_MAX)
+  );
 }
 
 // Prestige fields are optional (older clients omit them entirely), but a
@@ -159,6 +171,9 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
         // so a save made before a later spin can be told apart from a current
         // one (see storeSave's stale check).
         upgraderSeq: save.upgraderSeq,
+        // Read-only, like activeBoosters below: the Academic Career tree and
+        // its purchase window change only through POST /career/*.
+        career: toCareerState(save),
         // Read-only — see SaveInput's comment on why PUT /save can't touch
         // this. remainingMs, never the row's absolute expiresAt: the client
         // anchors it to its own clock the instant it's loaded (gameStore's
@@ -202,8 +217,9 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *         description: >
  *           Missing required fields; a present-but-invalid core field
  *           (negative/non-finite, or a fractional totalClicks); tokens
- *           exceeding totalTokensEarned; or invalid units, prestige fields,
- *           upgrades, or upgraderSeq.
+ *           exceeding totalTokensEarned; invalid units, prestige fields,
+ *           upgrades, or upgraderSeq; or a phdCount that, with the PhDs
+ *           invested in the Academic Career, would exceed 2^53 - 1.
  *         content:
  *           application/json:
  *             schema:
@@ -305,7 +321,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     }
 
     if (
-      !isOptionalCount(phdCount) ||
+      !isOptionalPhdCount(phdCount) ||
       !isOptionalCount(prestigeCount) ||
       !isOptionalCount(runClicks) ||
       !isOptionalAmount(runTokensEarned) ||
@@ -375,9 +391,12 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
             phdCount: previous.phdCount,
             prestigeCount: previous.prestigeCount,
             upgraderNet: previous.upgraderNet,
+            phdInvested: previous.phdInvested,
             savedAt: previous.savedAt,
             units: previous.units.map((u) => ({ unitId: u.unitId, owned: u.owned })),
-            upgrades: previous.upgrades.map((u) => u.upgradeId)
+            upgrades: previous.upgrades.map((u) => u.upgradeId),
+            // From the account's own stored nodes — PUT /save never carries them.
+            career: getCareerModifiers(previous.careerNodes.map((n) => n.nodeId))
           }
         : null;
 
@@ -469,13 +488,19 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     // Lost the race to a wheel spin between the check above and the write
     // (or ANTICHEAT_MODE=off skipped that check): same outcome, same reply.
     if (!written.ok) {
-      const r = Responses.SAVE.STALE;
+      const r = written.reason === "phd_limit" ? Responses.SAVE.PHD_LIMIT : Responses.SAVE.STALE;
       res.status(r.status).json(r.body);
       return;
     }
 
+    // `career` lets the client open the purchase window right after the
+    // post-prestige sync, without waiting for a reload.
     const r = Responses.SAVE.SAVE_SUCCESS;
-    res.status(r.status).json({ ...r.body, savedAt: written.save.savedAt });
+    res.status(r.status).json({
+      ...r.body,
+      savedAt: written.save.savedAt,
+      career: { windowOpen: written.career.windowOpen, windowId: written.career.windowId }
+    });
   } catch (error) {
     console.error("Store save error:", error);
     const r = Responses.SAVE.INTERNAL_ERROR;

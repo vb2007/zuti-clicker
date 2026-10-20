@@ -69,7 +69,8 @@ export const claimBoosterHandler = async (req: express.Request, res: express.Res
       ...r.body,
       boosterId: result.boosterId,
       remainingMs: result.remainingMs,
-      nextAvailableInMs: result.nextAvailableInMs
+      nextAvailableInMs: result.nextAvailableInMs,
+      ...(result.windfall ? { windfall: result.windfall } : {})
     });
   } catch (error) {
     console.error("Claim booster error:", error);

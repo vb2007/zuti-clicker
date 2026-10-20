@@ -37,8 +37,10 @@ export interface UpgradeDefinition {
   critMultiplier?: number;
 }
 
-// A booster's underlying mechanical target.
-export type BoosterKind = "production" | "click" | "costReduction";
+// A booster's underlying mechanical target. "instant" (windfall) and "crit"
+// (critStorm) are Academic Career unlocks: an instant token grant the server
+// credits itself, and a timed crit-chance buff.
+export type BoosterKind = "production" | "click" | "costReduction" | "instant" | "crit";
 
 export interface BoosterDefinition {
   id: string;
@@ -50,6 +52,8 @@ export interface BoosterDefinition {
   // Relative weight in the server's (or, for guests, the client's) weighted
   // random pick — not a probability on its own.
   weight: number;
+  // In the pool only once an Academic Career unlockBooster node is owned.
+  career?: boolean;
 }
 
 // A live buff. `expiresAt` is an epoch-ms timestamp anchored to the client's

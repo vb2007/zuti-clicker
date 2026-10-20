@@ -1,10 +1,10 @@
 import { randomInt } from "crypto";
-import { prisma } from "../prisma";
 import { withWriteConflictRetry } from "../retry";
+import { withSaveTransaction } from "../saveTransaction";
 import { isWinningRoll, consolationMs, type SpinQuote } from "../../services/upgrader";
 import {
-  INT32_MAX,
-  INT32_MIN,
+  PHD_MAX,
+  PHD_MIN,
   UPGRADER_PPM,
   UPGRADER_CONSOLATION_BOOSTER_ID,
   UPGRADER_CONSOLATION_MAX_REMAINING_MS
@@ -32,6 +32,7 @@ export type SpinResult =
 interface LockedSave {
   id: number;
   phdCount: number;
+  phdInvested: number;
   upgraderNet: number;
 }
 
@@ -47,7 +48,7 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
   // Retrying re-rolls, which is safe: a rolled-back transaction committed
   // nothing and the client never saw the first roll.
   return withWriteConflictRetry(() =>
-    prisma.$transaction(async (tx) => {
+    withSaveTransaction(userId, async (tx, saveId) => {
       const now = new Date();
 
       // A LOCKING read, not a plain findUnique: it takes the row lock up front,
@@ -55,9 +56,11 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
       // the balance the one before it left. A plain read would use the
       // transaction's original snapshot, which cannot see a concurrent
       // commit — a losing racer would then be told the wrong thing (and the
-      // balance it reported would be stale).
+      // balance it reported would be stale). Locked by id, never by userId
+      // (see database/saveTransaction.ts).
+      if (saveId === null) return { ok: false, reason: "no_save" } as const;
       const rows = await tx.$queryRaw<LockedSave[]>`
-        SELECT id, phdCount, upgraderNet FROM GameSave WHERE userId = ${userId} FOR UPDATE
+        SELECT id, phdCount, phdInvested, upgraderNet FROM GameSave WHERE id = ${saveId} FOR UPDATE
       `;
       const save = rows[0];
       if (!save) return { ok: false, reason: "no_save" } as const;
@@ -65,14 +68,17 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
         return { ok: false, reason: "insufficient_phd", phdCount: save.phdCount } as const;
       }
 
-      // Refuse a spin whose WIN would overflow either Int column — checked
+      // Refuse a spin whose WIN would pass the PhD columns' exact range — checked
       // before the roll, in plain arithmetic, so the answer never depends on
       // the roll and an out-of-range value never reaches the database.
       const winDelta = quote.payout - stake;
+      // phdTotal (held + invested, the "phd" leaderboard metric) moves with
+      // phdCount, so it must fit too.
       if (
-        save.phdCount + winDelta > INT32_MAX ||
-        save.upgraderNet + winDelta > INT32_MAX ||
-        save.upgraderNet - stake < INT32_MIN
+        save.phdCount + winDelta > PHD_MAX ||
+        save.phdCount + save.phdInvested + winDelta > PHD_MAX ||
+        save.upgraderNet + winDelta > PHD_MAX ||
+        save.upgraderNet - stake < PHD_MIN
       ) {
         return { ok: false, reason: "limit_reached" } as const;
       }
@@ -89,6 +95,8 @@ export async function spin(userId: number, stake: number, quote: SpinQuote): Pro
         where: { id: save.id, phdCount: { gte: stake } },
         data: {
           phdCount: { increment: delta },
+          // Absolute, not an increment, so a value an older API left stale heals here.
+          phdTotal: save.phdCount + delta + save.phdInvested,
           upgraderNet: { increment: delta },
           upgraderSeq: { increment: 1 }
         }

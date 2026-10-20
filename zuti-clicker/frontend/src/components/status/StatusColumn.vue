@@ -35,7 +35,12 @@ const stats = computed(() => [
     label: t("status.phdCount"),
     value: formatNumber(game.phdCountDisplay),
     primary: game.phdCountDisplay > 0
-  }
+  },
+  // PhDs in the Academic Career no longer count as held (they gave up their
+  // production bonus) — shown once there are any, so the total stays legible.
+  ...(game.phdInvested > 0
+    ? [{ label: t("status.phdInvested"), value: formatNumber(game.phdInvested), primary: false }]
+    : [])
 ]);
 
 const runStats = computed(() => [

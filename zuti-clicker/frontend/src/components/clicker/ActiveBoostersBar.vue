@@ -28,7 +28,12 @@ const pills = computed(() =>
     .map((b) => {
       const def = BOOSTER_DEFINITIONS.find((d) => d.id === b.id);
       const remainingSecs = Math.max(0, Math.ceil((b.expiresAt - now.value) / 1000));
-      return { id: b.id, kind: def?.kind, effect: getBoosterEffectText(t, def), remainingSecs };
+      return {
+        id: b.id,
+        kind: def?.kind,
+        effect: getBoosterEffectText(t, def, game.careerModifiers),
+        remainingSecs
+      };
     })
     .filter((p) => p.remainingSecs > 0)
 );

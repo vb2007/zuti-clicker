@@ -25,6 +25,9 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 // reloading the save rather than assuming either outcome.
 const SAVE_TIMEOUT_MS = 20_000;
 const SPIN_TIMEOUT_MS = 15_000;
+// The same ceiling for an Academic Career buy/refund/close and a windfall
+// booster claim: each holds a flag (gameStore.careerPending) or the sync lock.
+const CAREER_TIMEOUT_MS = 15_000;
 
 async function request<T>(
   method: string,
@@ -80,6 +83,23 @@ export function isStaleSaveError(e: unknown): boolean {
   );
 }
 
+// The `code` of every POST /career/* 409 — keep in sync with
+// api/src/constants/responses.ts's CAREER section.
+export const CAREER_CODES = {
+  windowClosed: "career_window_closed",
+  windowChanged: "career_window_changed",
+  alreadyOwned: "career_already_owned",
+  prerequisiteMissing: "career_prerequisite_missing",
+  insufficientPhd: "career_insufficient_phd",
+  notOwned: "career_not_owned",
+  notRefundable: "career_not_refundable"
+} as const;
+
+export function careerErrorCode(e: unknown): string | undefined {
+  if (!(e instanceof ApiError) || e.status !== 409) return undefined;
+  return (e.body as { code?: string } | undefined)?.code;
+}
+
 export interface RegisterResponse {
   message: string;
   userId: number;
@@ -130,8 +150,27 @@ export interface ActiveBoosterEntry {
   remainingMs: number;
 }
 
+// The Academic Career tree as the server stores it. Read-only: it changes
+// only through POST /career/*, never through PUT /save.
+export interface CareerNodeEntry {
+  nodeId: string;
+  // PhDs actually paid — what a refund returns.
+  cost: number;
+  // Bought in the still-open current purchase window.
+  refundable: boolean;
+}
+export interface CareerStateData {
+  windowOpen: boolean;
+  windowId: number;
+  phdInvested: number;
+  nodes: CareerNodeEntry[];
+}
+
 export interface SaveData extends SavePayload {
   savedAt: string;
+  // Absent from an API that predates the Academic Career — treated as an
+  // empty tree with no window.
+  career?: CareerStateData;
   // Read-only: never accepted by PUT /save. Optional in the type for the
   // same reason units/phdCount etc. are on SavePayload — defensive against
   // any response shape that predates this field; gameStore's loadFromSave
@@ -144,6 +183,9 @@ export interface LoadSaveResponse {
 export interface StoreSaveResponse {
   message: string;
   savedAt: string;
+  // The purchase window as this save left it: a save carrying a new prestige
+  // opens one. Absent from an API that predates the Academic Career.
+  career?: { windowOpen: boolean; windowId: number };
 }
 export interface ResetSaveResponse {
   message: string;
@@ -156,6 +198,22 @@ export interface ClaimBoosterResponse {
   // How long until the next claim could succeed — used to precisely
   // re-seed the client's local spawn schedule (see composables/useBoosters.ts).
   nextAvailableInMs: number;
+  // Present only when the Academic Career's windfall booster was rolled: the
+  // server already credited `granted` tokens to the save and bumped the counter.
+  windfall?: { granted: number; upgraderSeq: number };
+}
+
+// Every successful POST /career/* reply (and, under `body`, every 409 one
+// except no_save): the balance, counter and tree AFTER the request.
+export interface CareerMutationResponse {
+  message: string;
+  phdCount: number;
+  upgraderSeq: number;
+  career: CareerStateData;
+}
+export interface CareerRefundResponse extends CareerMutationResponse {
+  refundedNodeIds: string[];
+  phdRefunded: number;
 }
 
 export interface SpinResponse {
@@ -262,7 +320,8 @@ export const api = {
     // see the anti-cheat model in the plan this implements. A 409 (cooldown
     // not yet elapsed) still carries nextAvailableInMs on the thrown
     // ApiError's `body`.
-    claim: () => request<ClaimBoosterResponse>("POST", "/boosters/claim")
+    claim: () =>
+      request<ClaimBoosterResponse>("POST", "/boosters/claim", undefined, CAREER_TIMEOUT_MS)
   },
   upgrader: {
     // The server alone rolls and settles the spin — the client only says how
@@ -270,6 +329,16 @@ export const api = {
     // body carries the real balance) or an overflow; both leave the state untouched.
     spin: (stake: number, multiplier: number) =>
       request<SpinResponse>("POST", "/upgrader/spin", { stake, multiplier }, SPIN_TIMEOUT_MS)
+  },
+  career: {
+    // The server alone checks the price, prerequisite and window and settles
+    // the change; every reply carries the resulting state to adopt as-is.
+    buy: (nodeId: string) =>
+      request<CareerMutationResponse>("POST", "/career/buy", { nodeId }, CAREER_TIMEOUT_MS),
+    refund: (nodeId: string) =>
+      request<CareerRefundResponse>("POST", "/career/refund", { nodeId }, CAREER_TIMEOUT_MS),
+    close: (windowId: number) =>
+      request<CareerMutationResponse>("POST", "/career/close", { windowId }, CAREER_TIMEOUT_MS)
   },
   anticheat: {
     // Fixed heartbeat + immediate-on-local-detection — see

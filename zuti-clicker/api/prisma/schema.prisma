@@ -40,7 +40,9 @@ model GameSave {
   totalTokensEarned Float           @default(0)
   totalClicks       Int             @default(0)
   elapsedSeconds    Float           @default(0)
-  phdCount          Int             @default(0)
+  // Whole PhDs, stored as DOUBLE (exact up to 2^53): an INT column overflows
+  // for a dedicated player — see the widen_phd_columns migration.
+  phdCount          Float           @default(0)
   prestigeCount     Int             @default(0)
   runTokensEarned   Float           @default(0)
   runClicks         Int             @default(0)
@@ -55,19 +57,33 @@ model GameSave {
   // (payout - stake) over every spin; the save envelope adds it to its PhD
   // bound. upgraderSeq counts spins and doubles as PUT /save's stale-write
   // guard, so an in-flight save can't resurrect PhDs a later spin removed.
-  upgraderNet       Int             @default(0)
+  upgraderNet       Float           @default(0)
   upgraderSeq       Int             @default(0)
+  // Academic Career (the persistent PhD tree — see database/models/career.ts).
+  // phdInvested is the PhDs currently sunk into CareerNodeSave rows (always
+  // the sum of their `cost`); phdTotal = phdCount + phdInvested is the "phd"
+  // leaderboard metric, rewritten absolutely by every writer of either
+  // column. The purchase window is opened ONLY by upsertSave on a detected
+  // prestige and closed only by POST /career/close; careerWindowId counts
+  // windows ever opened, and a node is refundable iff the window is open and
+  // its boughtInWindow equals it.
+  phdInvested       Float           @default(0)
+  phdTotal          Float           @default(0)
+  careerWindowOpen  Boolean         @default(false)
+  careerWindowId    Int             @default(0)
   savedAt           DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   units             UnitSave[]
   upgrades          UpgradeSave[]
   activeBoosters    ActiveBooster[]
+  careerNodes       CareerNodeSave[]
 
   // Support ORDER BY ... DESC LIMIT queries for each leaderboard metric.
   @@index([totalTokensEarned])
   @@index([totalClicks])
   @@index([phdCount])
   @@index([elapsedSeconds])
+  @@index([phdTotal])
 }
 
 model UnitSave {
@@ -91,6 +107,25 @@ model UpgradeSave {
   upgradeId  String   @db.VarChar(32)
 
   @@unique([gameSaveId, upgradeId])
+}
+
+// Academic Career nodes (see GameSave.phdInvested above). Written ONLY by
+// POST /career/buy and /career/refund — never by PUT /save. `cost` is the
+// PhDs actually paid, so a refund returns exactly that even if the catalog's
+// price changed since; `boughtInWindow` is GameSave.careerWindowId at
+// purchase time, so opening a new window makes every older purchase
+// permanent without touching any row here. Unlike UnitSave/UpgradeSave this
+// survives prestige — it is cleared only by deleting the save.
+model CareerNodeSave {
+  id             Int      @id @default(autoincrement())
+  gameSaveId     Int
+  gameSave       GameSave @relation(fields: [gameSaveId], references: [id], onDelete: Cascade)
+  nodeId         String   @db.VarChar(32)
+  cost           Float
+  boughtInWindow Int
+  boughtAt       DateTime @default(now())
+
+  @@unique([gameSaveId, nodeId])
 }
 
 // Server-issued, server-timed booster buffs (see POST /boosters/claim). Never

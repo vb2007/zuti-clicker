@@ -1,6 +1,7 @@
 import { describe, it, expect } from "@jest/globals";
 import { evaluateSaveEnvelope, type PrevSaveSnapshot, type IncomingSave } from "../services/saveValidator.js";
 import { getClickValue } from "../services/economy.js";
+import { emptyCareerModifiers } from "../services/careerCore.js";
 import {
   BASE_TOKENS_PER_CLICK,
   MAX_CRIT_MULTIPLIER,
@@ -151,6 +152,8 @@ describe("evaluateSaveEnvelope — monotonicity", () => {
     phdCount: 2,
     prestigeCount: 1,
     upgraderNet: 0,
+    phdInvested: 0,
+    career: emptyCareerModifiers(),
     savedAt: new Date(NOW.getTime() - 5000),
     units: [{ unitId: "alpha", owned: 5 }],
     upgrades: ["chalk"]
@@ -223,6 +226,8 @@ describe("evaluateSaveEnvelope — earnings bound across a prestige", () => {
       phdCount: 3,
       prestigeCount: 12,
       upgraderNet: 0,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 11_709), // dtSecs === 16.709, matching the incident
       units: [{ unitId: "eta", owned: 50 }], // the pre-prestige economy — wiped in `incoming`
       upgrades: []
@@ -254,6 +259,8 @@ describe("evaluateSaveEnvelope — earnings bound across a prestige", () => {
       phdCount: 0,
       prestigeCount: 0,
       upgraderNet: 0,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 1000),
       units: [{ unitId: "alpha", owned: 1 }], // trivial pre-prestige economy
       upgrades: []
@@ -298,6 +305,8 @@ describe("evaluateSaveEnvelope — clamp materiality", () => {
       phdCount: 0,
       prestigeCount: 0,
       upgraderNet: 0,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 1000),
       units: [{ unitId: "theta", owned: 1 }],
       upgrades: []
@@ -342,6 +351,8 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       phdCount: 0,
       prestigeCount: 0,
       upgraderNet: 0,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 1000),
       units: [],
       upgrades: []
@@ -380,6 +391,8 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       phdCount: 0,
       prestigeCount: 0,
       upgraderNet: 0,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 1000),
       units: [],
       upgrades: []
@@ -414,6 +427,8 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       phdCount: 0,
       prestigeCount: 0,
       upgraderNet: 0,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 1000),
       units: [],
       upgrades: []
@@ -480,6 +495,8 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       phdCount: 1,
       prestigeCount: 0,
       upgraderNet: 0,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 1000),
       units: [{ unitId: "alpha", owned: 500 }],
       upgrades: []
@@ -544,6 +561,8 @@ describe("evaluateSaveEnvelope — spend / free units", () => {
       phdCount: 0,
       prestigeCount: 0,
       upgraderNet: 0,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 30_037), // dtSecs === 35.037, matching the incident
       units: [{ unitId: "theta", owned: 1 }], // large baseProduction so the earn bound clears easily
       upgrades: []
@@ -671,6 +690,8 @@ describe("evaluateSaveEnvelope — upgrader net shifts the PhD bound", () => {
       phdCount,
       prestigeCount: n,
       upgraderNet,
+      phdInvested: 0,
+      career: emptyCareerModifiers(),
       savedAt: new Date(NOW.getTime() - 1000),
       units: [],
       upgrades: []

@@ -1,6 +1,6 @@
 {
   "name": "zuti-clicker-frontend",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "description": "Vue.js frontend project for the game Zuti Clicker.",
   "type": "module",
@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "sim:balance": "BALANCE_SIM=1 vitest run src/utils/__tests__/career-balance.sim.spec.ts"
   },
   "author": "VB2007",
   "license": "AGPL-3.0-only",
