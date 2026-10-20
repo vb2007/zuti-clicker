@@ -15,7 +15,11 @@ import {
   getUnitDefinition,
   getUpgradeDefinition,
   PHD_TOKEN_SCALE,
-  MAX_CRIT_MULTIPLIER
+  MAX_CRIT_MULTIPLIER,
+  MAX_UNIT_OWNED,
+  UNIT_DEFINITIONS,
+  UPGRADE_DEFINITIONS,
+  type UnitDefinition
 } from "../constants/gameBalance";
 import {
   getBulkCost,
@@ -214,6 +218,108 @@ function maxEconomy(
   return { maxTps, maxClickValue, maxAutoIncome };
 }
 
+// The units a budget can buy for the most production on top of `start`, at a
+// given cost multiplier — an upper bound on any purchase plan's production.
+// Within a type each further unit costs more for the same production, so
+// buying in order of production per token is the optimal plan when the last
+// purchase may be fractional, and an integer plan can't beat that: buy the
+// best unit while it is affordable; once the best is not, remember it, keep
+// filling the budget with whatever still fits, and finally add that one
+// remembered unit (the fractional purchase the true optimum could have made
+// with what was left at that point is worth less than one whole unit of it).
+function bestPurchase(
+  start: Map<string, number>,
+  budget: number,
+  costMultiplier: number,
+  mods: CareerModifiers
+): Map<string, number> {
+  const owned = new Map(UNIT_DEFINITIONS.map((def) => [def.id, start.get(def.id) ?? 0]));
+  let left = budget;
+  let blocked: string | null = null;
+  for (;;) {
+    let best: { id: string; price: number; ratio: number } | null = null;
+    let bestAffordable: { id: string; price: number; ratio: number } | null = null;
+    for (const def of UNIT_DEFINITIONS) {
+      const n = owned.get(def.id)!;
+      if (n >= MAX_UNIT_OWNED) continue;
+      const price = getBulkCost(def, n, 1, costMultiplier);
+      const ratio = (def.baseProduction * (mods.unitProductionMult[def.id] ?? 1)) / price;
+      if (best === null || ratio > best.ratio) best = { id: def.id, price, ratio };
+      if (price <= left && (bestAffordable === null || ratio > bestAffordable.ratio)) {
+        bestAffordable = { id: def.id, price, ratio };
+      }
+    }
+    if (best !== null && best.price > left && blocked === null) blocked = best.id;
+    if (bestAffordable === null) break;
+    left -= bestAffordable.price;
+    owned.set(bestAffordable.id, owned.get(bestAffordable.id)! + 1);
+  }
+  if (blocked !== null) owned.set(blocked, Math.min(MAX_UNIT_OWNED, owned.get(blocked)! + 1));
+  return owned;
+}
+
+// A safety cap on the runs affordablePeakState walks through. Each run
+// restarts from a share of the one before and buys from the same budget, so
+// the counts reach a fixed point within a few runs; the walk stops there.
+const PEAK_RUNS_EVALUATED = 64;
+
+// The strongest state a prestiged interval could have passed through. With
+// the Academic Career (kept units, a start fund, auto-buyers, a large PhD
+// bonus) a whole run can start, peak and prestige between two saves: the
+// previous save then shows the run's START and the incoming one the next
+// run's start, and the run's peak economy — which produced its earnings — is
+// in neither. Everything bought during the interval was paid for out of
+// `budget` (what was held, plus what was earned, plus the start funds), so,
+// run by run:
+//   - the run in progress continues from the previous save's units and buys
+//     at most `budget` worth on top, at their real prices;
+//   - each later run restarts from what the tree keeps of the run before
+//     (keptUnitCount) and again buys at most `budget` worth;
+//   - per unit type, the largest count any of those runs reaches;
+//   - every upgrade the budget could pay for, plus those already owned;
+//   - the larger PhD count of the two saves (held PhDs only change through a
+//     prestige between saves, and they only grow there).
+// The claimed earnings are part of the budget, but prices grow geometrically,
+// so the economy this credits grows only with the logarithm of the claim: an
+// inflated claim still can't fit inside its own bound.
+function affordablePeakState(
+  prev: PrevSaveSnapshot | null,
+  incoming: IncomingSave,
+  budget: number,
+  runs: number,
+  mods: CareerModifiers
+): { units: UnitSnapshot[]; upgrades: string[]; phdCount: number } {
+  const phdCount = Math.max(prev?.phdCount ?? 0, incoming.phdCount);
+  const costMultiplier = getCareerUnitCostMultiplier(
+    phdCount,
+    mods,
+    getMaxBoosterMultiplier("costReduction", mods)
+  );
+  const spend = Math.max(0, budget);
+  let run = bestPurchase(unitMap(prev?.units ?? []), spend, costMultiplier, mods);
+  const peak = new Map(run);
+  for (let r = 0; r < Math.min(runs, PEAK_RUNS_EVALUATED); r++) {
+    const kept = new Map(
+      UNIT_DEFINITIONS.map((def) => [def.id, keptUnitCount(run.get(def.id)!, mods.keepUnitsBp)])
+    );
+    const next = bestPurchase(kept, spend, costMultiplier, mods);
+    const settled = UNIT_DEFINITIONS.every((def) => next.get(def.id) === run.get(def.id));
+    run = next;
+    for (const [id, n] of run) peak.set(id, Math.max(peak.get(id)!, n));
+    if (settled) break;
+  }
+  const incomingOwned = unitMap(incoming.units);
+  const units = UNIT_DEFINITIONS.map((def) => ({
+    unitId: def.id,
+    owned: Math.max(incomingOwned.get(def.id) ?? 0, peak.get(def.id)!)
+  }));
+  const upgrades = new Set([...(prev?.upgrades ?? []), ...incoming.upgrades]);
+  for (const def of UPGRADE_DEFINITIONS) {
+    if (getCareerUpgradeCost(def.cost, mods) * costMultiplier <= budget) upgrades.add(def.id);
+  }
+  return { units, upgrades: [...upgrades], phdCount };
+}
+
 export function evaluateSaveEnvelope(
   prev: PrevSaveSnapshot | null,
   userCreatedAt: Date,
@@ -336,7 +442,16 @@ export function evaluateSaveEnvelope(
   //     interval between the two rates, and letting the whole interval run
   //     at whichever rate is larger only ever loosens the bound, never
   //     tightens it) and stays well inside what a genuine client could
-  //     have produced. ------------------------------------------------------
+  //     have produced.
+  //
+  //     Neither end of a prestiged interval need be its peak, though: a run
+  //     can start AND finish between two saves (a real production incident,
+  //     2026-10-20 — the leading player's ~11 s runs, 8.1e11 earned against
+  //     a bound of 2.1e11 built from two run-start states, rejected and
+  //     struck in a loop). The third economy, affordablePeakState, is the
+  //     strongest one the interval's own budget could have bought. ---------
+  const deltaPrestige = Math.max(0, incoming.prestigeCount - prevPrestigeCount);
+  const deltaEarned = incoming.totalTokensEarned - prevTotalTokensEarned;
   const postEconomy = maxEconomy(
     {
       units: incoming.units,
@@ -345,25 +460,25 @@ export function evaluateSaveEnvelope(
     },
     mods
   );
-  const preEconomy = prestiged
-    ? maxEconomy(
-        {
-          units: prev?.units ?? [],
-          upgrades: prev?.upgrades ?? [],
-          phdCount: prevPhdCount
-        },
-        mods
-      )
-    : null;
-  const maxTps = preEconomy ? Math.max(preEconomy.maxTps, postEconomy.maxTps) : postEconomy.maxTps;
-  const maxClickValue = preEconomy
-    ? Math.max(preEconomy.maxClickValue, postEconomy.maxClickValue)
-    : postEconomy.maxClickValue;
-  const maxAutoIncome = preEconomy
-    ? Math.max(preEconomy.maxAutoIncome, postEconomy.maxAutoIncome)
-    : postEconomy.maxAutoIncome;
+  const peakBudget = prevTokens + deltaEarned + mods.startingTokens * deltaPrestige;
+  const economies = prestiged
+    ? [
+        postEconomy,
+        maxEconomy(
+          {
+            units: prev?.units ?? [],
+            upgrades: prev?.upgrades ?? [],
+            phdCount: prevPhdCount
+          },
+          mods
+        ),
+        maxEconomy(affordablePeakState(prev, incoming, peakBudget, deltaPrestige, mods), mods)
+      ]
+    : [postEconomy];
+  const maxTps = Math.max(...economies.map((e) => e.maxTps));
+  const maxClickValue = Math.max(...economies.map((e) => e.maxClickValue));
+  const maxAutoIncome = Math.max(...economies.map((e) => e.maxAutoIncome));
 
-  const deltaEarned = incoming.totalTokensEarned - prevTotalTokensEarned;
   const earnedBound =
     ((maxTps + maxAutoIncome) * dtSecs + effectiveDeltaClicks * maxClickValue) *
     EARNED_ACCEPT_MARGIN;
@@ -442,7 +557,6 @@ export function evaluateSaveEnvelope(
   // and nothing else can lower phdCount between two saves (every other PhD
   // change is server-written and already in `prev`) — so a bare
   // prestigeCount bump earns no fund.
-  const deltaPrestige = Math.max(0, incoming.prestigeCount - prevPrestigeCount);
   const startFunds = Math.min(
     deltaPrestige,
     Math.max(0, incoming.phdCount - prevPhdCount),
