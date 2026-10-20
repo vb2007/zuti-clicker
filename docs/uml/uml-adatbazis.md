@@ -8,6 +8,7 @@ erDiagram
         String  email       UK  "Egyedi e-mail cím"
         DateTime createdAt      "Létrehozás ideje"
         DateTime updatedAt      "Utolsó módosítás"
+        DateTime saveResetAt    "Utolsó mentés-törlés (NULL: sosem)"
     }
 
     Authentication {
@@ -39,6 +40,7 @@ erDiagram
         Boolean careerWindowOpen     "Nyitva van-e a Tudományos pálya vásárlási ablaka"
         Int     careerWindowId       "Az eddig megnyitott vásárlási ablakok száma"
         DateTime savedAt             "Utolsó mentés ideje"
+        Float   graceLeadSecs        "Óra-előny a türelmi keretből (mp)"
         DateTime updatedAt           "Automatikus frissítés"
     }
 
@@ -123,13 +125,13 @@ erDiagram
 ## Táblák leírása
 
 ### `User`
-A regisztrált felhasználók alapadatait tárolja. A `username` és az `email` mező egyedi kényszert kapott, hogy ne lehessen kétszer regisztrálni ugyanazt az e-mail címet vagy felhasználónevet.
+A regisztrált felhasználók alapadatait tárolja. A `username` és az `email` mező egyedi kényszert kapott, hogy ne lehessen kétszer regisztrálni ugyanazt az e-mail címet vagy felhasználónevet. A `saveResetAt` (opcionális, alapértéke `NULL`) a fiók mentésének legutóbbi törlési ideje (`DELETE /save`, vagy a büntetési létra törlése az 5. strike-nál): a következő mentés első mentésnek számít, és a mentés-hihetőségi burok ettől az időponttól méri, nem a fiók létrehozásától (lásd a fejlesztői dokumentáció "Anti-cheat modell" → "Mentés-törlés után" szakaszát).
 
 ### `Authentication`
 A `User` táblával 1:1 kapcsolatban álló tábla, amely a hitelesítéshez szükséges érzékeny adatokat tartalmazza. A `password` mező nem nyers jelszót, hanem HMAC-SHA256 hash-t tárol, amelyhez a `salt` adja a sót. A `sessionToken` tartalmazza a bejelentkezéskor kiadott tokent; kijelentkezéskor ez üres stringre módosul (invalidálás).
 
 ### `GameSave`
-Felhasználónként legfeljebb egy mentés létezhet (1:1 kapcsolat a `User` táblával). Az összesített játékstatisztikákat (egyenleg, összes szerzett token, kattintások száma, eltelt idő) tárolja. A `savedAt` mező minden `PUT /save` hívásnál frissül.
+Felhasználónként legfeljebb egy mentés létezhet (1:1 kapcsolat a `User` táblával). Az összesített játékstatisztikákat (egyenleg, összes szerzett token, kattintások száma, eltelt idő) tárolja. A `savedAt` mező minden `PUT /save` hívásnál frissül: a mentés-hihetőségi burok kiértékelési idejére, ettől méri a következő mentés intervallumát. A `graceLeadSecs` (alapértéke `0`) azt tárolja, mennyivel futnak a mentés-lánc állításai összesen a szerver órája előtt: a kérés-késleltetésre adott óra-türelem ebből a közös keretből jön, így sok gyors mentés sem sokszorozhatja meg (lásd a fejlesztői dokumentáció "Anti-cheat modell" → "Közös türelmi keret" szakaszát). Becsületes játéknál gyakorlatilag mindig `0`.
 
 A `totalTokensEarned`/`totalClicks`/`elapsedSeconds` mezők **életút-szintűek**: soha nem állnak vissza. A `phdCount`/`prestigeCount` mezők a prestige-rendszer (lásd `PUT /save` és a frontend `gameStore.prestige()`) által megszerzett, szintén életút-szintű PhD-kat és fokozatszerzéseket számolják. A `runTokensEarned`/`runClicks`/`runSeconds` mezők az **aktuális menetre** vonatkoznak: fokozatszerzéskor (`prestige()`) nullázódnak, míg a fenti életút-mezők változatlanok maradnak. Egy PhD-t korábban nem használt (a prestige-rendszer bevezetése előtti) mentésnél a `run*` mezők a megfelelő életút-mezőkből lettek visszatöltve, mivel egyetlen, még le nem zárt menetnek felelnek meg.
 

@@ -213,6 +213,8 @@ Egy hatodik, szintén opcionális mező, az `upgrades` (megszerzett fejlesztés-
 
 A `PUT /save` a `phdCount`-ot egész számként fogadja `2^53 − 1`-ig (a PhD-oszlopok `DOUBLE`-k), és a válasza egy `career` mezőt is hordoz: a mentés nyitott-e Tudományos pálya vásárlási ablakot (egy fokozatszerzést hordozó mentés nyit) — lásd lent, "Tudományos pálya".
 
+Egy mentés, amely a szerver órája elé futna a mentés-lánc közös türelmi keretén túl (sok mentés gyors egymásutánban, mindegyik a teljes óra-türelmet állítva), `429`-et kap `code: "save_rate_limited"` és `retryAfterMs` mezővel (a `Retry-After` fejlécben másodpercben is) — nem strike, semmi nem íródik, a kliens később újraküldi. A `DELETE /save` rögzíti a törlés idejét (`User.saveResetAt`): a következő mentés első mentésnek számít, a törléstől mérve. Lásd lent, "Anti-cheat modell" → "Közös türelmi keret".
+
 A hetedik, szintén opcionális mező, az `upgraderSeq` az Upgrader pörgetés-számlálója: a `GET /save` és a `POST /upgrader/spin` adja ki, a kliens pedig minden mentésnél visszaküldi. A `PUT /save` **sosem tárolja** — kizárólag az írást védi: ha nem egyezik a fiók aktuális értékével, a mentés egy pörgetés (vagy egy Tudományos pálya-vásárlás/-visszaváltás, egy `windfall`-jóváírás) *előtti* állapotot hordoz, ezért `409`-et kap `code: "save_stale"` kóddal (nem strike, minden `ANTICHEAT_MODE` alatt), és semmi nem íródik. Hiányzó értéke `0`-nak számít (egy sosem pörgetett fióknál ez helyes). Lásd lent, "Az Upgrader".
 
 ### Frontend state management
@@ -420,7 +422,8 @@ with" kommentekkel) segítségével:
 
 - **Monotonitás** (életút-számlálók sosem csökkenhetnek) → elutasítás. 1.7.3 óta ez `409` `code: "save_stale"` és **sosem strike**: a tároltnál alacsonyabb érték az, amit egy második lap vagy eszköz küld (a korábban betöltött haladást) — elavult másolat, nem csalás; semmi nem íródik, és egy életút-érték csökkentésével nem lehet nyerni semmit (`stale_copy` info-esemény).
 - **Eltelt idő**: `Δelapsedseconds ≤ dt` (nincs offline progresszió, a tick csak csatolt fül mellett fut).
-- **Első mentés** (a fióknak még nincs mentése, és sosem kapott strike-ot): a `dt` kezdőpontja a fiók létrehozása **vagy** a mentés saját, vendégként játszott ideje közül a korábbi — ez utóbbi legfeljebb `FIRST_SAVE_PLAYTIME_CREDIT_SECS` (24 óra) erejéig (lásd lent, "Vendég → fiók").
+- **Első mentés** (a fióknak még nincs mentése): a `dt` kezdőpontja a fiók létrehozása **vagy** a mentés saját, vendégként játszott ideje közül a korábbi — ez utóbbi legfeljebb `FIRST_SAVE_PLAYTIME_CREDIT_SECS` (24 óra) erejéig (lásd lent, "Vendég → fiók"). 1.7.4 óta egy **törölt** mentés utáni első mentésnél (`DELETE /save`, vagy az 5. strike törlése) a fiók létrehozása helyett a törlés ideje (`User.saveResetAt`) számít — mint egy vadonatúj fióknál; lásd lent, "Mentés-törlés után".
+- **Óra-türelem** (`CLOCK_GRACE_SECS`, 5 mp, a kérés-késleltetésre): 1.7.4 óta nem minden mentés kapja meg külön, hanem egy mentés-láncra közös keretből jön — lásd lent, "Közös türelmi keret".
 - **Kattintásszám**: `Δclicks ≤ 45 · dt` (a burkoló-réteg saját, nagyvonalú felső korlátja — nem a statisztikai detektor jelzési küszöbe, lásd lent).
 - **Bevétel**: a legkedvezőbb lehetséges termelési/kattintás-érték × `dt`, 1.5-szörös ráhagyással.
 - **Elköltés**: az újonnan megszerzett egységek/fejlesztések legolcsóbb lehetséges ára (legjobb PhD-kedvezmény × legjobb booster-kedvezmény) — ez fogja meg az "ingyen egység" hamisítást.
@@ -496,7 +499,8 @@ valódi játékos sose szoruljon korlátozásba. Kimenet:
 | a határ 1×–2×-szerese közt | csendes korrekció a határértékre, `200`, `AntiCheatEvent` info-bejegyzés |
 | a határ 2×-szerese fölött | `409` `code: "save_implausible"`, semmi nem íródik, azonnali *strike* (lásd 4. réteg) |
 | monotonitás-sértés (a tároltnál alacsonyabb életút-érték — második lap/eszköz) | `409` `code: "save_stale"`, semmi nem íródik, **nincs strike** |
-| ugyanez — vagy egy *érdemi* (material) korrekció — a fiók **első** mentésénél (nincs tárolt mentés, és a fiók sosem kapott strike-ot) | `409` `code: "save_first_unverifiable"`, semmi nem íródik, **nincs strike** — csak egy `first_save_reject` info-esemény |
+| ugyanez — vagy egy *érdemi* (material) korrekció — a fiók **első** mentésénél (nincs tárolt mentés, és a fiók sosem kapott strike-ot, vagy a játékos a legutóbbi strike-ja *után* maga törölte a mentését) | `409` `code: "save_first_unverifiable"`, semmi nem íródik, **nincs strike** — csak egy `first_save_reject` info-esemény |
+| a mentés-lánc állításai a közös türelmi kereten túl futnának a szerver órája előtt | `429` `code: "save_rate_limited"` + `retryAfterMs`, semmi nem íródik, **nincs strike** és korrekció sem — a kliens később újraküldi (`save_rate_limited` info-esemény, fiókonként 5 percenként legfeljebb egy) |
 
 Egy elutasított mentésre (`409`, `code: "save_implausible"`) a kliens 1.7.3 óta
 **újratölti** a szerver utolsó ellenőrzött mentését (mint egy `save_stale`-nél),
@@ -528,6 +532,68 @@ volna). Most:
 - Az első mentés elutasítása sosem strike: egy vadonatúj fióknak nincs mit veszítenie, egy csaló egyszerűen újra regisztrálna, így a strike csak becsületes játékost érne. Egy **érdemi korrekciót** igénylő első mentést (pl. 24–48 óra vendég-játékidő) szintén elutasítunk, nem írunk be korrigálva: a kliens a korrigált értékeket nem kapja meg, így a következő mentése újra a korrigálatlanokat küldené — az már nem első mentés, tehát strike lenne. Az „első mentés" feltétele: nincs tárolt mentés **és** a fiók `strikeCount`-ja 0 — egy a büntetési létra által törölt (5. strike) mentés után így nem válik minden további elutasítás ingyenessé. A kliens a `save_first_unverifiable` kódra (`isFirstSaveUnverifiableError`) megállítja a mentéseket (`saveStore.carryOverRejected`) és a nem bezárható `FirstSaveRejectedModal` két kiutat kínál: **játék folytatása vendégként** (kijelentkezés a haladás megtartásával, `saveStore.logout({ keepProgress: true })`) vagy **új kezdés a fiókkal** (`startAccountFresh`: nullázás és azonnali mentés).
 - **Kijelentkezés = mentés, majd nullázás** (`saveStore.logout()`): előbb a `withSyncLock` flush-a menti az aktuális állapotot (ha ez nem sikerül, a játékos megerősítést kap: „Kijelentkezel mentés nélkül?"), aztán friss vendégként indul a játék. Így a vendég-haladás mindig fiók nélkül szerzett haladás — egy fiók fokozatai, PhD-jai és fája sosem „vándorolhat" egy következő fiók első mentésébe.
 - A vendéget a `useGuestReminders` emlékezteti: amikor a függő PhD-nyeresége először éri el az 1, 5, 25, 125, … (×5) határt, egy „Bejelentkezés / Regisztráció" gombos értesítés jelenik meg (a `toastStore` opcionális `action`-nel bővült).
+
+**Közös türelmi keret (grace lead, 1.7.4).** A burok minden intervallumhoz
+`CLOCK_GRACE_SECS` (5 mp) óra-türelmet ad a kérés-késleltetésre. Korábban ezt
+**minden mentés külön** megkapta, így egy szkript, amely másodpercenként tízszer
+ment, és mindegyikben az eltelt időt + 5 mp-et állítja, ~51-szeres játékidőt és
+kattintásszámot gyűjthetett (játékidő- és kattintás-ranglista) egyetlen korrekció
+nélkül. Becsületes kliens így nem tud a szerver órája elé futni: a játékideje
+időzítő-tüzelésenként fix `1/TICK_RATE`-tel nő, egy lap egyszerre egy mentést
+küld (a következő pillanatkép az előző válasza után készül), a szerver pedig az
+intervallumot az előző mentés **kiértékelésétől** méri (a `savedAt` 1.7.4 óta a
+burok kiértékelési ideje, nem az írásé — így a szerver intervallumai pontosan
+kiadják a saját óráját). Ezért akárhányszor ment egy becsületes kliens, az
+állításai **összesen** legfeljebb egyetlen kérés késleltetésével futhatnak a
+szerver órája elé (a becsületes-játék szimuláció ~126 ezer intervallumon pontosan
+0 mp-et mért).
+
+Ezt a „előnyt" a mentés tárolja (`GameSave.graceLeadSecs`), és a
+`services/graceLead.ts` (`decideGraceLead`) minden mentésnél (ha van előző):
+
+- **leengedi** a falióra szerint (`SAVE_LEAD_DECAY_PER_SEC`, 0,05 mp/mp),
+- kiszámolja, mennyi türelmet **igényel** a mentés (`graceLeadNeeds`, zárt
+  alakban): `Δelapsed − dt` és `Δclicks / 45 − dt` közül a nagyobbat (negatív:
+  rövidebb intervallumba is beleférne — legfeljebb a meglévő előnyt adja vissza,
+  előre „spórolni" nem lehet);
+- a burok ennyi türelemmel fut: `max(CLOCK_GRACE_SECS, SAVE_LEAD_CAP_SECS − előny)`
+  — **sosem szigorúbb**, mint korábban, és több, ha a keretben van hely: egy
+  feltöltésnél 10 mp-nél tovább elakadt mentés utáni azonnali mentés (pl. egy
+  vásárlás előtti flush) korábban elutasítást **és strike-ot** kapott;
+- ha az előny ezzel `SAVE_LEAD_CAP_SECS` (30 mp — a kliens 20 mp-es mentés-
+  időtúllépése fölött) fölé menne, `429 save_rate_limited`; különben az új előnyt
+  a mentéssel együtt írja.
+
+Egy mentés-spammelő így összesen legfeljebb 30 mp-cel, plusz az idő 5%-ával
+futhat a valóság elé (korábban ~5000%-kal). Párhuzamos kérések sem halmozódnak:
+mindegyik ugyanahhoz a tárolt sorhoz mér, és az állapot, az előny és a `savedAt`
+együtt íródik. A **bevétel** igénye is kiszámolódik, de 1.7.4-ben csak naplózódik
+(`lead_earnings_would_refuse`), nem szab határt (`SAVE_LEAD_ENFORCE_EARNINGS =
+false`): eddig minden téves tiltás a bevétel-modell egy kimaradt becsületes
+játékstílusából jött, itt pedig egy ilyen hiba egy becsületes játékos mentéseit
+utasítaná el. Ha az éles adatok szerint sosem utasított volna el semmit, egy
+konstanssal bekapcsolható.
+
+A kliens (`saveStore`, `isSaveRateLimitedError`) a `429`-re a kért ideig vár
+(legfeljebb 10 mp-et, kis szórással), majd az akkori haladást újraküldi —
+legfeljebb háromszor, így egy vásárlás vagy pörgetés előtti flush egyszerűen
+tovább tart, nem bukik el. Utána „Túl gyors mentés" üzenetet mutat, megtartja a
+haladást, és a szerver várakozási ideje után még egyszer szinkronizál. Sosem
+tölt újra és sosem veszi át a szerver állapotát (ez nem a haladás elutasítása).
+Egy közben történt nullázás vagy kijelentkezés után nem küld újra.
+
+**Mentés-törlés után.** A `DELETE /save` és a büntetési létra törlése (5.
+strike) után a következő mentés újra első mentés. Ennek burka eddig a fiók
+létrehozásától mért, így bármely régi fiók törölhette a mentését, és a teljes
+korát játékidőként (és ~45 kattintás/mp-et rá) állíthatta. 1.7.4 óta a
+`deleteSave` rögzíti a törlés idejét (`User.saveResetAt`), és az első mentés
+innen indul, mint egy vadonatúj fióknál (a 24 órás vendég-jóváírás ugyanúgy
+jár). Ha a játékos a legutóbbi strike-ja **után** maga törölte a mentését, egy
+nem ellenőrizhető első mentés strike nélkül `save_first_unverifiable` — lehet,
+hogy egy másik eszköz küldi a törlés előtti haladást. A büntetési létra saját
+törlése a strike időpontjával íródik (`deleteSave(userId, now)`), így ott a
+korábbi szabály marad: a törölt fiók további elutasításai továbbra is strike-ot
+érnek.
 
 ### 2. réteg — kliens-oldali bemenet-hitelesség
 
@@ -1066,7 +1132,7 @@ Minden `main`-re nyíló pull request-en lefut, hat jobban. Öt közülük (`typ
 | `verify-migrations` | `prisma migrate deploy` + `prisma migrate diff --exit-code` a dedikált `zutiClickerTest` adatbázis ellen — a merge előtti bizonyíték arra, hogy egy migráció nemcsak létezik, hanem helyes is (lásd lent, `deploy.yml`) |
 | `frontend-tests` | Vitest (`src/**/__tests__/*.spec.ts`), szerver/adatbázis nélkül |
 | `frontend-e2e` | Playwright (`frontend/e2e/`), a böngészőben kimockolt API-val (nincs adatbázis, nincs élő szerver) — a reszponzív/elrendezési regressziók, lásd fent, "E2E tesztek". Rendszerszintű Chromiumot keres (`chromium`, `chromium-browser`, `google-chrome[-stable]`), és csak ennek hiányában tölti le a sajátját. Hiba esetén a nyomokat (`test-results/`) `e2e-traces-<futás>` artifactként feltölti (szándékosan nem `junit-*` nevűként, mert a `reports` job ezt a mintát gyűjti) |
-| `honest-play` | **Becsületes-játék kapu**: a frontend `pnpm sim:honest-play-gate` szimulációja a valódi `gameStore`-ral, a valódi kliens mentési ütemében játszik (gyors fokozatszerzés automatikus vásárlókkal és a teljes Tudományos pályáig, kerék-pörgetések, 20 katt/s-es kattintó), és minden mentési intervallumot kiír; az `api/src/tests/honestPlayGate.test.ts` mindegyiket (~20 000) a valódi mentés-burkon játssza vissza — egyetlen elutasítás vagy érdemi korrekció is bukás. Minden eddigi téves anti-cheat tiltás abból fakadt, hogy a burok nem illett valamire, amit egy becsületes kliens ténylegesen csinál; ez a kapu merge előtt fogja meg az ilyet. Nincs adatbázis, nincs szerver. |
+| `honest-play` | **Becsületes-játék kapu**: a frontend `pnpm sim:honest-play-gate` szimulációja a valódi `gameStore`-ral, a valódi kliens mentési ütemében játszik (gyors fokozatszerzés automatikus vásárlókkal és a teljes Tudományos pályáig, kerék-pörgetések, 20 katt/s-es kattintó), és minden mentési intervallumot kiír; az `api/src/tests/honestPlayGate.test.ts` mindegyiket (~20 000) a valódi mentés-burkon játssza vissza — egyetlen elutasítás vagy érdemi korrekció is bukás. 1.7.4 óta minden forgatókönyv mentés-láncát **sorrendben** is visszajátssza a közös türelmi kereten (`decideGraceLead`), egy véletlenszerű, nehéz farkú hálózati késleltetés-modellel (lognormális ~120 ms medián, 1% 2–20 mp-es elakadás; a kliens a válaszig vár, a játékideje közben is nő): egyetlen `429`, egy bevétel miatti „elutasítaná" vagy egy rosszabb burok-ítélet is bukás. A szimuláció a vásárlás előtti flush-okat is lejátssza (csomópontonként egy mentés). Minden eddigi téves anti-cheat tiltás abból fakadt, hogy a burok nem illett valamire, amit egy becsületes kliens ténylegesen csinál; ez a kapu merge előtt fogja meg az ilyet. Nincs adatbázis, nincs szerver. |
 | `api-tests` | Jest, éles szerver a `:2710` porton ugyanazon `zutiClickerTest` adatbázis ellen — a `verify-migrations`-tól függ, hogy már migrált adatbázison fusson |
 
 Az `api-tests` és a `verify-migrations` job egyaránt egy futtatáshoz kötött, runner-lokális `.env` fájlt vár `/mnt/raid1/zuti-clicker-ci/.env.ci` alatt (sosem GitHub secret) — ez tartalmazza a `zutiClickerTest` / `zutiClickerTestShadow` adatbázisok elérését és egy eldobható `CRYPTO_SECRET_KEY`-t. **Ennek a fájlnak tartalmaznia kell az `ANTICHEAT_MODE=monitor` sort is** (lásd fent, "Tesztek futtatása" és lent, "Anti-cheat modell") — enélkül az `api-tests` job elbukik, mert a meglévő `save`/`leaderboard`/`booster` tesztek fixture-jei nem férnek bele a mentés-hitelesség-ellenőrzésbe `enforce` módban. A teszt lefutása után az `api-tests` job a `cleanup:test-users --apply` scriptet futtatja, hogy a `test_<random>@example.com` felhasználók ne halmozódjanak.
