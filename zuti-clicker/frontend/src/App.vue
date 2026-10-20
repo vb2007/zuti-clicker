@@ -25,6 +25,7 @@ import MobileTabBar from "@/components/layout/MobileTabBar.vue";
 import { useGameLoop } from "@/composables/useGameLoop";
 import { useAntiCheat } from "@/composables/useAntiCheat";
 import { useAutoBuyer } from "@/composables/useAutoBuyer";
+import { useGuestReminders } from "@/composables/useGuestReminders";
 import { useBreakpoint } from "@/composables/useBreakpoint";
 import { useOverlay, initOverlayStack } from "@/composables/useOverlayStack";
 import { QUICK_RESET_ENABLED, shouldQuickReset } from "@/utils/featureFlags";
@@ -41,6 +42,7 @@ const { isCompact } = useBreakpoint();
 useGameLoop();
 useAntiCheat();
 useAutoBuyer();
+useGuestReminders();
 
 // If the sheet was left open and the viewport widens back past the compact
 // breakpoint (e.g. rotating a tablet, or resizing a desktop window that had

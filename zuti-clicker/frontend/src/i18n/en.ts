@@ -433,7 +433,9 @@ export default {
     warningBody:
       "You're playing as a guest. Log in or register to back up your game to the cloud and to prestige — this run comes with you.",
     loginBtn: "Log in / Register",
-    continueBtn: "Continue without saving"
+    continueBtn: "Continue without saving",
+    reminderPhd:
+      "Your thesis is ready: +{n} PhD. Log in or register to defend it — this run comes with you."
   },
   confirm: {
     deleteSaveTitle: "Delete save file?",

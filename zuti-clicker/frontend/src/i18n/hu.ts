@@ -435,7 +435,9 @@ export default {
     warningBody:
       "Vendégként játszol. Jelentkezz be vagy regisztrálj, hogy felhőbe mentsd a játékod és fokozatot szerezhess — ez a menet veled jön.",
     loginBtn: "Bejelentkezés / Regisztráció",
-    continueBtn: "Folytatás mentés nélkül"
+    continueBtn: "Folytatás mentés nélkül",
+    reminderPhd:
+      "Kész a disszertációd: +{n} PhD. Jelentkezz be vagy regisztrálj a megvédéséhez — ez a menet veled jön."
   },
   confirm: {
     deleteSaveTitle: "Törlöd a mentést?",

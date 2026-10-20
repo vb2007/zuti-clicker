@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { useToastStore } from "@/stores/toastStore";
+import { useToastStore, type ToastEntry, type ToastKind } from "@/stores/toastStore";
 
 const toast = useToastStore();
+
+const ICONS: Record<ToastKind, string> = { success: "✓", booster: "⚡", info: "🎓", error: "⚠" };
+
+function act(entry: ToastEntry) {
+  entry.action?.run();
+  toast.dismiss(entry.id);
+}
 </script>
 
 <template>
@@ -14,10 +21,11 @@ const toast = useToastStore();
           class="toast-item"
           :class="entry.kind"
         >
-          <span class="toast-icon">{{
-            entry.kind === "success" ? "✓" : entry.kind === "booster" ? "⚡" : "⚠"
-          }}</span>
+          <span class="toast-icon">{{ ICONS[entry.kind] }}</span>
           <span class="toast-msg">{{ entry.message }}</span>
+          <button v-if="entry.action" class="toast-action" type="button" @click="act(entry)">
+            {{ entry.action.label }}
+          </button>
           <button class="toast-close" @click="toast.dismiss(entry.id)" aria-label="Dismiss">
             ✕
           </button>
@@ -60,6 +68,7 @@ const toast = useToastStore();
 .toast-item.success { border-color: var(--success); }
 .toast-item.error { border-color: var(--danger); }
 .toast-item.booster { border-color: var(--booster); }
+.toast-item.info { border-color: var(--accent); }
 
 .toast-icon {
   font-size: 14px;
@@ -74,6 +83,24 @@ const toast = useToastStore();
   font-weight: 500;
   color: var(--text-primary);
   flex: 1;
+}
+
+.toast-action {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--btn-buy-bg);
+  color: var(--btn-buy-text);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background var(--transition-fast);
+}
+@media (hover: hover) {
+  .toast-action:hover { background: var(--accent-dim); }
+}
+@media (max-width: 480px), (pointer: coarse) {
+  .toast-action { min-height: 44px; }
 }
 
 .toast-close {
