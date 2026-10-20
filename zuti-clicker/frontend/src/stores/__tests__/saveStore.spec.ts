@@ -7,7 +7,8 @@ import { useGameStore } from "@/stores/gameStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { SyncFlushError } from "@/stores/saveStore";
-import { api, ApiError, SAVE_STALE_CODE } from "@/lib/api";
+import { api, ApiError, SAVE_STALE_CODE, SAVE_FIRST_UNVERIFIABLE_CODE } from "@/lib/api";
+import { useUiStore } from "@/stores/uiStore";
 
 // Only `api` is replaced; the real ApiError / isStaleSaveError stay, so a test
 // can throw a genuine STALE ApiError and the store's detection is the real one.
@@ -32,6 +33,16 @@ vi.mock("@/lib/api", async (importOriginal) => {
 function loginAs(id = 1) {
   const auth = useAuthStore();
   auth.user = { id, username: "u", email: "u@example.com" };
+}
+
+// authStore reaches lib/api through an import cycle that the module mock above
+// doesn't cover, so its own logout action is stubbed instead.
+function stubAuthLogout(onCall: () => void = () => {}) {
+  const auth = useAuthStore();
+  return vi.spyOn(auth, "logout").mockImplementation(async () => {
+    onCall();
+    auth.user = null;
+  });
 }
 
 describe("saveStore", () => {
@@ -552,6 +563,161 @@ describe("saveStore", () => {
       expect(api.save.store).toHaveBeenCalledTimes(1); // no further calls once disabled
 
       vi.useRealTimers();
+    });
+  });
+
+  describe("logout()", () => {
+    const saved = () => ({ message: "ok", savedAt: new Date().toISOString() });
+
+    // A guest's progress must only ever be progress made without an account:
+    // the server credits it to an account's first save as one unwitnessed run.
+    it("saves the current state first, then logs out and resets to a fresh guest", async () => {
+      loginAs();
+      const game = useGameStore();
+      const ui = useUiStore();
+      game.tokens = 50;
+      game.totalTokensEarned = 80;
+      game.phdCount = 7;
+      game.prestigeCount = 2;
+      ui.careerOpen = true;
+      ui.upgraderOpen = true;
+      const order: string[] = [];
+      vi.mocked(api.save.store).mockImplementation(async (payload) => {
+        order.push(`save:${payload.phdCount}`);
+        return saved();
+      });
+      stubAuthLogout(() => order.push("logout"));
+
+      const save = useSaveStore();
+      expect(await save.logout()).toBe(true);
+
+      expect(order).toEqual(["save:7", "logout"]);
+      expect(useAuthStore().isLoggedIn).toBe(false);
+      expect(game.tokens).toBe(0);
+      expect(game.totalTokensEarned).toBe(0);
+      expect(game.phdCount).toBe(0);
+      expect(game.prestigeCount).toBe(0);
+      expect(ui.careerOpen).toBe(false);
+      expect(ui.upgraderOpen).toBe(false);
+      expect(save.lastSyncedAt).toBeNull();
+    });
+
+    it("regression: a failed save keeps the player logged in with everything intact", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 7;
+      vi.mocked(api.save.store).mockRejectedValue(new ApiError(0, "offline"));
+      const logout = stubAuthLogout();
+
+      const save = useSaveStore();
+      expect(await save.logout()).toBe(false);
+
+      expect(logout).not.toHaveBeenCalled();
+      expect(useAuthStore().isLoggedIn).toBe(true);
+      expect(game.phdCount).toBe(7);
+    });
+
+    it("force logs out and resets without trying to save", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 7;
+
+      stubAuthLogout();
+      const save = useSaveStore();
+      expect(await save.logout({ force: true })).toBe(true);
+
+      expect(api.save.store).not.toHaveBeenCalled();
+      expect(useAuthStore().isLoggedIn).toBe(false);
+      expect(game.phdCount).toBe(0);
+    });
+
+    it("a stale save already reloaded the server's state, so logout goes ahead", async () => {
+      loginAs();
+      vi.mocked(api.save.store).mockRejectedValue(
+        new ApiError(409, "stale", { code: SAVE_STALE_CODE })
+      );
+      vi.mocked(api.save.load).mockResolvedValue({ save: null });
+
+      stubAuthLogout();
+      const save = useSaveStore();
+      expect(await save.logout()).toBe(true);
+      expect(useAuthStore().isLoggedIn).toBe(false);
+    });
+
+    it("keepProgress logs out without saving or resetting", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 50;
+
+      stubAuthLogout();
+      const save = useSaveStore();
+      expect(await save.logout({ keepProgress: true })).toBe(true);
+
+      expect(api.save.store).not.toHaveBeenCalled();
+      expect(useAuthStore().isLoggedIn).toBe(false);
+      expect(game.tokens).toBe(50);
+    });
+  });
+
+  describe("an account's first save refused as unverifiable", () => {
+    const refusal = () =>
+      new ApiError(409, "could not be verified", { code: SAVE_FIRST_UNVERIFIABLE_CODE });
+
+    it("raises carryOverRejected and holds every further sync until resolved", async () => {
+      loginAs();
+      vi.mocked(api.save.store).mockRejectedValue(refusal());
+
+      const save = useSaveStore();
+      await save.sync();
+      expect(save.carryOverRejected).toBe(true);
+      expect(save.syncError).toBe("could not be verified");
+
+      await save.sync();
+      await save.sync();
+      expect(api.save.store).toHaveBeenCalledTimes(1);
+      expect(api.save.load).not.toHaveBeenCalled();
+    });
+
+    it("starting the account fresh resets the game and saves it right away", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 1e12;
+      game.totalTokensEarned = 1e12;
+      vi.mocked(api.save.store).mockRejectedValueOnce(refusal());
+
+      const save = useSaveStore();
+      await save.sync();
+      vi.mocked(api.save.store).mockResolvedValue({
+        message: "ok",
+        savedAt: new Date().toISOString()
+      });
+      await save.startAccountFresh();
+
+      expect(save.carryOverRejected).toBe(false);
+      expect(save.syncError).toBeNull();
+      expect(api.save.store).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(api.save.store).mock.calls[1]![0]).toMatchObject({
+        tokens: 0,
+        totalTokensEarned: 0
+      });
+      expect(game.tokens).toBe(0);
+    });
+
+    it("keeping the progress as a guest logs out and leaves it in place", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 300;
+      vi.mocked(api.save.store).mockRejectedValue(refusal());
+
+      stubAuthLogout();
+      const save = useSaveStore();
+      await save.sync();
+      await save.logout({ keepProgress: true });
+
+      expect(save.carryOverRejected).toBe(false);
+      expect(useAuthStore().isLoggedIn).toBe(false);
+      expect(game.tokens).toBe(300);
+      expect(api.save.store).toHaveBeenCalledTimes(1);
     });
   });
 });

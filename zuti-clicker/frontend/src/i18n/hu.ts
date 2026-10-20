@@ -219,7 +219,8 @@ export default {
       lecturer: { name: "Előadó", desc: "Saját kurzus, saját előadóterem." },
       lectureMomentum: {
         name: "Előadói lendület",
-        desc: "Kattints folyamatosan, és a terem bemelegszik: a lendület kattintásbónuszt épít, ami szünetben elhalványul."
+        desc:
+          "Kattints folyamatosan, és a terem bemelegszik: a lendület kattintásbónuszt épít, ami szünetben elhalványul."
       },
       seminarLeader: {
         name: "Szemináriumvezető",
@@ -412,7 +413,22 @@ export default {
     logout: "Kijelentkezés",
     loginToSave: "Bejelentkezés a mentéshez",
     staleReloaded:
-      "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be."
+      "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be.",
+    firstSaveRejected: {
+      title: "A vendégként elért haladásod nem került át ebbe a fiókba",
+      body:
+        "A fiók létrehozása előtt elért haladásodat nem tudtuk ellenőrizni, ezért nem mentettük el a fiókba. Ez nem számít ellened, és a fiókod ellen sem.",
+      keepBtn: "Játék folytatása vendégként",
+      keepNote: "Kijelentkezel. A haladásod a lap bezárásáig megmarad.",
+      freshBtn: "Új kezdés ezzel a fiókkal",
+      freshNote: "A vendéghaladásod elvész, a fiók nulláról indul."
+    },
+    logoutUnsaved: {
+      title: "Kijelentkezel mentés nélkül?",
+      body:
+        "A legfrissebb haladásodat nem sikerült menteni. Ha most kijelentkezel, az utolsó mentés óta elért haladásod elvész.",
+      confirmBtn: "Kijelentkezés így is"
+    }
   },
   guest: {
     warningTitle: "A haladásod nem kerül mentésre",
@@ -487,7 +503,8 @@ export default {
     costDiscount: "Egységár",
     button: "Disszertáció megvédése",
     loginToPrestige: "Védéshez jelentkezz be",
-    guestNote: "A fokozatszerzéshez fiók kell. Regisztrálj vagy jelentkezz be — ez a menet veled jön.",
+    guestNote:
+      "A fokozatszerzéshez fiók kell. Regisztrálj vagy jelentkezz be — ez a menet veled jön.",
     ceremonyGained: "Megszerzett PhD",
     ceremonySubtext: "A kutatásod tartósan megerősíti minden jövőbeli menetet.",
     continueBtn: "Új kezdet"
@@ -509,7 +526,8 @@ export default {
   },
   anticheat: {
     title: "Haladás szüneteltetve",
-    body: "Ezen a fiókon automatizált vagy szokatlanul gyors bevitelt észleltünk. A kattintás, a vásárlás és a fokozat az alábbi visszaszámlálás lejártáig szünetel.",
+    body:
+      "Ezen a fiókon automatizált vagy szokatlanul gyors bevitelt észleltünk. A kattintás, a vásárlás és a fokozat az alábbi visszaszámlálás lejártáig szünetel.",
     timeRemaining: "Hátralévő idő",
     strikeNote:
       "Ez már {count}. alkalommal történt meg ezen a fiókon. A korlátozás minden alkalommal hosszabb.",

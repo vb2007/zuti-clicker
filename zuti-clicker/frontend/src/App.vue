@@ -13,6 +13,7 @@ import UnitsPanel from "@/components/units/UnitsPanel.vue";
 import AuthModal from "@/components/modals/AuthModal.vue";
 import GuestWarningModal from "@/components/modals/GuestWarningModal.vue";
 import ConfirmModal from "@/components/modals/ConfirmModal.vue";
+import FirstSaveRejectedModal from "@/components/modals/FirstSaveRejectedModal.vue";
 import SettingsModal from "@/components/modals/SettingsModal.vue";
 import LeaderboardModal from "@/components/modals/LeaderboardModal.vue";
 import UpgraderModal from "@/components/upgrader/UpgraderModal.vue";
@@ -82,8 +83,13 @@ async function onKeydown(e: KeyboardEvent) {
   if (shouldQuickReset(e, QUICK_RESET_ENABLED)) {
     e.preventDefault();
     await save.resetSave();
-    await auth.logout();
+    await save.logout({ force: true });
   }
+}
+
+async function onConfirmLogoutUnsaved() {
+  ui.logoutUnsavedOpen = false;
+  await save.logout({ force: true });
 }
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
@@ -176,6 +182,16 @@ async function onConfirmDelete() {
     @confirm="onConfirmDelete"
     @cancel="ui.confirmDeleteOpen = false"
   />
+  <ConfirmModal
+    v-if="ui.logoutUnsavedOpen"
+    :title="t('save.logoutUnsaved.title')"
+    :body="t('save.logoutUnsaved.body')"
+    :confirm-label="t('save.logoutUnsaved.confirmBtn')"
+    :cancel-label="t('confirm.cancelBtn')"
+    @confirm="onConfirmLogoutUnsaved"
+    @cancel="ui.logoutUnsavedOpen = false"
+  />
+  <FirstSaveRejectedModal />
   <PrestigeConfirmModal v-if="ui.prestigeConfirmOpen" />
   <PrestigeCeremony v-if="ui.prestigeCeremonyOpen" />
   <CareerOverlay v-if="showCareer" />

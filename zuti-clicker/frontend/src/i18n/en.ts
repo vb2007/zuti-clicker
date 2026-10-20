@@ -218,7 +218,8 @@ export default {
       lecturer: { name: "Lecturer", desc: "Your own course, your own lecture hall." },
       lectureMomentum: {
         name: "Lecture Momentum",
-        desc: "Keep clicking and the room warms up: momentum builds a click bonus that fades when you pause."
+        desc:
+          "Keep clicking and the room warms up: momentum builds a click bonus that fades when you pause."
       },
       seminarLeader: {
         name: "Seminar Leader",
@@ -410,7 +411,22 @@ export default {
     deleteSave: "Delete save",
     logout: "Log out",
     loginToSave: "Login to save",
-    staleReloaded: "Your progress changed elsewhere (another tab?), so the latest save was loaded."
+    staleReloaded: "Your progress changed elsewhere (another tab?), so the latest save was loaded.",
+    firstSaveRejected: {
+      title: "Your guest progress couldn't move to this account",
+      body:
+        "The progress you made before creating this account couldn't be verified, so it wasn't saved to it. Nothing counts against you or the account.",
+      keepBtn: "Keep playing as a guest",
+      keepNote: "Logs you out. Your progress stays in this tab until you close it.",
+      freshBtn: "Start this account fresh",
+      freshNote: "Your guest progress is discarded and the account starts from zero."
+    },
+    logoutUnsaved: {
+      title: "Log out without saving?",
+      body:
+        "Your latest progress couldn't be saved. If you log out now, everything since your last sync is lost.",
+      confirmBtn: "Log out anyway"
+    }
   },
   guest: {
     warningTitle: "Progress won't be saved",
@@ -505,7 +521,8 @@ export default {
   },
   anticheat: {
     title: "Progress paused",
-    body: "Automated or unusually fast input was detected on this account. Clicking, purchases, and prestige are paused until the timer below runs out.",
+    body:
+      "Automated or unusually fast input was detected on this account. Clicking, purchases, and prestige are paused until the timer below runs out.",
     timeRemaining: "Time remaining",
     strikeNote:
       "This has happened {count} times on this account. Restrictions get longer each time.",
