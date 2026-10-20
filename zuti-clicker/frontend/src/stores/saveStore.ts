@@ -4,7 +4,9 @@ import {
   api,
   isFirstSaveUnverifiableError,
   isImplausibleSaveError,
+  isSaveRateLimitedError,
   isStaleSaveError,
+  saveRetryAfterMs,
   type ApiError
 } from "@/lib/api";
 import { i18n } from "@/i18n";
@@ -29,6 +31,18 @@ export class SyncFlushError extends Error {
 
 type SyncOutcome = "ok" | "stale" | "error";
 
+// A save refused as "saving too fast" (save_rate_limited — never a strike) is
+// resent within the same sync, so a caller waiting on a flush simply waits:
+// up to this many attempts, each after the wait the server asked for, capped.
+// An honest client is never refused (its saves can't run ahead of the
+// server's clock); this only has to be safe, not fast.
+const RATE_LIMIT_ATTEMPTS = 3;
+const RATE_LIMIT_MAX_WAIT_MS = 10_000;
+// After the last attempt: one more sync once the server's wait is over.
+const RATE_LIMIT_MAX_RETRY_MS = 120_000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export const useSaveStore = defineStore("save", () => {
   const auth = useAuthStore();
   const game = useGameStore();
@@ -48,6 +62,14 @@ export const useSaveStore = defineStore("save", () => {
   // failed (offline, say). Until a reload succeeds the refused progress must
   // not be sent again — it would only be refused, and struck, again.
   let reloadAfterRefusal = false;
+  let _rateLimitRetry: ReturnType<typeof setTimeout> | null = null;
+
+  function _clearRateLimitRetry(): void {
+    if (_rateLimitRetry !== null) {
+      clearTimeout(_rateLimitRetry);
+      _rateLimitRetry = null;
+    }
+  }
 
   let _timer: ReturnType<typeof setInterval> | null = null;
 
@@ -94,6 +116,7 @@ export const useSaveStore = defineStore("save", () => {
       }
       carryOverRejected.value = false;
       reloadAfterRefusal = false;
+      _clearRateLimitRetry();
     }
   );
 
@@ -145,7 +168,8 @@ export const useSaveStore = defineStore("save", () => {
   let _lockTail: Promise<void> = Promise.resolve();
   let _inflight: Promise<SyncOutcome> | null = null;
 
-  // One PUT /save. Resolves with how it went and never rejects. A STALE
+  // One PUT /save (resent while refused as "saving too fast" — see
+  // _storeWithRetry). Resolves with how it went and never rejects. A STALE
   // refusal — this save was made before a wheel spin that happened elsewhere
   // (another tab) — is not an error to show in the sync indicator: the
   // server's progress is simply newer, so reload it and say so.
@@ -166,6 +190,47 @@ export const useSaveStore = defineStore("save", () => {
       }
     }
     try {
+      return await _storeWithRetry();
+    } finally {
+      isSyncing.value = false;
+    }
+  }
+
+  // PUT /save, resent (with the then-current progress) while it is refused as
+  // "saving too fast". Never rejects.
+  async function _storeWithRetry(): Promise<SyncOutcome> {
+    const epoch = game.resetEpoch;
+    // Unless the game was reset or the player logged out meanwhile: the
+    // progress that was refused is gone then.
+    const unchanged = () => game.resetEpoch === epoch && auth.isLoggedIn;
+    for (let attempt = 1; ; attempt++) {
+      const outcome = await _storeOnce();
+      if (outcome === "ok") _clearRateLimitRetry();
+      if (typeof outcome === "string") return outcome;
+      if (attempt < RATE_LIMIT_ATTEMPTS && unchanged()) {
+        await sleep(Math.min(outcome.retryAfterMs, RATE_LIMIT_MAX_WAIT_MS) + Math.random() * 250);
+        if (unchanged()) continue;
+      }
+      if (!unchanged()) return "error";
+      // Kept, not lost: one more sync once the server's wait is over (the
+      // autosave timer may be off).
+      syncError.value = i18n.global.t("save.rateLimited");
+      _clearRateLimitRetry();
+      _rateLimitRetry = setTimeout(
+        () => {
+          _rateLimitRetry = null;
+          void sync();
+        },
+        Math.min(Math.max(outcome.retryAfterMs, 1000), RATE_LIMIT_MAX_RETRY_MS)
+      );
+      return "error";
+    }
+  }
+
+  // One PUT /save and how it went; a "saving too fast" refusal comes back as
+  // the wait the server asked for, for _storeWithRetry to act on.
+  async function _storeOnce(): Promise<SyncOutcome | { retryAfterMs: number }> {
+    try {
       const payload = game.toSavePayload();
       const result = await api.save.store(payload);
       lastSyncedAt.value = new Date(result.savedAt);
@@ -179,6 +244,9 @@ export const useSaveStore = defineStore("save", () => {
       }
       return "ok";
     } catch (e) {
+      // Not a refusal of the progress itself — nothing to reload or adopt;
+      // the same progress goes again after a wait.
+      if (isSaveRateLimitedError(e)) return { retryAfterMs: saveRetryAfterMs(e) || 1000 };
       if (isFirstSaveUnverifiableError(e)) {
         carryOverRejected.value = true;
         syncError.value = (e as ApiError).message;
@@ -206,8 +274,6 @@ export const useSaveStore = defineStore("save", () => {
       }
       syncError.value = (e as ApiError).message;
       return "error";
-    } finally {
-      isSyncing.value = false;
     }
   }
 

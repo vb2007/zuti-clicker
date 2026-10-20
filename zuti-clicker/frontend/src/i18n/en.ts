@@ -414,6 +414,7 @@ export default {
     implausibleReloaded:
       "Your latest progress couldn't be verified, so your last verified save was loaded.",
     implausibleReloadFailed: "Couldn't load your last verified save yet — retrying.",
+    rateLimited: "Saving too fast — your progress is kept and will be saved in a moment.",
     firstSaveRejected: {
       title: "Your guest progress couldn't move to this account",
       body:
