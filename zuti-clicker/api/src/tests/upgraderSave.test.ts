@@ -149,11 +149,11 @@ describe("Upgrader save integration — ANTICHEAT_MODE=enforce", () => {
   it("a restricted account cannot spin: 403 RESTRICTED, and nothing is spent", async () => {
     const cookie = await registerAndLogin();
     await api.put("/save").set("Cookie", cookie).send(ENFORCE_SAVE);
-    // A monotonicity break is a strike, which restricts the account.
+    // A forged PhD count is a strike, which restricts the account.
     const strike = await api
       .put("/save")
       .set("Cookie", cookie)
-      .send({ ...ENFORCE_SAVE, totalTokensEarned: 1, tokens: 0 });
+      .send({ ...ENFORCE_SAVE, phdCount: 1000, upgraderSeq: 0 });
     expect(strike.status).toBe(409);
 
     const res = await api
