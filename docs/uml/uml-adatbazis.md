@@ -41,6 +41,7 @@ erDiagram
         Int     careerWindowId       "Az eddig megnyitott vásárlási ablakok száma"
         DateTime savedAt             "Utolsó mentés ideje"
         Float   graceLeadSecs        "Óra-előny a türelmi keretből (mp)"
+        Float   earningsLeadSecs     "Ugyanez a bevétellel (csak mérés)"
         DateTime updatedAt           "Automatikus frissítés"
     }
 
@@ -131,7 +132,7 @@ A regisztrált felhasználók alapadatait tárolja. A `username` és az `email` 
 A `User` táblával 1:1 kapcsolatban álló tábla, amely a hitelesítéshez szükséges érzékeny adatokat tartalmazza. A `password` mező nem nyers jelszót, hanem HMAC-SHA256 hash-t tárol, amelyhez a `salt` adja a sót. A `sessionToken` tartalmazza a bejelentkezéskor kiadott tokent; kijelentkezéskor ez üres stringre módosul (invalidálás).
 
 ### `GameSave`
-Felhasználónként legfeljebb egy mentés létezhet (1:1 kapcsolat a `User` táblával). Az összesített játékstatisztikákat (egyenleg, összes szerzett token, kattintások száma, eltelt idő) tárolja. A `savedAt` mező minden `PUT /save` hívásnál frissül: a mentés-hihetőségi burok kiértékelési idejére, ettől méri a következő mentés intervallumát. A `graceLeadSecs` (alapértéke `0`) azt tárolja, mennyivel futnak a mentés-lánc állításai összesen a szerver órája előtt: a kérés-késleltetésre adott óra-türelem ebből a közös keretből jön, így sok gyors mentés sem sokszorozhatja meg (lásd a fejlesztői dokumentáció "Anti-cheat modell" → "Közös türelmi keret" szakaszát). Becsületes játéknál gyakorlatilag mindig `0`.
+Felhasználónként legfeljebb egy mentés létezhet (1:1 kapcsolat a `User` táblával). Az összesített játékstatisztikákat (egyenleg, összes szerzett token, kattintások száma, eltelt idő) tárolja. A `savedAt` mező minden `PUT /save` hívásnál frissül: a mentés-hihetőségi burok kiértékelési idejére, ettől méri a következő mentés intervallumát. A `graceLeadSecs` (alapértéke `0`) azt tárolja, mennyivel futnak a mentés-lánc állításai összesen a szerver órája előtt: a kérés-késleltetésre adott óra-türelem ebből a közös keretből jön, így sok gyors mentés sem sokszorozhatja meg (lásd a fejlesztői dokumentáció "Anti-cheat modell" → "Közös türelmi keret" szakaszát). Becsületes játéknál gyakorlatilag mindig `0`. Az `earningsLeadSecs` (alapértéke `0`) ugyanez az érték úgy számolva, mintha a bevétel-korlát is a keretből húzna — csak mérés, sosem korlátoz: ebből dönthető el, bekapcsolható-e a bevétel beszámítása.
 
 A `totalTokensEarned`/`totalClicks`/`elapsedSeconds` mezők **életút-szintűek**: soha nem állnak vissza. A `phdCount`/`prestigeCount` mezők a prestige-rendszer (lásd `PUT /save` és a frontend `gameStore.prestige()`) által megszerzett, szintén életút-szintű PhD-kat és fokozatszerzéseket számolják. A `runTokensEarned`/`runClicks`/`runSeconds` mezők az **aktuális menetre** vonatkoznak: fokozatszerzéskor (`prestige()`) nullázódnak, míg a fenti életút-mezők változatlanok maradnak. Egy PhD-t korábban nem használt (a prestige-rendszer bevezetése előtti) mentésnél a `run*` mezők a megfelelő életút-mezőkből lettek visszatöltve, mivel egyetlen, még le nem zárt menetnek felelnek meg.
 

@@ -565,11 +565,23 @@ Ezt a „előnyt" a mentés tárolja (`GameSave.graceLeadSecs`), és a
   a mentéssel együtt írja.
 
 Egy mentés-spammelő így összesen legfeljebb 30 mp-cel, plusz az idő 5%-ával
-futhat a valóság elé (korábban ~5000%-kal). Párhuzamos kérések sem halmozódnak:
-mindegyik ugyanahhoz a tárolt sorhoz mér, és az állapot, az előny és a `savedAt`
-együtt íródik. A **bevétel** igénye is kiszámolódik, de 1.7.4-ben csak naplózódik
-(`lead_earnings_would_refuse`), nem szab határt (`SAVE_LEAD_ENFORCE_EARNINGS =
-false`): eddig minden téves tiltás a bevétel-modell egy kimaradt becsületes
+futhat a valóság elé (korábban ~5000%-kal). Becsületes kliens egyetlen módon
+juthat a keret fölé: ha egy mentése 30 mp-nél később ér a szerverhez, mint
+ahogy készült (szerver-oldali elakadás). Ezt a burok korrigálja (korábban
+elutasítás és strike volt); mivel a kliens a korrigált játékidőt nem kapja
+meg, a következő mentései legfeljebb ~100 mp-ig `429`-et kapnak, amíg az előny
+leenged — strike sosem.
+
+A **bevétel-korlát** csak annyi türelmet kap, amennyit a mentés játékideje és
+kattintásai ténylegesen felhasználtak (legalább `CLOCK_GRACE_SECS`-et):
+különben egy csak-bevételt hamisító spammelő (becsületes játékidő, így előny
+nélkül) minden mentésnél a teljes 30 mp-es keretnyi ingyen termelést kapná.
+
+Párhuzamos kérések sem halmozódnak: mindegyik ugyanahhoz a tárolt sorhoz mér, és
+az állapot, az előny és a `savedAt` együtt íródik. A **bevétel** igénye is
+kiszámolódik, de 1.7.4-ben csak naplózódik egy árnyék-előnyben (`GameSave.earningsLeadSecs`, ugyanaz a számítás a bevétellel
+együtt; `lead_earnings_would_refuse` esemény, ha ez a kereten túl menne), nem szab
+határt (`SAVE_LEAD_ENFORCE_EARNINGS = false`): eddig minden téves tiltás a bevétel-modell egy kimaradt becsületes
 játékstílusából jött, itt pedig egy ilyen hiba egy becsületes játékos mentéseit
 utasítaná el. Ha az éles adatok szerint sosem utasított volna el semmit, egy
 konstanssal bekapcsolható.
@@ -593,7 +605,17 @@ nem ellenőrizhető első mentés strike nélkül `save_first_unverifiable` — 
 hogy egy másik eszköz küldi a törlés előtti haladást. A büntetési létra saját
 törlése a strike időpontjával íródik (`deleteSave(userId, now)`), így ott a
 korábbi szabály marad: a törölt fiók további elutasításai továbbra is strike-ot
-érnek.
+érnek. Ugyanez a másik eszköz egy mentéssel később: ha a játékos azon az
+eszközön, ahol törölt, már elmentette a friss játékot, a régi játékot futtató
+másik eszköz mentése nem első mentés, hanem messze a friss előtt jár —
+elutasítás. A játékos saját (legutóbbi strike-ja utáni) törlését követő
+`SAVE_RESET_STALE_COPY_DAYS` (7) napig egy ilyen elutasítás **nem strike**
+(`reset_stale_copy` info-esemény); a `save_implausible` válaszra a kliens a friss
+mentést veszi át. Csak elutasításnál olvassuk (`getSaveResetAt`); a törlés idejét
+mindig frissen, nem a hitelesített kérés felhasználó-sorából, amelyet egy
+párhuzamos `DELETE /save` megelőzhet. A kliens a törlést a mentés-zár alatt
+végzi (`saveStore.resetSave`), egy úton lévő mentés után, így a saját autosave-je
+sem érkezhet a törlés után a régi haladással.
 
 ### 2. réteg — kliens-oldali bemenet-hitelesség
 
