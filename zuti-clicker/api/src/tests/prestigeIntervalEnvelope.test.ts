@@ -71,6 +71,19 @@ describe("evaluateSaveEnvelope — a whole run between two saves", () => {
     });
   });
 
+  // Two prestiges in one interval (e.g. the sync after the first one failed):
+  // the second run starts from what the first kept and is bounded the same way.
+  it("accepts the same earnings split over two prestiges in one interval", () => {
+    const twoRuns = {
+      ...refusedSave(),
+      prestigeCount: incident.refused.prestigeCount + 1,
+      phdCount:
+        prev.phdCount +
+        2 * Math.floor(Math.sqrt(incident.refused.deltaEarned / 2 / PHD_TOKEN_SCALE))
+    };
+    expect(evaluateSaveEnvelope(prev, new Date(0), now, twoRuns)).toEqual({ outcome: "accept" });
+  });
+
   it("still rejects a claim far beyond what that interval's run could have earned", () => {
     const verdict = evaluateSaveEnvelope(
       prev,

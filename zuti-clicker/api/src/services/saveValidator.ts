@@ -18,11 +18,11 @@ import {
   MAX_CRIT_MULTIPLIER,
   MAX_UNIT_OWNED,
   UNIT_DEFINITIONS,
-  UPGRADE_DEFINITIONS,
-  type UnitDefinition
+  UPGRADE_DEFINITIONS
 } from "../constants/gameBalance";
 import {
   getBulkCost,
+  getUnitCost,
   getFlatClickBonus,
   getClickMultiplier,
   getClickSynergy,
@@ -218,50 +218,72 @@ function maxEconomy(
   return { maxTps, maxClickValue, maxAutoIncome };
 }
 
-// The units a budget can buy for the most production on top of `start`, at a
-// given cost multiplier — an upper bound on any purchase plan's production.
-// Within a type each further unit costs more for the same production, so
-// buying in order of production per token is the optimal plan when the last
-// purchase may be fractional, and an integer plan can't beat that: buy the
-// best unit while it is affordable; once the best is not, remember it, keep
-// filling the budget with whatever still fits, and finally add that one
-// remembered unit (the fractional purchase the true optimum could have made
-// with what was left at that point is worth less than one whole unit of it).
+// An upper bound on the production any purchase plan within `budget` can
+// reach on top of `start`, at a given cost multiplier, as unit counts. Within a
+// type each further unit costs more for the same production, so the best plan
+// — allowed to buy a fraction of its last unit — buys units in order of
+// production per token, and no integer plan beats it. The bound is therefore
+// the shortest such prefix whose cost EXCEEDS the budget (the fractional plan
+// stops inside its last unit), or every unit up to the caps if the budget
+// covers them all. Found by bisecting on the production-per-token threshold —
+// a closed-form count per type, so the cost doesn't grow with the budget.
 function bestPurchase(
   start: Map<string, number>,
   budget: number,
   costMultiplier: number,
   mods: CareerModifiers
 ): Map<string, number> {
-  const owned = new Map(UNIT_DEFINITIONS.map((def) => [def.id, start.get(def.id) ?? 0]));
-  let left = budget;
-  let blocked: string | null = null;
-  for (;;) {
-    let best: { id: string; price: number; ratio: number } | null = null;
-    let bestAffordable: { id: string; price: number; ratio: number } | null = null;
-    for (const def of UNIT_DEFINITIONS) {
-      const n = owned.get(def.id)!;
-      if (n >= MAX_UNIT_OWNED) continue;
-      const price = getBulkCost(def, n, 1, costMultiplier);
-      const ratio = (def.baseProduction * (mods.unitProductionMult[def.id] ?? 1)) / price;
-      if (best === null || ratio > best.ratio) best = { id: def.id, price, ratio };
-      if (price <= left && (bestAffordable === null || ratio > bestAffordable.ratio)) {
-        bestAffordable = { id: def.id, price, ratio };
-      }
-    }
-    if (best !== null && best.price > left && blocked === null) blocked = best.id;
-    if (bestAffordable === null) break;
-    left -= bestAffordable.price;
-    owned.set(bestAffordable.id, owned.get(bestAffordable.id)! + 1);
+  const spend = Math.min(Math.max(0, budget), Number.MAX_VALUE);
+  const types = UNIT_DEFINITIONS.map((def) => {
+    const prod = def.baseProduction * (mods.unitProductionMult[def.id] ?? 1);
+    const first = Math.min(MAX_UNIT_OWNED, start.get(def.id) ?? 0);
+    // The last index whose price is still a finite number.
+    const finiteMax = Math.floor(
+      Math.log(Number.MAX_VALUE / (def.baseCost * costMultiplier)) / Math.log(def.costGrowth)
+    );
+    return { def, prod, first, last: Math.min(MAX_UNIT_OWNED - 1, finiteMax) };
+  });
+  const ratioAt = (t: (typeof types)[number], n: number) =>
+    t.prod / getUnitCost(t.def, n, costMultiplier);
+  // How many units of one type have at least `threshold` production per token.
+  const countAt = (t: (typeof types)[number], threshold: number) => {
+    if (t.first > t.last) return 0;
+    const estimate =
+      Math.log(t.prod / (threshold * t.def.baseCost * costMultiplier)) /
+      Math.log(t.def.costGrowth);
+    let n = Math.max(t.first - 1, Math.min(t.last, Math.floor(estimate)));
+    while (n >= t.first && ratioAt(t, n) < threshold) n--;
+    while (n < t.last && ratioAt(t, n + 1) >= threshold) n++;
+    return n + 1 - t.first;
+  };
+  const costAt = (threshold: number) =>
+    types.reduce(
+      (sum, t) => sum + getBulkCost(t.def, t.first, countAt(t, threshold), costMultiplier),
+      0
+    );
+  const result = (threshold: number) =>
+    new Map(types.map((t) => [t.def.id, t.first + countAt(t, threshold)]));
+
+  // Everything up to the caps fits: nothing else bounds it.
+  if (costAt(Number.MIN_VALUE) <= spend) return result(Number.MIN_VALUE);
+  // `hi` buys a prefix that fits (none at all, above every type's next unit);
+  // `lo` buys one that doesn't. Narrow them until they are adjacent.
+  const bestNext = Math.max(...types.map((t) => (t.first <= t.last ? ratioAt(t, t.first) : 0)));
+  let hi = Math.log(bestNext * 2);
+  let lo = Math.log(Number.MIN_VALUE);
+  for (let i = 0; i < 120 && hi - lo > 1e-12; i++) {
+    const mid = (hi + lo) / 2;
+    if (costAt(Math.exp(mid)) <= spend) hi = mid;
+    else lo = mid;
   }
-  if (blocked !== null) owned.set(blocked, Math.min(MAX_UNIT_OWNED, owned.get(blocked)! + 1));
-  return owned;
+  return result(Math.exp(lo));
 }
 
-// A safety cap on the runs affordablePeakState walks through. Each run
-// restarts from a share of the one before and buys from the same budget, so
-// the counts reach a fixed point within a few runs; the walk stops there.
-const PEAK_RUNS_EVALUATED = 64;
+// The runs affordablePeakState walks through. Two are enough for the bound to
+// hold for any number of prestiges: what a prestige keeps is never worth more
+// than what was paid for it, so every later run's units stay within what the
+// whole budget buys on top of the previous save's (a share of) units.
+const PEAK_RUNS_EVALUATED = 1;
 
 // The strongest state a prestiged interval could have passed through. With
 // the Academic Career (kept units, a start fund, auto-buyers, a large PhD
@@ -273,8 +295,9 @@ const PEAK_RUNS_EVALUATED = 64;
 // run by run:
 //   - the run in progress continues from the previous save's units and buys
 //     at most `budget` worth on top, at their real prices;
-//   - each later run restarts from what the tree keeps of the run before
-//     (keptUnitCount) and again buys at most `budget` worth;
+//   - the next run restarts from what the tree keeps of that one
+//     (keptUnitCount) and again buys at most `budget` worth (later runs need
+//     no walk of their own — see PEAK_RUNS_EVALUATED);
 //   - per unit type, the largest count any of those runs reaches;
 //   - every upgrade the budget could pay for, plus those already owned;
 //   - the larger PhD count of the two saves (held PhDs only change through a
