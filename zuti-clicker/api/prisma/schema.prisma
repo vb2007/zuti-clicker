@@ -82,6 +82,10 @@ model GameSave {
   // (see SAVE_LEAD_CAP_SECS in constants/antiCheat.ts).
   savedAt           DateTime        @default(now())
   graceLeadSecs     Float           @default(0)
+  // The same lead with the earnings bound drawing on it too — only recorded,
+  // never enforced (SAVE_LEAD_ENFORCE_EARNINGS): it shows whether enforcing
+  // earnings would ever refuse an honest save.
+  earningsLeadSecs  Float           @default(0)
   updatedAt         DateTime        @updatedAt
   units             UnitSave[]
   upgrades          UpgradeSave[]

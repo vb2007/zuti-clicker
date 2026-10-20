@@ -6,6 +6,7 @@ import { isKnownUnitId, MAX_UNIT_OWNED } from "../constants/gameBalance";
 import {
   ANTICHEAT_MODE,
   floatTolerance,
+  SAVE_LEAD_ENFORCE_EARNINGS,
   SAVE_RATE_LIMIT_LOG_INTERVAL_MS
 } from "../constants/antiCheat";
 import {
@@ -24,6 +25,7 @@ import {
 import { PHD_MAX } from "../constants/upgrader";
 import { getCareerModifiers } from "../services/careerCore";
 import { toCareerState } from "../database/models/career";
+import { getSaveResetAt } from "../database/models/user";
 
 // Grace-lead events (save_rate_limited, lead_earnings_would_refuse) logged per
 // account and kind: the first one, then at most one per
@@ -434,6 +436,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     // and the save chain's grace lead after this save.
     let evaluatedAt: Date | undefined;
     let nextGraceLead: number | undefined;
+    let nextEarningsLead: number | undefined;
 
     if (ANTICHEAT_MODE !== "off") {
       const previous = await getSave(userId);
@@ -495,7 +498,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       // could otherwise wipe its save and claim its whole age as playtime.
       const now = new Date();
       evaluatedAt = now;
-      const resetAt = identity.saveResetAt;
+      const resetAt = previous === null ? await getSaveResetAt(userId) : null;
       const firstSaveAnchor =
         resetAt && resetAt.getTime() > identity.createdAt.getTime() ? resetAt : identity.createdAt;
 
@@ -503,20 +506,26 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       // services/graceLead.ts): how far the chain's claims already run ahead
       // of the server's clock decides how much grace this save may use, and
       // whether it fits at all. A first save starts a new chain.
+      // Earnings only draw on a shadow lead for now (SAVE_LEAD_ENFORCE_EARNINGS):
+      // stored, never enforced, logged whenever it would have refused a save.
       let lead: GraceLeadDecision | null = null;
+      let earningsLead: GraceLeadDecision | null = null;
       if (previous && prevSnapshot) {
         const dtRealSecs = Math.max(0, (now.getTime() - previous.savedAt.getTime()) / 1000);
         const needs = graceLeadNeeds(prevSnapshot, incomingSnapshot, dtRealSecs);
         lead = decideGraceLead(previous.graceLeadSecs, dtRealSecs, needs);
+        earningsLead = decideGraceLead(previous.earningsLeadSecs, dtRealSecs, needs, true);
       }
       nextGraceLead = lead ? lead.nextLead : 0;
+      nextEarningsLead = earningsLead ? earningsLead.nextLead : 0;
 
       const verdict = evaluateSaveEnvelope(
         prevSnapshot,
         firstSaveAnchor,
         now,
         incomingSnapshot,
-        lead?.graceSecs
+        lead?.graceSecs,
+        lead?.earningsGraceSecs
       );
 
       const enforced = ANTICHEAT_MODE === "enforce";
@@ -580,24 +589,26 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
           reason: verdict.reason,
           ...verdict.detail
         }).catch((e: unknown) => console.error("Failed to record anti-cheat strike:", e));
-      } else if (lead && lead.overBy > 0) {
+      } else {
         // Too far ahead of the server's clock for the save chain's grace
         // budget: refused below (enforce) for the client to resend later —
-        // never a strike, and not a soft clamp either (nothing is written).
-        await logLeadEvent(userId, "save_rate_limited", enforced, now.getTime(), { ...lead });
-      } else if (verdict.outcome === "clamp") {
-        await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, verdict.material, {
-          reasons: verdict.reasons,
-          ...verdict.detail
-        }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));
-      }
-      // Earnings don't draw on the lead yet (SAVE_LEAD_ENFORCE_EARNINGS) —
-      // logged whenever they would have refused a save that went through, so
-      // switching them on can be decided from production data.
-      if (lead?.earningsWouldRefuse && verdict.outcome !== "reject") {
-        await logLeadEvent(userId, "lead_earnings_would_refuse", enforced, now.getTime(), {
-          ...lead
-        });
+        // never a strike, and not a soft clamp either: nothing is written.
+        // Monitor mode writes it, so a clamp there is still recorded.
+        const rateLimited = lead !== null && lead.overBy > 0;
+        if (rateLimited) {
+          await logLeadEvent(userId, "save_rate_limited", enforced, now.getTime(), { ...lead });
+        }
+        if (verdict.outcome === "clamp" && !(rateLimited && enforced)) {
+          await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, verdict.material, {
+            reasons: verdict.reasons,
+            ...verdict.detail
+          }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));
+        }
+        if (earningsLead && earningsLead.overBy > 0 && !SAVE_LEAD_ENFORCE_EARNINGS) {
+          await logLeadEvent(userId, "lead_earnings_would_refuse", enforced, now.getTime(), {
+            ...earningsLead
+          });
+        }
       }
 
       if (enforced) {
@@ -664,7 +675,8 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       upgrades,
       upgraderSeq,
       savedAt: evaluatedAt,
-      graceLeadSecs: nextGraceLead
+      graceLeadSecs: nextGraceLead,
+      earningsLeadSecs: nextEarningsLead
     });
 
     // Lost the race to a wheel spin between the check above and the write

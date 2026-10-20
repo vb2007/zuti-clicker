@@ -30,6 +30,11 @@ export interface GraceLeadDecision {
   // The grace this save draws (negative: it gives some back), clamped to what
   // the envelope allows — whatever is over that, the envelope clamps away.
   need: number;
+  // The grace the earnings bound may use. While earnings don't draw on the
+  // lead, only as much as the save's playtime/clicks actually drew (at least
+  // CLOCK_GRACE_SECS): handing them graceSecs would give an earnings-only
+  // spammer — honest playtime, so no lead — up to the whole cap on every save.
+  earningsGraceSecs: number;
   // What to store on the written save.
   nextLead: number;
   // Seconds this save would put the chain over the cap; > 0 means refuse it.
@@ -37,18 +42,21 @@ export interface GraceLeadDecision {
   // When to try again: by then the lead has drained enough (the claim and the
   // interval grow together while the client waits, so the need doesn't change).
   retryAfterMs: number;
-  // Earnings alone would have put it over (logged while they aren't enforced).
-  earningsWouldRefuse: boolean;
 }
 
 // A save whose need is clamped to the grace lands exactly on the cap; float
 // noise in lead + (cap - lead) must not read as being over it.
 const OVER_EPSILON_SECS = 1e-6;
 
+// `withEarnings`: whether the earnings need draws on this lead too — always
+// SAVE_LEAD_ENFORCE_EARNINGS for the enforced lead; the controller also keeps
+// a shadow lead that always includes them (GameSave.earningsLeadSecs), to see
+// whether enforcing them would ever refuse an honest save.
 export function decideGraceLead(
   storedLead: number,
   dtRealSecs: number,
-  needs: GraceLeadNeeds
+  needs: GraceLeadNeeds,
+  withEarnings: boolean = SAVE_LEAD_ENFORCE_EARNINGS
 ): GraceLeadDecision {
   const lead = Math.max(0, storedLead - SAVE_LEAD_DECAY_PER_SEC * Math.max(0, dtRealSecs));
   const graceSecs = Math.max(CLOCK_GRACE_SECS, SAVE_LEAD_CAP_SECS - lead);
@@ -56,16 +64,16 @@ export function decideGraceLead(
   // less than the clock gives back at most what the chain is ahead by.
   const clamp = (need: number) => Math.min(graceSecs, Math.max(-lead, need));
   const timeNeed = Math.max(needs.elapsed, needs.clicks);
-  const need = clamp(SAVE_LEAD_ENFORCE_EARNINGS ? Math.max(timeNeed, needs.earnings) : timeNeed);
+  const need = clamp(withEarnings ? Math.max(timeNeed, needs.earnings) : timeNeed);
   const over = (n: number) => lead + n - SAVE_LEAD_CAP_SECS > OVER_EPSILON_SECS;
   const overBy = over(need) ? lead + need - SAVE_LEAD_CAP_SECS : 0;
   return {
     lead,
     graceSecs,
     need,
+    earningsGraceSecs: withEarnings ? graceSecs : Math.max(CLOCK_GRACE_SECS, need),
     nextLead: Math.min(SAVE_LEAD_CAP_SECS, Math.max(0, lead + need)),
     overBy,
-    retryAfterMs: Math.ceil((overBy / SAVE_LEAD_DECAY_PER_SEC) * 1000),
-    earningsWouldRefuse: overBy === 0 && over(clamp(Math.max(timeNeed, needs.earnings)))
+    retryAfterMs: Math.ceil((overBy / SAVE_LEAD_DECAY_PER_SEC) * 1000)
   };
 }

@@ -45,6 +45,8 @@ export interface SaveInput {
   // The save chain's grace lead after this save (see services/graceLead.ts).
   // Absent means "leave whatever is stored" (0 on a first save).
   graceLeadSecs?: number;
+  // Its shadow with earnings drawing on it too (recorded, never enforced).
+  earningsLeadSecs?: number;
 }
 
 // The Academic Career purchase window as this write left it. `opened` is
@@ -94,7 +96,10 @@ export const getSave = async (userId: number) => {
 export const upsertSave = async (userId: number, data: SaveInput): Promise<UpsertResult> => {
   const { tokens, totalTokensEarned, totalClicks, elapsedSeconds, units } = data;
   const now = data.savedAt ?? new Date();
-  const lead = data.graceLeadSecs !== undefined ? { graceLeadSecs: data.graceLeadSecs } : {};
+  const lead = {
+    ...(data.graceLeadSecs !== undefined ? { graceLeadSecs: data.graceLeadSecs } : {}),
+    ...(data.earningsLeadSecs !== undefined ? { earningsLeadSecs: data.earningsLeadSecs } : {})
+  };
 
   // Omitted prestige fields are left out of the UPDATE entirely: a client that
   // predates the prestige system must never reset a player's PhDs to zero.

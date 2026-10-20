@@ -420,8 +420,10 @@ export function evaluateSaveEnvelope(
   now: Date,
   incoming: IncomingSave,
   // The clock grace this save may use: CLOCK_GRACE_SECS, or more when the
-  // save chain's grace lead leaves room for it (see services/graceLead.ts).
-  graceSecs: number = CLOCK_GRACE_SECS
+  // save chain's grace lead leaves room for it (see services/graceLead.ts) —
+  // and the grace the earnings bound may use, which can be less.
+  graceSecs: number = CLOCK_GRACE_SECS,
+  earningsGraceSecs: number = graceSecs
 ): EnvelopeVerdict {
   const prevTokens = prev?.tokens ?? 0;
   const prevTotalTokensEarned = prev?.totalTokensEarned ?? 0;
@@ -473,7 +475,8 @@ export function evaluateSaveEnvelope(
     };
   }
 
-  const dtSecs = Math.max(0, (now.getTime() - anchor.getTime()) / 1000) + graceSecs;
+  const wallSecs = Math.max(0, (now.getTime() - anchor.getTime()) / 1000);
+  const dtSecs = wallSecs + graceSecs;
 
   const clamped: EnvelopeClamped = {};
   const reasons: string[] = [];
@@ -551,7 +554,8 @@ export function evaluateSaveEnvelope(
   const { maxTps, maxClickValue, maxAutoIncome } = intervalEconomy(prev, incoming, mods);
 
   const earnedBound =
-    ((maxTps + maxAutoIncome) * dtSecs + effectiveDeltaClicks * maxClickValue) *
+    ((maxTps + maxAutoIncome) * (wallSecs + earningsGraceSecs) +
+      effectiveDeltaClicks * maxClickValue) *
     EARNED_ACCEPT_MARGIN;
   const earnedCheck = checkBound(deltaEarned, earnedBound);
   detail["earned"] = { deltaEarned, bound: earnedBound, outcome: earnedCheck.outcome, prestiged };

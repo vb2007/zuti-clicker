@@ -110,6 +110,7 @@ function latencyModel(seed: number): () => number {
     const failures: string[] = [];
     let maxLead = 0;
     let maxNeed = 0;
+    let maxEarningsLead = 0;
     for (const source of new Set(stream!.pairs.map((p) => p.source))) {
       const upload = latencyModel(source.length * 7919);
       const download = latencyModel(source.length * 104729);
@@ -118,6 +119,7 @@ function latencyModel(seed: number): () => number {
       let evaluatedAt = upload(); // when the server evaluated the previous save
       let prevOffset = 0;
       let lead = 0;
+      let earningsLead = 0;
       for (const pair of stream!.pairs.filter((p) => p.source === source)) {
         const simNow = simAt + pair.dtMs / 1000;
         const takenAt = Math.max(simNow + offset, evaluatedAt + download());
@@ -134,26 +136,38 @@ function latencyModel(seed: number): () => number {
           ...pair.incoming,
           elapsedSeconds: pair.incoming.elapsedSeconds + offset
         };
-        const d = decideGraceLead(lead, dtReal, graceLeadNeeds(prev, incoming, dtReal));
-        const verdict = evaluateSaveEnvelope(prev, new Date(0), now, incoming, d.graceSecs);
+        const needs = graceLeadNeeds(prev, incoming, dtReal);
+        const d = decideGraceLead(lead, dtReal, needs);
+        const shadow = decideGraceLead(earningsLead, dtReal, needs, true);
+        const verdict = evaluateSaveEnvelope(
+          prev,
+          new Date(0),
+          now,
+          incoming,
+          d.graceSecs,
+          d.earningsGraceSecs
+        );
         const where =
           `${pair.source} @${pair.hours}h ` +
           `(lead ${d.lead.toFixed(2)} s, dt ${dtReal.toFixed(2)} s)`;
         if (d.overBy > 0) failures.push(`${where}: refused, over by ${d.overBy}`);
-        if (d.earningsWouldRefuse) failures.push(`${where}: earnings would refuse`);
+        if (shadow.overBy > 0) failures.push(`${where}: earnings would refuse`);
         if (verdict.outcome === "reject" || (verdict.outcome === "clamp" && verdict.material)) {
           failures.push(`${where}: ${JSON.stringify(verdict)}`);
         }
         maxLead = Math.max(maxLead, d.nextLead);
         maxNeed = Math.max(maxNeed, d.need);
         lead = d.nextLead;
+        earningsLead = shadow.nextLead;
+        maxEarningsLead = Math.max(maxEarningsLead, shadow.nextLead);
         evaluatedAt = at;
         simAt = simNow;
         prevOffset = offset;
       }
     }
     console.log(
-      `honest-play gate: largest grace lead ${maxLead.toFixed(2)} s, need ${maxNeed.toFixed(2)} s`
+      `honest-play gate: largest grace lead ${maxLead.toFixed(2)} s, need ${maxNeed.toFixed(2)} s, ` +
+        `with earnings ${maxEarningsLead.toFixed(2)} s`
     );
     expect(failures.slice(0, 10)).toEqual([]);
     expect(failures).toHaveLength(0);

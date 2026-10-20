@@ -60,7 +60,8 @@ describe("decideGraceLead", () => {
     const d = decideGraceLead(0, 15, honest);
     expect(d).toMatchObject({ lead: 0, need: 0, nextLead: 0, overBy: 0, retryAfterMs: 0 });
     expect(d.graceSecs).toBe(SAVE_LEAD_CAP_SECS);
-    expect(d.earningsWouldRefuse).toBe(false);
+    // ...but earnings only the old fixed grace: they don't draw on the lead.
+    expect(d.earningsGraceSecs).toBe(CLOCK_GRACE_SECS);
   });
 
   it("never offers less than the old fixed grace, however far ahead the chain is", () => {
@@ -114,11 +115,26 @@ describe("decideGraceLead", () => {
     expect(d.overBy).toBe(0);
   });
 
-  it("earnings don't draw on the lead yet, but are reported when they would refuse", () => {
-    const d = decideGraceLead(SAVE_LEAD_CAP_SECS - 1, 0, { elapsed: 0, clicks: 0, earnings: 4 });
-    expect(d).toMatchObject({ need: 0, overBy: 0, earningsWouldRefuse: true });
-    expect(decideGraceLead(0, 0, { elapsed: 0, clicks: 0, earnings: 4 }).earningsWouldRefuse).toBe(
-      false
+  it("earnings don't draw on the lead yet; the shadow lead (withEarnings) does", () => {
+    const needs = { elapsed: 0, clicks: 0, earnings: 4 };
+    expect(decideGraceLead(SAVE_LEAD_CAP_SECS - 1, 0, needs)).toMatchObject({ need: 0, overBy: 0 });
+    const shadow = decideGraceLead(SAVE_LEAD_CAP_SECS - 1, 0, needs, true);
+    expect(shadow.need).toBe(4);
+    expect(shadow.overBy).toBeCloseTo(3);
+    expect(shadow.earningsGraceSecs).toBe(shadow.graceSecs);
+  });
+
+  // Regression (review of 1.7.4): the envelope's earnings bound used the
+  // whole grace the lead allowed — up to the cap — while earnings never drew
+  // on it: honest playtime and clicks (no lead), forged earnings, 30 s of
+  // free production per save instead of the old 5 s.
+  it("earnings may use only the grace the save's playtime and clicks drew", () => {
+    expect(decideGraceLead(0, 1, { elapsed: 0, clicks: -1, earnings: 30 }).earningsGraceSecs).toBe(
+      CLOCK_GRACE_SECS
+    );
+    // A stalled upload: the playtime drew 12 s, so earnings may cover them too.
+    expect(decideGraceLead(0, 1, { elapsed: 12, clicks: -1, earnings: 12 }).earningsGraceSecs).toBe(
+      12
     );
   });
 
@@ -179,6 +195,41 @@ describe("graceLeadNeeds", () => {
     const at = (g: number) => evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, incoming, g);
     expect(at(need * (1 + 1e-9) + 1e-9).outcome).toBe("accept");
     expect(at(need * 0.99).outcome).toBe("clamp");
+  });
+
+  // Regression (review of 1.7.4): an earnings-only spammer — honest playtime
+  // and clicks, so no lead — got the whole cap as the earnings bound's grace.
+  it("an earnings-only spammer gets no more earnings grace than the old 5 s", () => {
+    const prev = prevSave({ savedAt: new Date(NOW.getTime() - 100) });
+    const honestTime = { elapsedSeconds: prev.elapsedSeconds + 0.1 };
+    const needAt = (earned: number) =>
+      graceLeadNeeds(prev, next(prev, { ...honestTime, totalTokensEarned: earned }), 0.1);
+    // The earnings that need 20 s of grace (the need is linear in them):
+    // inside the cap's grace, more than twice past the old fixed one.
+    const base = prev.totalTokensEarned;
+    const slope = needAt(base + 1).earnings - needAt(base).earnings;
+    const earned = base + (20 - needAt(base).earnings) / slope;
+    expect(needAt(earned).earnings).toBeCloseTo(20);
+    const incoming = next(prev, {
+      ...honestTime,
+      totalTokensEarned: earned,
+      tokens: earned - base
+    });
+    const d = decideGraceLead(0, 0.1, graceLeadNeeds(prev, incoming, 0.1));
+    expect(d.need).toBeCloseTo(0);
+    const verdict = evaluateSaveEnvelope(
+      prev,
+      USER_CREATED_AT,
+      NOW,
+      incoming,
+      d.graceSecs,
+      d.earningsGraceSecs
+    );
+    expect(verdict.outcome).toBe("reject");
+    // The bug: the earnings bound at the lead's whole grace accepted it.
+    expect(evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, incoming, d.graceSecs).outcome).toBe(
+      "accept"
+    );
   });
 
   it("earnings with no production: unbounded when clicks can't explain them", () => {

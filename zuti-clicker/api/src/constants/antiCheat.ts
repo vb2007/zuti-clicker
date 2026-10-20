@@ -87,7 +87,11 @@ export const FIRST_SAVE_PLAYTIME_CREDIT_SECS = 24 * 3600;
 // is stored on the save (GameSave.graceLeadSecs); a save that would push it
 // past this cap is refused with 429 save_rate_limited — never a strike — and
 // the client resends it a little later. Above the client's own 20 s save
-// timeout, so even an upload that stalled until the client gave up fits.
+// timeout, so even an upload that stalled until the client gave up fits. The
+// one honest way past it: a save evaluated more than this long after it was
+// taken (a server-side stall). It is clamped like before (no longer rejected
+// and struck), and as the client doesn't learn the clamped playtime, its next
+// saves are refused until the lead drains (≤ 100 s) — never a strike.
 export const SAVE_LEAD_CAP_SECS = 30;
 
 // How fast a built-up lead drains, in seconds per second of wall clock. An
