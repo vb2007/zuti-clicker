@@ -465,10 +465,12 @@ jobs:
           HONEST_PLAY_FILE: ${{ runner.temp }}/honest-play-${{ github.run_number }}.json
           JEST_JUNIT_OUTPUT_DIR: reports
           JEST_JUNIT_OUTPUT_NAME: junit-honest-play-${{ github.run_number }}.xml
+        # The test path goes BEFORE --reporters: that option takes a list, and
+        # would swallow a path after it as one more reporter module.
         run: >
           node --experimental-vm-modules node_modules/jest/bin/jest.js
-          --config=jest.config.cjs --reporters=default --reporters=jest-junit
-          src/tests/honestPlayGate.test.ts
+          --config=jest.config.cjs src/tests/honestPlayGate.test.ts
+          --reporters=default --reporters=jest-junit
 
       - name: Remove the generated stream
         if: always()
