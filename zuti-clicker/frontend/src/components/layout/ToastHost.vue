@@ -19,7 +19,7 @@ function act(entry: ToastEntry) {
           v-for="entry in toast.toasts"
           :key="entry.id"
           class="toast-item"
-          :class="entry.kind"
+          :class="[entry.kind, { 'has-action': entry.action }]"
         >
           <span class="toast-icon">{{ ICONS[entry.kind] }}</span>
           <span class="toast-msg">{{ entry.message }}</span>
@@ -65,6 +65,24 @@ function act(entry: ToastEntry) {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
 }
 
+/* With a button: icon | message | ✕ on top, the button under the message, so
+   a long message keeps its full width instead of wrapping beside it. */
+.toast-item.has-action {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  row-gap: 10px;
+}
+.toast-item.has-action .toast-action {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+}
+.toast-item.has-action .toast-icon,
+.toast-item.has-action .toast-close {
+  margin-top: 2px;
+}
+
 .toast-item.success { border-color: var(--success); }
 .toast-item.error { border-color: var(--danger); }
 .toast-item.booster { border-color: var(--booster); }
@@ -81,8 +99,10 @@ function act(entry: ToastEntry) {
 .toast-msg {
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.45;
   color: var(--text-primary);
   flex: 1;
+  text-wrap: pretty;
 }
 
 .toast-action {
