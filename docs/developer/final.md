@@ -440,6 +440,38 @@ származik, a nagyobbik teljes intervallumra engedése csak lazítja, sosem
 szigorítja a határt), miközben egy valódi "prestige, majd mentés" sosem esik
 alatta.
 
+**Éles incidens — egy teljes menet két mentés között** (2026-10-20): a
+vezető játékost újra és újra korlátozta a rendszer. Nagy Tudományos pályával
+(megtartott egységek, kezdőtőke, automatikus vásárlók) és sok PhD-vel egy
+menet ~11 másodperc lett — egy egész menet elkezdődött, felépült és véget ért
+két mentés között. A prestige-intervallum bevétel-korlátja az előző mentés
+(a menet *eleje*: a megtartott egységek) és a beérkező mentés (a következő
+menet eleje) gazdaságából számolt — egyik sem a menet csúcsa, ami a bevételt
+termelte. 8,1×10¹¹ bevétel 2,1×10¹¹-es korlát ellen: elutasítás és strike,
+majd a kliens a korlátozás lejártakor ugyanazt a mentést küldte újra — újabb
+strike (ban-hurok). A javítás (`affordablePeakState`,
+`services/saveValidator.ts`) egy harmadik gazdaságot is figyelembe vesz: a
+legerősebbet, amit az intervallum saját költségvetése (a meglévő tokenek, a
+bevétel és a kezdőtőkék) megvehetett — menetről menetre: a folyamatban lévő
+menet az előző mentés egységeiből folytatódik, minden további menet a
+`keptUnitCount` szerint megtartottakból indul, és mindegyik legfeljebb a teljes
+költségvetésnyit vesz, valódi áron, a legjobb termelés/ár sorrendben (ez az
+optimum egy egységen belül — azt az egy egységet hozzá is adjuk). Mivel az ár
+típusonként mértani sorban nő, a jóváírt gazdaság csak a követelés
+logaritmusával nő, így egy felfújt követelés sem fér bele a saját korlátjába.
+Ellenőrzés: a valódi frontend-store-ral játszott, valós mentési ütemű
+(autosave 15/30/300 mp vagy kikapcsolva, mentés minden fokozatszerzés után)
+80 órás szimulációk — a régi korlát mellett 41–254 elutasítás és több száz
+érdemi korrekció (strike-ok, illetve a korrekció-minta felé), az újjal
+**nulla** elutasítás és nulla érdemi korrekció. A tesztkészlet
+(`prestigeIntervalEnvelope.test.ts`) a vezető játékos valódi tárolt állapotát
+és a szimulációból vett 73 becsületes intervallumot játssza vissza
+(`honest-prestige-intervals.json`, újragenerálás: `pnpm sim:save-cadence` a
+frontendben). A hamisítási mozgástér egy prestige-intervallumban ugyanabba a
+nagyságrendbe esik, mint amit egy okos hamisító egy *sima* intervallumban
+eddig is kapott (ha a követelt bevételből megvett egységeket és fejlesztéseket
+is bejelenti) — a burok nagyvonalú védőháló, nem pontos mérés.
+
 **Éles incidens — lebegőpontos tolerancia** (2026-09-21): a `checkBound`
 függvény korábban egy fix, **abszolút** (`1e-6`) toleranciát használt az
 "elfogadva"/"korrigálva" határon. Mivel a token-egyenlegek ezres `tick()`
@@ -512,7 +544,8 @@ Utána a statisztikai jeleket súlyozza:
 | `sustainedRate` | átlag >22 cps az egész ablakban | 1 |
 | `singleMethodExceedsHumanLimit` | egyetlen mód (`primary`/`secondary`/`enter`/`space` — `touch`/`other` kizárva, lásd lent) adja a kattintások ≥95%-át, ÉS annak saját rátája >20 cps | 2 |
 | `weak:*` (pointer-fizika) | lásd 2. réteg | 1/jel |
-| `untrustedInput` / integritás-jel | bármelyik jelenléte | döntő, azonnali |
+| `untrustedInput` / csali (`honeypot:*`) | bármelyik jelenléte | **az egyetlen**, ami korlátoz — azonnal |
+| natív-felülírás (`patched:*`), önellentmondó digest | bármelyik jelenléte | csak naplózás (`flagged`) |
 
 A `singleMethodExceedsHumanLimit` jel más okból szigorúbb, mint a
 `sustainedRate`: az utóbbi az ÖSSZESÍTETT rátát nézi, aminek több egyidejű
@@ -640,10 +673,26 @@ görbével — ez legfeljebb a `sustainedRate` jelet adja, ami önmagában sosem
 elég. Egy valódi auto-clicker ezzel szemben a variancia/tartomány/sorozat-
 hosszúság jeleken bukik el, jóval a ráta figyelembevétele előtt.
 
-Egy jelzett (de nem döntő) ablak csak **két egymást követő** jelzett ablak
-után válik tényleges *strike*-á (`AntiCheatState.suspicionScore`) — egy
-határeseti ablak zaj, egy minta nem az. Egy tiszta ablak azonnal nullázza a
-számlálót (önjavító).
+**1.7.2 óta csak biztos bizonyíték korlátoz** (`processDigest`,
+`database/models/antiCheat.ts`): egy böngésző által nem megbízhatónak
+jelölt kattintás (`isTrusted: false` — szkript küldte; minden kattintás-kezelő
+az eredeti eseményt ellenőrzi) vagy egy csali-találat (a rejtett csapda-gomb,
+a hamis `window.__zutiGame.addTokens`). Minden más, amit ez a réteg számol — a
+statisztikai időzítési jelek, egy önmagának ellentmondó digest, egy nem natív
+natív függvény — **csak naplózódik** (`statistical_digest` /
+`digest_inconsistent`, `severity: "info"`, a `detail.flagged` mutatja, mit
+jelzett volna a régi szabály), sosem strike. Ok: mindhárom ért már becsületes
+játékost élesben — egy gyors, egyenletes emberi kattintó (a vezető játékos
+2026-10-20-án szinte minden heartbeat-ben két gyenge jelet adott, és egy
+jelzett ablakkal már csak egy választotta el a strike-tól), négy kliens-oldali
+digest-hiba (2026-09-21-én egy fiók négy strike-ot és mentés-nullázást kapott
+egy rossz alakú digest miatt), illetve böngésző-bővítmények (reklámblokkoló
+szkriptletek, ujjlenyomat-védő kiegészítők) jogosan írják felül a vizsgált
+natív függvényeket. Egy auto-clicker bevételét a mentés-burok kattintás- és
+bevétel-korlátja továbbra is lekorlátozza. A vendég helyi korlátozása
+(`antiCheatStore`) ugyanezt a szabályt követi: csak csali-találat vagy nem
+megbízható kattintás. A strike oka (`lastStrikeReason`) ilyenkor
+`certain_evidence`.
 
 ### 4. réteg — büntetési létra és korlátozás
 
