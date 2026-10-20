@@ -355,6 +355,7 @@ export default {
       insufficient: "Nincs elég PhD-d ehhez a csomóponthoz.",
       changed: "A Tudományos pályád máshol megváltozott — frissítettük.",
       generic: "Ez nem sikerült — próbáld újra.",
+      loginRequired: "A Tudományos pályán vásárláshoz jelentkezz be vagy regisztrálj.",
       unconfirmed: "Nem sikerült megerősíteni a változtatást — a haladásodat újratöltöttük.",
       newWindow: "Egy újabb fokozatszerzés új ablakot nyitott — ott folytathatod a befektetést.",
       closeFailed: "Nem sikerült bezárni a Tudományos pályát — próbáld újra."
@@ -416,7 +417,7 @@ export default {
   guest: {
     warningTitle: "A haladásod nem kerül mentésre",
     warningBody:
-      "Vendégként játszasz. Jelentkezz be vagy regisztrálj, hogy felhőbe mentsd a játékod.",
+      "Vendégként játszol. Jelentkezz be vagy regisztrálj, hogy felhőbe mentsd a játékod és fokozatot szerezhess — ez a menet veled jön.",
     loginBtn: "Bejelentkezés / Regisztráció",
     continueBtn: "Folytatás mentés nélkül"
   },
@@ -428,8 +429,6 @@ export default {
     prestigeTitle: "Megvéded a disszertációdat?",
     prestigeGain: "{gain} PhD fokozatot szerzel.",
     prestigeLose: "A tokenjeid, egységeid és a menet eddigi haladása visszaáll.",
-    prestigeGuestWarning:
-      "Vendégként játszol — a PhD fokozataid elvesznek a lap bezárásakor. Jelentkezz be a megőrzésükhöz.",
     prestigeConfirmBtn: "Disszertáció megvédése"
   },
   upgrader: {
@@ -487,6 +486,8 @@ export default {
     production: "Termelés",
     costDiscount: "Egységár",
     button: "Disszertáció megvédése",
+    loginToPrestige: "Védéshez jelentkezz be",
+    guestNote: "A fokozatszerzéshez fiók kell. Regisztrálj vagy jelentkezz be — ez a menet veled jön.",
     ceremonyGained: "Megszerzett PhD",
     ceremonySubtext: "A kutatásod tartósan megerősíti minden jövőbeli menetet.",
     continueBtn: "Új kezdet"

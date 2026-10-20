@@ -8,6 +8,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useToastStore } from "@/stores/toastStore";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { api, ApiError, CAREER_CODES, SAVE_STALE_CODE } from "@/lib/api";
+import { i18n } from "@/i18n";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
@@ -194,18 +195,23 @@ describe("useCareer", () => {
   });
 
   describe("guest", () => {
-    it("settles locally with the same rules", async () => {
+    // Guests can't prestige, so a guest window only exists for one who kept a
+    // prestiged game when logging out — the tree still needs an account.
+    it("buying and refunding are refused and say an account is needed; closing still works", async () => {
       const game = useGameStore();
       game.phdCount = 10;
       game.applyCareerWindow(true, 1);
+      const push = vi.spyOn(useToastStore(), "push");
       const career = mountCareer();
-      expect(await career.buy("habilitation", click())).toBe(true);
-      expect(game.phdCount).toBe(9);
-      expect(await career.refund("habilitation", click())).toBe(true);
+      expect(await career.buy("habilitation", click())).toBe(false);
+      expect(await career.refund("habilitation", click())).toBe(false);
       expect(game.phdCount).toBe(10);
+      expect(game.careerNodes).toEqual([]);
+      expect(push).toHaveBeenCalledWith("error", i18n.global.t("career.errors.loginRequired"));
+      expect(api.career.buy).not.toHaveBeenCalled();
+      expect(api.career.refund).not.toHaveBeenCalled();
       expect(await career.close()).toBe(true);
       expect(game.careerWindowOpen).toBe(false);
-      expect(api.career.buy).not.toHaveBeenCalled();
     });
   });
 

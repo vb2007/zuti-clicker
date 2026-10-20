@@ -354,6 +354,7 @@ export default {
       insufficient: "Not enough PhDs for that node.",
       changed: "Your Academic Career changed elsewhere — it has been updated.",
       generic: "That didn't work — try again.",
+      loginRequired: "Log in or register to buy from the Academic Career.",
       unconfirmed: "Couldn't confirm that change — your progress has been reloaded.",
       newWindow: "A newer prestige opened a new window — keep investing or finish there.",
       closeFailed: "Couldn't close the Academic Career — try again."
@@ -413,7 +414,8 @@ export default {
   },
   guest: {
     warningTitle: "Progress won't be saved",
-    warningBody: "You're playing as a guest. Log in or register to back up your game to the cloud.",
+    warningBody:
+      "You're playing as a guest. Log in or register to back up your game to the cloud and to prestige — this run comes with you.",
     loginBtn: "Log in / Register",
     continueBtn: "Continue without saving"
   },
@@ -425,8 +427,6 @@ export default {
     prestigeTitle: "Defend your thesis?",
     prestigeGain: "You will earn {gain} PhD.",
     prestigeLose: "Your tokens, units, and this run's progress will reset.",
-    prestigeGuestWarning:
-      "You're playing as a guest — your PhDs are lost when you close this tab. Log in to keep them.",
     prestigeConfirmBtn: "Defend Thesis"
   },
   upgrader: {
@@ -482,6 +482,8 @@ export default {
     production: "Production",
     costDiscount: "Unit cost",
     button: "Defend Thesis",
+    loginToPrestige: "Log in to defend",
+    guestNote: "Prestige needs an account. Register or log in — this run comes with you.",
     ceremonyGained: "PhD earned",
     ceremonySubtext: "Your research permanently strengthens every future run.",
     continueBtn: "Begin Anew"

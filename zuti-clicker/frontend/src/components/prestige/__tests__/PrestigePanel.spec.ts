@@ -4,6 +4,8 @@ import { mount } from "@vue/test-utils";
 import PrestigePanel from "@/components/prestige/PrestigePanel.vue";
 import { useGameStore } from "@/stores/gameStore";
 import { useUiStore } from "@/stores/uiStore";
+import { useAuthStore } from "@/stores/authStore";
+import { i18n } from "@/i18n";
 
 describe("PrestigePanel", () => {
   beforeEach(() => {
@@ -45,6 +47,7 @@ describe("PrestigePanel", () => {
   });
 
   it("clicking the button opens the confirm modal without calling game.prestige directly", async () => {
+    useAuthStore().user = { id: 1, username: "u", email: "u@example.com" };
     const game = useGameStore();
     game.totalTokensEarned = 1_000_000;
     game.runTokensEarned = 1_000_000;
@@ -190,6 +193,47 @@ describe("PrestigePanel", () => {
       game.releasePhdDisplay();
       await wrapper.vm.$nextTick();
       expect(wrapper.find(".phd-count").text()).toBe("0");
+    });
+  });
+
+  describe("as a guest", () => {
+    function readyGuest() {
+      const game = useGameStore();
+      game.totalTokensEarned = 1_000_000;
+      game.runTokensEarned = 1_000_000;
+      return game;
+    }
+
+    it("the ready button asks to log in, still shows the gain, and explains why", () => {
+      readyGuest();
+      const wrapper = mount(PrestigePanel);
+      const btn = wrapper.find(".prestige-btn");
+      expect(btn.attributes("disabled")).toBeUndefined();
+      expect(btn.text()).toContain(i18n.global.t("prestige.loginToPrestige"));
+      expect(btn.text()).toContain("×1");
+      expect(wrapper.find(".guest-note").text()).toBe(i18n.global.t("prestige.guestNote"));
+    });
+
+    // Regression for the guest -> account carry-over: a guest's prestiged run
+    // can't be verified by the server, so a guest must not prestige at all.
+    it("clicking it opens the login dialog, never the prestige confirm", async () => {
+      const game = readyGuest();
+      const ui = useUiStore();
+      const wrapper = mount(PrestigePanel);
+
+      await wrapper.find(".prestige-btn").trigger("click");
+
+      expect(ui.authModalOpen).toBe(true);
+      expect(ui.prestigeConfirmOpen).toBe(false);
+      expect(game.runTokensEarned).toBe(1_000_000);
+    });
+
+    it("the note disappears once logged in", () => {
+      readyGuest();
+      useAuthStore().user = { id: 1, username: "u", email: "u@example.com" };
+      const wrapper = mount(PrestigePanel);
+      expect(wrapper.find(".guest-note").exists()).toBe(false);
+      expect(wrapper.find(".prestige-btn").text()).toContain(i18n.global.t("prestige.button"));
     });
   });
 });

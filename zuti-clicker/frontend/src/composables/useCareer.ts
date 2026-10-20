@@ -20,8 +20,9 @@ import {
  * the PhD balance (and so the PhD discount), so the server must first hold
  * everything the player did so far, and no other save may go out until the
  * server's resulting state has been adopted here. game.careerPending refuses
- * purchases and prestige in between. A guest has no server state, so the same
- * rules (utils/careerCore.ts) run locally.
+ * purchases and prestige in between. Buying and refunding need an account: a
+ * guest can't prestige, so never has a window to buy in — and a guest who
+ * somehow does (one who kept a prestiged game when logging out) is refused.
  *
  * Each action resolves true when it took effect; false when it didn't (the
  * player has already been told why, if there was anything to tell).
@@ -73,12 +74,12 @@ export function useCareer() {
     }
   }
 
-  async function settle(
-    local: () => boolean,
-    remote: () => Promise<CareerMutationResponse>
-  ): Promise<boolean> {
+  async function settle(remote: () => Promise<CareerMutationResponse>): Promise<boolean> {
     if (antiCheat.isRestricted || game.serverActionPending) return false;
-    if (!auth.isLoggedIn) return local();
+    if (!auth.isLoggedIn) {
+      toast.push("error", t("career.errors.loginRequired"));
+      return false;
+    }
 
     game.careerPending = true;
     const epoch = game.resetEpoch;
@@ -108,10 +109,7 @@ export function useCareer() {
       antiCheat.recordClick(false);
       return Promise.resolve(false);
     }
-    return settle(
-      () => game.buyCareerNodeLocal(nodeId),
-      () => api.career.buy(nodeId)
-    );
+    return settle(() => api.career.buy(nodeId));
   }
 
   function refund(nodeId: string, e: Event): Promise<boolean> {
@@ -119,10 +117,7 @@ export function useCareer() {
       antiCheat.recordClick(false);
       return Promise.resolve(false);
     }
-    return settle(
-      () => game.refundCareerNodeLocal(nodeId),
-      () => api.career.refund(nodeId)
-    );
+    return settle(() => api.career.refund(nodeId));
   }
 
   /**

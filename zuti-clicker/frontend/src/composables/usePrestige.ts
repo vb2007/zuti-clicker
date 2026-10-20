@@ -18,8 +18,16 @@ export function usePrestige() {
   const auth = useAuthStore();
   const antiCheat = useAntiCheatStore();
 
+  // Prestige needs an account: a guest's run is unwitnessed, and the server
+  // can only verify a first save that is a single run (see
+  // FIRST_SAVE_PLAYTIME_CREDIT_SECS on the API). A guest who is ready to
+  // prestige is sent to log in or register instead; the run carries over.
   function requestPrestige(): void {
     if (!game.canPrestige) return;
+    if (!auth.isLoggedIn) {
+      ui.authModalOpen = true;
+      return;
+    }
     ui.prestigeConfirmOpen = true;
   }
 
@@ -39,6 +47,10 @@ export function usePrestige() {
       antiCheat.recordClick(false);
       return;
     }
+    if (!auth.isLoggedIn) {
+      ui.prestigeConfirmOpen = false;
+      return;
+    }
     const gained = game.prestige();
     ui.prestigeConfirmOpen = false;
     if (gained <= 0) return;
@@ -47,7 +59,7 @@ export function usePrestige() {
     // Persist immediately rather than waiting for the next autosave tick (up
     // to 5 minutes away) — losing a fresh prestige to a refresh would be the
     // single worst moment for a sync gap to land on.
-    if (auth.isLoggedIn) void save.sync();
+    void save.sync();
   }
 
   function dismissCeremony(): void {
