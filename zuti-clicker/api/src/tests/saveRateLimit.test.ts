@@ -109,6 +109,12 @@ describe("grace lead — ANTICHEAT_MODE=enforce", () => {
     });
     // Logged once, not once per refusal.
     expect(events).toHaveLength(1);
+    // Nothing was earned: the earnings shadow lead must not claim this one
+    // (live review of 1.7.4 — it copied the playtime refusal).
+    const earningsEvents = await prisma.antiCheatEvent.count({
+      where: { userId: id, kind: "lead_earnings_would_refuse" }
+    });
+    expect(earningsEvents).toBe(0);
   }, 20_000);
 
   it("an honest burst — 30 saves back to back at real-time claims — is never refused", async () => {

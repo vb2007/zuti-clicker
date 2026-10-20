@@ -633,7 +633,14 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
             ...verdict.detail
           }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));
         }
-        if (earningsLead && earningsLead.overBy > 0 && !SAVE_LEAD_ENFORCE_EARNINGS) {
+        // Only where earnings alone would have refused it: when playtime or
+        // clicks already did, the shadow lead says nothing new.
+        if (
+          earningsLead &&
+          earningsLead.overBy > 0 &&
+          !rateLimited &&
+          !SAVE_LEAD_ENFORCE_EARNINGS
+        ) {
           await logLeadEvent(userId, "lead_earnings_would_refuse", enforced, now.getTime(), {
             ...earningsLead
           });
