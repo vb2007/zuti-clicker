@@ -127,6 +127,39 @@ describe("saveStore", () => {
       expect(payload.totalTokensEarned).toBe(0);
       expect(payload.phdCount).toBe(0);
     });
+
+    // Regression (review of 1.7.4): a save still on its way when the delete
+    // landed became the account's first save again — carrying the progress
+    // just deleted, refused as unverifiable (the "guest progress" dialog).
+    it("regression: waits for a save in flight, and a sync asked meanwhile sends the fresh game", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 999;
+      let finishInflight!: () => void;
+      vi.mocked(api.save.store)
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finishInflight = () => resolve({ message: "ok", savedAt: new Date().toISOString() });
+            })
+        )
+        .mockResolvedValue({ message: "ok", savedAt: new Date().toISOString() });
+      vi.mocked(api.save.reset).mockResolvedValue({ message: "ok" });
+
+      const save = useSaveStore();
+      void save.sync(); // the autosave in flight
+      await Promise.resolve();
+      const reset = save.resetSave();
+      void save.sync(); // asked while the reset holds the lock
+      await Promise.resolve();
+      expect(api.save.reset).not.toHaveBeenCalled();
+
+      finishInflight();
+      await reset;
+      await vi.waitFor(() => expect(api.save.store).toHaveBeenCalledTimes(2));
+      expect(api.save.reset).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(api.save.store).mock.calls[1]![0].tokens).toBe(0);
+    });
   });
 
   describe("sync()", () => {

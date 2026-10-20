@@ -34,8 +34,9 @@ type SyncOutcome = "ok" | "stale" | "error";
 // A save refused as "saving too fast" (save_rate_limited — never a strike) is
 // resent within the same sync, so a caller waiting on a flush simply waits:
 // up to this many attempts, each after the wait the server asked for, capped.
-// An honest client is never refused (its saves can't run ahead of the
-// server's clock); this only has to be safe, not fast.
+// An honest client isn't refused (its saves can't run ahead of the server's
+// clock) unless one of its saves took over 30 s to reach the server — this
+// only has to be safe, not fast.
 const RATE_LIMIT_ATTEMPTS = 3;
 const RATE_LIMIT_MAX_WAIT_MS = 10_000;
 // After the last attempt: one more sync once the server's wait is over.
@@ -354,20 +355,30 @@ export const useSaveStore = defineStore("save", () => {
 
   async function resetSave(): Promise<void> {
     if (!auth.isLoggedIn) return;
-    // Delete server-side first; if this throws, local game state is left
-    // intact rather than wiped while the server row still exists. Recording
-    // the failure in syncError (rather than swallowing it) means the existing
-    // sync-status indicator in the header shows the player it didn't work,
-    // instead of the confirm modal silently closing as if it had.
-    try {
-      await api.save.reset();
-    } catch (e) {
-      syncError.value = (e as ApiError).message;
-      throw e;
-    }
-    game.hardReset();
-    lastSyncedAt.value = null;
-    syncError.value = null;
+    // Under the sync lock, after any save already on its way: a save landing
+    // after the delete would be the account's first save again — carrying the
+    // progress just deleted, which the server refuses as unverifiable. Syncs
+    // asked for meanwhile run after the release, with the fresh game.
+    await withSyncLock(
+      async () => {
+        if (_inflight) await _inflight;
+        // Delete server-side first; if this throws, local game state is left
+        // intact rather than wiped while the server row still exists.
+        // Recording the failure in syncError (rather than swallowing it) means
+        // the existing sync-status indicator in the header shows the player it
+        // didn't work, instead of the confirm modal silently closing as if it had.
+        try {
+          await api.save.reset();
+        } catch (e) {
+          syncError.value = (e as ApiError).message;
+          throw e;
+        }
+        game.hardReset();
+        lastSyncedAt.value = null;
+        syncError.value = null;
+      },
+      { flush: false }
+    );
   }
 
   /**
