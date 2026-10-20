@@ -6,6 +6,7 @@ import { CAREER_NODES, careerBuyRefusal } from "@/utils/careerCore";
 import { getWindfallGrant } from "@/utils/careerEconomy";
 import { pickWeightedBoosterId } from "@/utils/upgrades";
 import { runAutoBuy } from "@/composables/useAutoBuyer";
+import { settleSpin } from "@/utils/upgrader";
 import {
   UNIT_DEFINITIONS,
   UPGRADE_DEFINITIONS,
@@ -30,15 +31,54 @@ import {
 // sampled evenly over time — the prestige intervals (the hard case: a whole
 // run between two saves) and a few plain ones as controls.
 const RUN = process.env["SAVE_CADENCE_SIM"] === "1";
-const OUT = "../api/src/tests/fixtures/honest-prestige-intervals.json";
+// SIM_FULL_OUT writes EVERY interval of every scenario there instead of the
+// sampled fixture; SIM_SCENARIOS (a JSON array of Scenario) and SIM_HOURS
+// replace the defaults — for wider sweeps than the committed fixture.
+// SIM_PRESET=gate is CI's honest-play gate (.github/workflows/ci.yml): a
+// shorter, broader set whose every interval the API replays through the real
+// envelope (api/src/tests/honestPlayGate.test.ts).
+const FULL_OUT = process.env["SIM_FULL_OUT"];
+const OUT = FULL_OUT ?? "../api/src/tests/fixtures/honest-prestige-intervals.json";
 const DT = 1;
-const MIN_RUN_SECS = 10;
-const HOURS = 80;
-const SCENARIOS = [
+const GATE = process.env["SIM_PRESET"] === "gate";
+const HOURS = Number(process.env["SIM_HOURS"] ?? (GATE ? 30 : 80));
+
+interface Scenario {
+  source: string;
+  autosaveSecs: number; // 0 = autosave off
+  cps: number;
+  prestiged: number; // prestige intervals sampled into the fixture
+  plain: number; // plain intervals sampled into the fixture
+  minRunSecs?: number; // the shortest run before a prestige (default 10)
+  investShare?: number; // the share of held PhDs invested per window (default 0.5)
+  spinEverySecs?: number; // an upgrader spin this often, 0 = never (default)
+  hours?: number; // simulated hours (default HOURS)
+}
+const DEFAULT_SCENARIOS: Scenario[] = [
   { source: "autosave30-cps3", autosaveSecs: 30, cps: 3, prestiged: 24, plain: 4 },
   { source: "autosaveOff-cps8", autosaveSecs: 0, cps: 8, prestiged: 24, plain: 1 },
   { source: "autosave30-cps8", autosaveSecs: 30, cps: 8, prestiged: 16, plain: 4 }
 ];
+// Whole runs between saves deep into the tree; spins at a steady pace; a heavy
+// clicker on a short autosave.
+const GATE_SCENARIOS: Scenario[] = [
+  // 80 h: the deep tree (200+ nodes) only arrives in the second half.
+  { source: "gate-autosaveOff-cps8", autosaveSecs: 0, cps: 8, prestiged: 0, plain: 0, hours: 80 },
+  {
+    source: "gate-autosave30-cps3-spins",
+    autosaveSecs: 30,
+    cps: 3,
+    prestiged: 0,
+    plain: 0,
+    spinEverySecs: 120
+  },
+  { source: "gate-autosave15-cps20", autosaveSecs: 15, cps: 20, prestiged: 0, plain: 0 }
+];
+const SCENARIOS: Scenario[] = process.env["SIM_SCENARIOS"]
+  ? (JSON.parse(process.env["SIM_SCENARIOS"]) as Scenario[])
+  : GATE
+    ? GATE_SCENARIOS
+    : DEFAULT_SCENARIOS;
 
 type Game = ReturnType<typeof useGameStore>;
 type Payload = ReturnType<Game["toSavePayload"]>;
@@ -106,8 +146,8 @@ function buyGreedy(game: Game) {
   }
 }
 
-function invest(game: Game) {
-  const keep = Math.floor(game.phdCount / 2);
+function invest(game: Game, share: number) {
+  const keep = Math.floor(game.phdCount * (1 - share));
   for (;;) {
     const next = CAREER_NODES.filter(
       (n) => careerBuyRefusal(n.id, game.careerNodeIds, game.phdCount - keep) === null
@@ -130,7 +170,9 @@ function incomingOf(p: Payload): Pair["incoming"] {
 }
 
 /** Plays one scenario; returns every save pair and the order nodes were bought in. */
-function play(s: (typeof SCENARIOS)[number]): { pairs: Pair[]; order: string[] } {
+function play(s: Scenario): { pairs: Pair[]; order: string[] } {
+  const minRunSecs = s.minRunSecs ?? 10;
+  const spinEvery = s.spinEverySecs ?? 0;
   vi.useFakeTimers({ now: 0 });
   vi.spyOn(Math, "random").mockImplementation(seededRandom(1));
   setActivePinia(createPinia());
@@ -145,6 +187,8 @@ function play(s: (typeof SCENARIOS)[number]): { pairs: Pair[]; order: string[] }
   let nextBooster = (BOOSTER_SPAWN_MIN_SECS + BOOSTER_SPAWN_MAX_SECS) / 2;
   let bestRate = 0;
   let lastAutoBuy = 0;
+  let lastSpin = 0;
+  let seq = 0;
 
   const save = (afterPrestige = false) => {
     const incoming = incomingOf(game.toSavePayload());
@@ -161,13 +205,13 @@ function play(s: (typeof SCENARIOS)[number]): { pairs: Pair[]; order: string[] }
         incoming
       });
     }
-    prev = { ...incoming, upgraderNet: 0, phdInvested: game.phdInvested };
+    prev = { ...incoming, upgraderNet: prev?.upgraderNet ?? 0, phdInvested: game.phdInvested };
     prevAt = t;
     prevAfterPrestige = afterPrestige;
   };
 
   save();
-  while (t < HOURS * 3600) {
+  while (t < (s.hours ?? HOURS) * 3600) {
     t += DT;
     vi.setSystemTime(t * 1000);
     game.tick(DT);
@@ -202,8 +246,28 @@ function play(s: (typeof SCENARIOS)[number]): { pairs: Pair[]; order: string[] }
         t + (BOOSTER_SPAWN_MIN_SECS + BOOSTER_SPAWN_MAX_SECS) / 2 / game.boosterSpawnMultiplier;
     }
 
+    // An upgrader spin: flushed first, settled by the server on the stored
+    // save (phdCount, upgraderNet, the spin counter), then adopted.
+    if (spinEvery > 0 && t - lastSpin >= spinEvery && game.phdCount >= 10) {
+      lastSpin = t;
+      save();
+      const stake = Math.floor(game.phdCount / 10);
+      const outcome = settleSpin(stake, 200, game.phdCount, Math.floor(Math.random() * 1e6));
+      if (outcome) {
+        prev = {
+          ...prev!,
+          phdCount: outcome.phdCount,
+          upgraderNet: prev!.upgraderNet + (outcome.phdCount - game.phdCount)
+        };
+        game.applySpinResult(outcome.phdCount, ++seq);
+        if (outcome.consolation) {
+          game.grantBooster(outcome.consolation.boosterId, outcome.consolation.remainingMs);
+        }
+      }
+    }
+
     const run = game.runSeconds;
-    if (run >= MIN_RUN_SECS && game.canPrestige) {
+    if (run >= minRunSecs && game.canPrestige) {
       const rate = game.phdGain / run;
       if (rate > bestRate) bestRate = rate;
       if (rate < bestRate * 0.97 || run >= 6 * 3600) {
@@ -211,7 +275,7 @@ function play(s: (typeof SCENARIOS)[number]): { pairs: Pair[]; order: string[] }
         bestRate = 0;
         save(true);
         // Bought in the window, settled by the server on the stored save.
-        invest(game);
+        invest(game, s.investShare ?? 0.5);
         game.closeCareerWindowLocal();
         prev = { ...prev!, phdCount: game.phdCount, phdInvested: game.phdInvested };
         for (const id of game.careerNodeIds) if (!order.includes(id)) order.push(id);
@@ -226,7 +290,7 @@ function play(s: (typeof SCENARIOS)[number]): { pairs: Pair[]; order: string[] }
 }
 
 function sampleEvenly<T>(items: T[], n: number): T[] {
-  if (items.length <= n) return items;
+  if (FULL_OUT || items.length <= n) return items;
   if (n === 1) return [items[Math.floor(items.length / 2)]!];
   const at = (i: number) => Math.round((i * (items.length - 1)) / (n - 1));
   return Array.from({ length: n }, (_, i) => items[at(i)]!);
@@ -245,7 +309,7 @@ describe.skipIf(!RUN)("save cadence simulation", () => {
       if (order.length > purchaseOrder.length) purchaseOrder = order;
       // From the hours the tree makes runs fast enough to fit between saves.
       // Whole runs between two saves first (the hard case), then other prestiges.
-      const late = all.filter((p) => p.hours >= 3);
+      const late = FULL_OUT ? all : all.filter((p) => p.hours >= 3);
       const whole = late.filter((p) => p.wholeRun);
       const wholeTaken = sampleEvenly(whole, Math.ceil((scenario.prestiged * 3) / 4));
       const others = late.filter((p) => p.prestiged && !p.wholeRun);

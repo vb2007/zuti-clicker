@@ -1,8 +1,8 @@
 name: PR Tests
 
-# Runs on every PR into main. Five test stages feed a shared JUnit -> HTML/ODS
-# report pipeline, aggregated and published by two further jobs. Four of the
-# five (typecheck, verify-migrations, frontend-tests, frontend-e2e) have no
+# Runs on every PR into main. Six test stages feed a shared JUnit -> HTML/ODS
+# report pipeline, aggregated and published by two further jobs. Five of the
+# six (typecheck, verify-migrations, frontend-tests, frontend-e2e, honest-play) have no
 # interdependency between them - on this single self-hosted runner they still
 # queue one after another, but this keeps each stage's pass/fail visible on its
 # own and keeps the door open for more runners later. api-tests depends on
@@ -415,6 +415,75 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
+  # Stage 3c: honest-play gate. The frontend's save-cadence sim plays the REAL
+  # game store (fast prestige runs, auto-buyers, the Academic Career, wheel
+  # spins, a heavy clicker) through the REAL client save cadence and writes
+  # every save interval; the API then replays each one through the REAL save
+  # plausibility envelope (api/src/tests/honestPlayGate.test.ts). Every false
+  # anti-cheat ban so far came from the envelope not fitting something an
+  # honest client really does - this catches that before merge. No database,
+  # no server.
+  # ---------------------------------------------------------------------------
+  honest-play:
+    name: Honest play
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install frontend dependencies
+        working-directory: zuti-clicker/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install api dependencies
+        working-directory: zuti-clicker/api
+        run: pnpm install --frozen-lockfile
+
+      # See the typecheck job: generate needs the vars present, never connects.
+      - name: Generate Prisma client
+        working-directory: zuti-clicker/api
+        env:
+          DATABASE_URL: mysql://build:build@build:3306/build
+          SHADOW_DATABASE_URL: mysql://build:build@build:3306/buildShadow
+        run: pnpm exec prisma generate
+
+      - name: Play the honest-play scenarios
+        working-directory: zuti-clicker/frontend
+        env:
+          SIM_FULL_OUT: ${{ runner.temp }}/honest-play-${{ github.run_number }}.json
+        run: pnpm sim:honest-play-gate
+
+      - name: Replay every interval through the save envelope
+        working-directory: zuti-clicker/api
+        env:
+          HONEST_PLAY_FILE: ${{ runner.temp }}/honest-play-${{ github.run_number }}.json
+          JEST_JUNIT_OUTPUT_DIR: reports
+          JEST_JUNIT_OUTPUT_NAME: junit-honest-play-${{ github.run_number }}.xml
+        run: >
+          node --experimental-vm-modules node_modules/jest/bin/jest.js
+          --config=jest.config.cjs --reporters=default --reporters=jest-junit
+          src/tests/honestPlayGate.test.ts
+
+      - name: Remove the generated stream
+        if: always()
+        run: rm -f "${{ runner.temp }}/honest-play-${{ github.run_number }}.json"
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          path: zuti-clicker/api/reports/junit-honest-play-${{ github.run_number }}.xml
+          archive: false
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
   # Stage 4: api tests (Jest/supertest integration tests against a real,
   # dedicated zutiClickerTest database - see CLAUDE.md "Database & migrations"
   # and the CI/CD plan's "What I need from you" section for how the runner's
@@ -564,7 +633,7 @@ jobs:
   # ---------------------------------------------------------------------------
   reports:
     name: Aggregate reports
-    needs: [typecheck, verify-migrations, frontend-tests, frontend-e2e, api-tests]
+    needs: [typecheck, verify-migrations, frontend-tests, frontend-e2e, honest-play, api-tests]
     if: always()
     runs-on: [self-hosted, Linux, X64]
     steps:

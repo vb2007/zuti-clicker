@@ -15,7 +15,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "sim:balance": "BALANCE_SIM=1 vitest run src/utils/__tests__/career-balance.sim.spec.ts",
-    "sim:save-cadence": "SAVE_CADENCE_SIM=1 vitest run src/utils/__tests__/save-cadence.sim.spec.ts"
+    "sim:save-cadence": "SAVE_CADENCE_SIM=1 vitest run src/utils/__tests__/save-cadence.sim.spec.ts",
+    "sim:honest-play-gate": "SAVE_CADENCE_SIM=1 SIM_PRESET=gate vitest run src/utils/__tests__/save-cadence.sim.spec.ts"
   },
   "author": "VB2007",
   "license": "AGPL-3.0-only",
