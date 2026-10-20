@@ -9,7 +9,12 @@ import {
   type PrevSaveSnapshot,
   type IncomingSave
 } from "../services/saveValidator";
-import { applyStrike, logAntiCheatEvent, recordSoftClamp } from "../database/models/antiCheat";
+import {
+  applyStrike,
+  getStoredStrikeCount,
+  logAntiCheatEvent,
+  recordSoftClamp
+} from "../database/models/antiCheat";
 import { PHD_MAX } from "../constants/upgrader";
 import { getCareerModifiers } from "../services/careerCore";
 import { toCareerState } from "../database/models/career";
@@ -240,8 +245,9 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *           the account's current value — the save was made before a later
  *           wheel spin (or from a copy of the game that predates the
  *           save's current state), so the client must reload. On an
- *           account's FIRST save (no stored save yet — progress made as a
- *           guest) an envelope rejection is never a strike and carries code
+ *           account's FIRST save (no stored save, never struck — progress
+ *           made as a guest) an envelope rejection or a material clamp is
+ *           never a strike, writes nothing and carries code
  *           "save_first_unverifiable": the client offers to start the account
  *           fresh or to log out and keep the guest progress.
  *         content:
@@ -427,17 +433,29 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
 
       const enforced = ANTICHEAT_MODE === "enforce";
       // A first save carries progress made as a guest, before the account
-      // existed — unwitnessed, so a rejection is logged but never a strike: a
-      // brand-new account has no standing to lose, and a cheat would simply
-      // register again, so a strike would only ever land on honest players.
-      const firstSave = previous === null;
-      if (verdict.outcome === "reject" && firstSave) {
+      // existed — unwitnessed, so one the envelope can't verify is refused,
+      // logged, but never a strike: a brand-new account has no standing to
+      // lose, and a cheat would simply register again, so a strike would only
+      // ever land on honest players. "Can't verify" includes a MATERIAL clamp:
+      // the client never learns the clamped values, so its next save would
+      // carry the unclamped ones again — no longer a first save, and struck.
+      // Only an account that was never struck qualifies: a save wiped by the
+      // strike ladder (or deleted by a struck player) must not turn every
+      // later reject into a free one.
+      const firstSave = previous === null && (await getStoredStrikeCount(userId)) === 0;
+      const refuseFirstSave =
+        firstSave &&
+        (verdict.outcome === "reject" || (verdict.outcome === "clamp" && verdict.material));
+      if (refuseFirstSave) {
         await logAntiCheatEvent({
           userId,
           kind: "first_save_reject",
           severity: "info",
           mode: ANTICHEAT_MODE,
-          detail: { reason: verdict.reason, ...verdict.detail },
+          detail:
+            verdict.outcome === "reject"
+              ? { reason: verdict.reason, ...verdict.detail }
+              : { reasons: verdict.reasons, ...verdict.detail },
           enforced
         }).catch((e: unknown) => console.error("Failed to log first-save rejection:", e));
       } else if (verdict.outcome === "reject") {
@@ -456,8 +474,13 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       }
 
       if (enforced) {
+        if (refuseFirstSave) {
+          const r = Responses.SAVE.FIRST_SAVE_UNVERIFIABLE;
+          res.status(r.status).json(r.body);
+          return;
+        }
         if (verdict.outcome === "reject") {
-          const r = firstSave ? Responses.SAVE.FIRST_SAVE_UNVERIFIABLE : Responses.SAVE.IMPLAUSIBLE;
+          const r = Responses.SAVE.IMPLAUSIBLE;
           res.status(r.status).json(r.body);
           return;
         }

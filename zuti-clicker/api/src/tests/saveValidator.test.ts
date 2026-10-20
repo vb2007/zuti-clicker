@@ -74,7 +74,14 @@ function guestRun(
     upgrades
   });
 }
-const EARLY_UPGRADES = ["chalk", "firmHandshake", "redPen", "morningCoffee", "laserPointer", "luckyGuess"];
+const EARLY_UPGRADES = [
+  "chalk",
+  "firmHandshake",
+  "redPen",
+  "morningCoffee",
+  "laserPointer",
+  "luckyGuess"
+];
 const LATE_UPGRADES = [
   ...EARLY_UPGRADES,
   "officeHours",
@@ -139,6 +146,9 @@ describe("evaluateSaveEnvelope — a guest's first save after registering", () =
     const verdict = evaluateSaveEnvelope(null, JUST_REGISTERED, NOW, GUEST_30_H);
     expect(verdict.outcome).toBe("clamp");
     if (verdict.outcome === "clamp") {
+      // Material — so PUT /save refuses it as a first save rather than writing
+      // the clamp (see envelopeEnforcement.test.ts).
+      expect(verdict.material).toBe(true);
       expect(verdict.reasons).toContain("elapsed_exceeds_wallclock");
       expect(verdict.clamped.elapsedSeconds).toBeCloseTo(
         FIRST_SAVE_PLAYTIME_CREDIT_SECS + CLOCK_GRACE_SECS,

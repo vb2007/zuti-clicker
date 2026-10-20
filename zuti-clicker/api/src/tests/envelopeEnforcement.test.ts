@@ -165,6 +165,50 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=enforce", () =
       });
     });
 
+    // Regression (review of 1.7.1): 24-48 h of guest play used to be CLAMPED
+    // to the 24 h credit and written — but the client never learns clamped
+    // values, so its next save carried the unclamped playtime again, was no
+    // longer a first save, and was struck. A material clamp on a first save is
+    // refused instead, exactly like a reject.
+    it("a first save only the clamp tier could fit (30 h of play) is refused, not written", async () => {
+      const cookie = await registerAndLogin();
+      const thirtyHours = { ...TEN_MINUTE_GUEST, elapsedSeconds: 30 * 3600, runSeconds: 30 * 3600 };
+      const res = await api.put("/save").set("Cookie", cookie).send(thirtyHours);
+      expect(res.status).toBe(Responses.SAVE.FIRST_SAVE_UNVERIFIABLE.status);
+      expect(res.body.code).toBe(Responses.SAVE.FIRST_SAVE_UNVERIFIABLE.body.code);
+      expect((await api.get("/save").set("Cookie", cookie)).body.save).toBeNull();
+      expect(await strikes(cookie)).toMatchObject({ strikeCount: 0, isRestricted: false });
+    });
+
+    // Regression (review of 1.7.1): a save wiped by the strike ladder (strike
+    // 5 deletes it) also has no stored save — it must not turn every later
+    // reject on that account into a free one.
+    it("an account that was struck before gets no first-save exemption", async () => {
+      const user = TestData.generateUser();
+      await api.post("/auth/register").send(user);
+      const login = await api
+        .post("/auth/login")
+        .send({ email: user.email, password: user.password });
+      const cookie = (login.headers["set-cookie"] as unknown as string[])[0].split(";")[0];
+      const { id } = await prisma.user.findUniqueOrThrow({
+        where: { email: user.email },
+        select: { id: true }
+      });
+      await prisma.antiCheatState.upsert({
+        where: { userId: id },
+        update: { strikeCount: 1 },
+        create: { userId: id, strikeCount: 1 }
+      });
+
+      const res = await api
+        .put("/save")
+        .set("Cookie", cookie)
+        .send({ ...TEN_MINUTE_GUEST, tokens: 1e12, totalTokensEarned: 1e12 });
+      expect(res.status).toBe(Responses.SAVE.IMPLAUSIBLE.status);
+      expect(res.body.error).toBe(Responses.SAVE.IMPLAUSIBLE.body.error);
+      expect((await strikes(cookie)).strikeCount).toBe(2);
+    });
+
     it("once a save exists, an implausible one is IMPLAUSIBLE and struck as before", async () => {
       const cookie = await registerAndLogin();
       expect((await api.put("/save").set("Cookie", cookie).send(TEN_MINUTE_GUEST)).status).toBe(
@@ -200,6 +244,13 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=enforce", () =
 
   it("silently clamps a save between 1x and 2x over the bound, returning 200", async () => {
     const cookie = await registerAndLogin();
+    // Not the first save: a first save that needs a material clamp is refused
+    // instead (see "a guest's first save after registering" below).
+    const seed = await api
+      .put("/save")
+      .set("Cookie", cookie)
+      .send({ tokens: 0, totalTokensEarned: 0, totalClicks: 0, elapsedSeconds: 0, units: [] });
+    expect(seed.status).toBe(200);
     const submitted = ONE_CLICK_EARN_BOUND * 1.4; // within the clamp band, not the reject band
     const res = await api.put("/save").set("Cookie", cookie).send({
       tokens: submitted,

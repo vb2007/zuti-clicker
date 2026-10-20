@@ -69,7 +69,9 @@ export const CLOCK_GRACE_SECS = 5;
 // first save gains no more than a throwaway account that simply waited this
 // long — the same envelope any long gap between two saves already gets — and
 // can claim at most this much playtime on the leaderboard. Guests can't
-// prestige, so the progress being bounded is always one run.
+// prestige (the client refuses it), so an honest guest's progress is one run
+// — which this window covers. A first save the envelope still can't verify is
+// refused without a strike (see the PUT /save controller).
 export const FIRST_SAVE_PLAYTIME_CREDIT_SECS = 24 * 3600;
 
 // Hard ceiling on clicks/sec used to bound how many clicks could have been

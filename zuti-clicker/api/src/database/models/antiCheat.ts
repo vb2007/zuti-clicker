@@ -119,6 +119,20 @@ async function decayIfDue<
   return updated as unknown as T;
 }
 
+/**
+ * The account's stored strike count, read without creating a state row (and
+ * without applying decay) — 0 for an account never seen by the strike ladder.
+ * Read-only on purpose: PUT /save's first-save check runs on concurrent first
+ * saves, where a create would race (see getOrCreateState).
+ */
+export async function getStoredStrikeCount(userId: number): Promise<number> {
+  const state = await prisma.antiCheatState.findUnique({
+    where: { userId },
+    select: { strikeCount: true }
+  });
+  return state?.strikeCount ?? 0;
+}
+
 async function getOrCreateState(userId: number) {
   return prisma.antiCheatState.upsert({
     where: { userId },

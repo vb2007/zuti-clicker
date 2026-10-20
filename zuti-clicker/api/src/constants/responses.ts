@@ -54,8 +54,9 @@ export class Responses {
           "This save could not be verified as achievable since your last sync and was rejected. Reload to continue from your last verified save."
       }
     },
-    // The same reject tier on an account's FIRST save — progress made as a
-    // guest, before the account existed, that the envelope couldn't verify.
+    // The same reject tier (or a material clamp) on an account's FIRST save —
+    // progress made as a guest, before the account existed, that the envelope
+    // couldn't verify. Nothing is written.
     // Never a strike (a brand-new account has nothing to protect, and a cheat
     // just registers again), and the client offers a choice instead of a
     // reload: start the account fresh, or log out and keep the guest progress.
