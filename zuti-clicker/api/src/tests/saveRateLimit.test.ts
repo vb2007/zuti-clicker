@@ -198,6 +198,51 @@ describe("grace lead — ANTICHEAT_MODE=enforce", () => {
       expect(await strikes(account.cookie)).toBe(1);
     });
 
+    // Regression (live review of 1.7.4): the device the player reset on saved
+    // the fresh game first; another device still running the old game then
+    // sent that — not a first save any more, rejected, and struck.
+    it("a second device's pre-reset progress after the fresh save: refused, never struck", async () => {
+      const account = await registerAndLogin();
+      await monthOld(account);
+      const old = save(10 * DAY, 1000);
+      expect((await api.put("/save").set("Cookie", account.cookie).send(old)).status).toBe(200);
+      expect((await api.delete("/save").set("Cookie", account.cookie)).status).toBe(200);
+      expect((await api.put("/save").set("Cookie", account.cookie).send(save(5))).status).toBe(200);
+      const res = await api
+        .put("/save")
+        .set("Cookie", account.cookie)
+        .send({ ...old, elapsedSeconds: old.elapsedSeconds + 60 });
+      expect(res.status).toBe(Responses.SAVE.IMPLAUSIBLE.status);
+      expect(res.body.code).toBe(Responses.SAVE.IMPLAUSIBLE.body.code);
+      expect(await strikes(account.cookie)).toBe(0);
+      expect((await stored(account.id)).elapsedSeconds).toBe(5);
+      const events = await prisma.antiCheatEvent.findMany({
+        where: { userId: account.id, kind: "reset_stale_copy" }
+      });
+      expect(events).toHaveLength(1);
+    });
+
+    it("a reject after a strike that came after the reset still strikes", async () => {
+      const account = await registerAndLogin();
+      await monthOld(account);
+      expect((await api.put("/save").set("Cookie", account.cookie).send(save(10))).status).toBe(
+        200
+      );
+      expect((await api.delete("/save").set("Cookie", account.cookie)).status).toBe(200);
+      expect((await api.put("/save").set("Cookie", account.cookie).send(save(5))).status).toBe(200);
+      await prisma.antiCheatState.upsert({
+        where: { userId: account.id },
+        update: { strikeCount: 1, lastStrikeAt: new Date(Date.now() + 1000) },
+        create: { userId: account.id, strikeCount: 1, lastStrikeAt: new Date(Date.now() + 1000) }
+      });
+      const res = await api
+        .put("/save")
+        .set("Cookie", account.cookie)
+        .send(save(10 * DAY, 1000));
+      expect(res.status).toBe(Responses.SAVE.IMPLAUSIBLE.status);
+      expect(await strikes(account.cookie)).toBe(2);
+    });
+
     it("after the strike ladder's own wipe: a reject still strikes", async () => {
       const account = await registerAndLogin();
       await monthOld(account);

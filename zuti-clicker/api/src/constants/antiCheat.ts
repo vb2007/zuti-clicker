@@ -112,6 +112,13 @@ export const SAVE_LEAD_ENFORCE_EARNINGS = false;
 // script would otherwise write ten audit rows a second.
 export const SAVE_RATE_LIMIT_LOG_INTERVAL_MS = 5 * 60_000;
 
+// For this long after a player deletes their own save (DELETE /save, after
+// their last strike), a save the envelope rejects is refused without a strike:
+// it may be another device still running the game from before the reset, its
+// tab asleep meanwhile. The player lost everything with the reset, so the
+// only thing given up is a strike's deterrent — never any progress.
+export const SAVE_RESET_STALE_COPY_DAYS = 7;
+
 // Hard ceiling on clicks/sec used to bound how many clicks could have been
 // registered in an interval. This is a generous envelope backstop, not the
 // statistical detector's flag threshold (see SUSTAINED_RATE_CPS below) — a

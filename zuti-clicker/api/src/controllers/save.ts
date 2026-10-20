@@ -7,7 +7,8 @@ import {
   ANTICHEAT_MODE,
   floatTolerance,
   SAVE_LEAD_ENFORCE_EARNINGS,
-  SAVE_RATE_LIMIT_LOG_INTERVAL_MS
+  SAVE_RATE_LIMIT_LOG_INTERVAL_MS,
+  SAVE_RESET_STALE_COPY_DAYS
 } from "../constants/antiCheat";
 import {
   evaluateSaveEnvelope,
@@ -560,6 +561,25 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       // struck.
       const staleCopy =
         !firstSave && verdict.outcome === "reject" && verdict.reason === "monotonicity_violation";
+      // The same second device, one save later: the player deleted their save,
+      // the device they did it on already saved the fresh game, and another
+      // device still running the old one now sends that — far ahead of the
+      // fresh save, rejected. Within SAVE_RESET_STALE_COPY_DAYS of the
+      // player's own reset (after their last strike, like the first-save rule
+      // above) a reject is refused without a strike: the save_implausible
+      // reply makes that device adopt the fresh save. Read only on a reject.
+      let resetCopy = false;
+      if (verdict.outcome === "reject" && !staleCopy && !firstSave && previous !== null) {
+        const [ownResetAt, strikes] = await Promise.all([
+          getSaveResetAt(userId),
+          getStoredStrikeState(userId)
+        ]);
+        resetCopy =
+          ownResetAt !== null &&
+          now.getTime() - ownResetAt.getTime() < SAVE_RESET_STALE_COPY_DAYS * 86_400_000 &&
+          (strikes.lastStrikeAt === null ||
+            ownResetAt.getTime() > strikes.lastStrikeAt.getTime());
+      }
       if (staleCopy) {
         await logAntiCheatEvent({
           userId,
@@ -581,6 +601,15 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
               : { reasons: verdict.reasons, ...verdict.detail },
           enforced
         }).catch((e: unknown) => console.error("Failed to log first-save rejection:", e));
+      } else if (verdict.outcome === "reject" && resetCopy) {
+        await logAntiCheatEvent({
+          userId,
+          kind: "reset_stale_copy",
+          severity: "info",
+          mode: ANTICHEAT_MODE,
+          detail: { reason: verdict.reason, ...verdict.detail },
+          enforced
+        }).catch((e: unknown) => console.error("Failed to log a pre-reset copy:", e));
       } else if (verdict.outcome === "reject") {
         // A rejection is already >REJECT_MULTIPLIER times what's achievable
         // or a monotonicity break — certain enough to strike immediately,
