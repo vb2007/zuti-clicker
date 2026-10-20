@@ -101,9 +101,23 @@ describe("evaluateDigest — zero-false-positive signals", () => {
     expect(verdict.flagged).toBe(true);
   });
 
-  it("flags immediately on any integrity flag, regardless of everything else", () => {
-    const verdict = evaluateDigest(baseDigest({ integrityFlags: ["honeypotTouched"] }));
+  it("flags immediately on a honeypot hit, regardless of everything else", () => {
+    const verdict = evaluateDigest(baseDigest({ integrityFlags: ["honeypot:clickTrap"] }));
     expect(verdict.flagged).toBe(true);
+  });
+
+  // Regression: browser extensions legitimately patch natives — a patched
+  // native is logged as a signal but neither flags the window nor stops it
+  // being scored like any other.
+  it("a patched native is only logged: never decisive, never scored", () => {
+    const verdict = evaluateDigest(
+      baseDigest({ integrityFlags: ["patched:setInterval", "patched:dateNow"] })
+    );
+    expect(verdict.flagged).toBe(false);
+    expect(verdict.score).toBe(evaluateDigest(baseDigest()).score);
+    expect(verdict.signals).toEqual(
+      expect.arrayContaining(["integrity:patched:setInterval", "integrity:patched:dateNow"])
+    );
   });
 
   // Regression: the unscoreable-window check (added alongside this signal

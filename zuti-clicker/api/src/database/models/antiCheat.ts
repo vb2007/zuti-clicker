@@ -286,11 +286,10 @@ export interface DigestResult {
 }
 
 /**
- * Scores a reported click-timing digest (services/antiCheat.ts) and applies
- * the "2 consecutive flagged windows" escalation — except for the
- * zero-false-positive signals (untrusted input, integrity flags) and outright
- * digest inconsistency, which are decisive on the very first report (see
- * evaluateDigest's own comments).
+ * Scores a reported click-timing digest (services/antiCheat.ts) and logs the
+ * verdict. Only certain evidence — an untrusted click or a honeypot hit —
+ * strikes, on the very first report; everything else is logged for review
+ * (`flagged` in the event detail) and never acted on. See the comment below.
  */
 export async function processDigest(
   userId: number,

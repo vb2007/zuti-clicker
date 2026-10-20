@@ -162,7 +162,7 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     });
   }
 
-  it("regression: a sustained autoclicker-shaped session is logged as flagged but never restricts", async () => {
+  it("regression: an autoclicker-shaped session is logged as flagged, never restricted", async () => {
     const cookie = await registerAndLogin();
     const liveDigest = { ...AUTOCLICKER_DIGEST, windowMs: 60001.200000000186 };
     for (let i = 0; i < 5; i++) {
@@ -204,7 +204,7 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     methodCounts: { primary: 0, secondary: 1260, enter: 0, space: 0 }
   };
 
-  it("regression: a single-method high-rate session is logged as flagged but never restricts", async () => {
+  it("regression: a single-method high-rate session is logged, never restricted", async () => {
     const cookie = await registerAndLogin();
     const res = await reportTwice(cookie, RIGHT_CLICK_AUTOCLICKER_DIGEST);
     expect(res.status).toBe(200);
@@ -265,7 +265,8 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
   // bookkeeping problem, not evidence of cheating — logged, never a strike.
   it("regression: an internally-inconsistent digest is logged but never restricts", async () => {
     const cookie = await registerAndLogin();
-    const inconsistent = { ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }; // sum 0, claims 50
+    // The bucket sum is 0, but it claims 50 clicks.
+    const inconsistent = { ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() };
     for (let i = 0; i < 3; i++) {
       const res = await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistent);
       expect(res.status).toBe(200);

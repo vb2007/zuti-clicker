@@ -240,18 +240,20 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   }
 
   // Zero-false-positive signals — a script dispatching synthetic events
-  // through the click handler (untrustedClicks) or touching a honeypot/
-  // failing a script-integrity check (integrityFlags) has no legitimate
-  // explanation at all (see Layer 2's design), so either is immediately
-  // decisive on its own — no need to wait for a second corroborating signal
-  // or a second consecutive window the way the statistical signals below do.
-  // Checked BEFORE the unscoreable-window gate below on purpose: this is
-  // CERTAIN evidence, and must never be swallowed just because the same
+  // through the click handler (untrustedClicks) or touching a honeypot
+  // (`honeypot:*`) has no legitimate explanation at all (see Layer 2's
+  // design). These are the only evidence that restricts an account (see
+  // processDigest), so they short-circuit the scoring below. A patched native
+  // (`patched:*`) does NOT: browser extensions cause it legitimately, so it is
+  // carried along as an ordinary logged signal and the window is scored as
+  // usual. Checked BEFORE the unscoreable-window gate below on purpose: this
+  // is CERTAIN evidence, and must never be swallowed just because the same
   // forged report also claims an oversized windowMs — an oversized windowMs
   // costs a real client nothing to fake (a single scalar, no side effects),
   // so a forger pairing it with real tamper evidence to launder past
   // detection would otherwise be trivial.
-  if (digest.untrustedClicks > 0 || digest.integrityFlags.length > 0) {
+  const honeypotFlags = digest.integrityFlags.filter((f) => f.startsWith("honeypot:"));
+  if (digest.untrustedClicks > 0 || honeypotFlags.length > 0) {
     const signals = digest.untrustedClicks > 0 ? ["untrustedInput"] : [];
     for (const flag of digest.integrityFlags) signals.push(`integrity:${flag}`);
     return { consistent: true, scoreable: true, score: 99, signals, flagged: true };
@@ -403,5 +405,7 @@ export function evaluateDigest(digest: AntiCheatDigest): DigestVerdict {
   const distinctSignals = new Set(signals).size;
   const flagged = score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG;
 
+  // A patched native is reported for the log only — never scored (see above).
+  for (const flag of digest.integrityFlags) signals.push(`integrity:${flag}`);
   return { consistent: true, scoreable: true, score, signals, flagged };
 }

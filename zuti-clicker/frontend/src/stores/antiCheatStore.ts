@@ -89,8 +89,8 @@ function guestRestrictionMinutes(strike: number): number {
  *
  * Guests (never authenticated, so POST /anticheat/report has nothing to
  * report to) get a deliberately narrower, LOCAL-ONLY path: only the
- * zero-false-positive signals (untrusted/synthetic clicks, a
- * honeypot/integrity trip) can restrict a guest, tracked in localStorage —
+ * zero-false-positive signals (untrusted/synthetic clicks, a honeypot hit)
+ * can restrict a guest — never a patched native — tracked in localStorage —
  * see the plan's "guest mode" decision. A logged-in account's restriction
  * always comes from the server; nothing here ever sets it locally for one.
  */

@@ -47,6 +47,7 @@ describe("antiCheatStore", () => {
     // The honeypot global is installed once per window and bound to the store
     // that installed it — a fresh store per test needs a fresh one.
     delete (window as unknown as Record<string, unknown>)["__zutiGame"];
+    vi.mocked(checkNativeIntegrity).mockReturnValue([]);
     vi.mocked(api.anticheat.report).mockReset().mockResolvedValue({
       message: "ok",
       status: "clean",
@@ -133,7 +134,6 @@ describe("antiCheatStore", () => {
       await store.sendHeartbeat();
       expect(store.isRestricted).toBe(false);
       expect(store.strikeCount).toBe(0);
-      vi.mocked(checkNativeIntegrity).mockReturnValue([]);
     });
 
     it("a honeypot hit still restricts a guest", async () => {

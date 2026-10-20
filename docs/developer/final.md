@@ -460,7 +460,8 @@ optimum egy egységen belül — azt az egy egységet hozzá is adjuk). Mivel az
 típusonként mértani sorban nő, a jóváírt gazdaság csak a követelés
 logaritmusával nő, így egy felfújt követelés sem fér bele a saját korlátjába.
 Ellenőrzés: a valódi frontend-store-ral játszott, valós mentési ütemű
-(autosave 15/30/300 mp vagy kikapcsolva, mentés minden fokozatszerzés után)
+(autosave 15/30/300 mp vagy kikapcsolva, mentés minden fokozatszerzés után;
+a tárolt generátor a 30 mp-es és a kikapcsolt ütemet futtatja)
 80 órás szimulációk — a régi korlát mellett 41–254 elutasítás és több száz
 érdemi korrekció (strike-ok, illetve a korrekció-minta felé), az újjal
 **nulla** elutasítás és nulla érdemi korrekció. A tesztkészlet
@@ -592,7 +593,7 @@ külön mezőt is hordoz: `scoreable: false` jelenti, hogy a digest NEM
 bizonyíték semmire (sem a hiányos/rossz alakú body, sem egy felfüggesztett
 ablak) — ez sosem strike-ol, de egy valódi jelzett sorozatot sem "mos"
 tisztára (a `suspicionScore` érintetlen marad). Egy `consistent: false`
-(hisztogram-összeg vagy ráta önellentmondás) **továbbra is azonnal döntő**,
+(hisztogram-összeg vagy ráta önellentmondás) **továbbra is azonnal döntő** (1.7.2 óta már nem — lásd lent, „csak biztos bizonyíték korlátoz”),
 pontosan úgy, mint korábban — ez a rész maga nem volt hibás, csak a
 "strukturálisan rossz alakú" (`malformed_digest`) esettel volt egy közös
 kategóriában a `windowMs` felső korlátjával együtt. (Egy önellenőrző

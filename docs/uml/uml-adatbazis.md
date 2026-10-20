@@ -91,7 +91,7 @@ erDiagram
         DateTime lastStrikeAt          "Utolsó strike időpontja (NULL, ha még sosem volt)"
         String   lastStrikeReason      "Az utolsó strike-ot kiváltó jelzés (max 64 karakter)"
         DateTime lastCleanAt           "A tiszta-nap-számláló horgonya"
-        Int      suspicionScore        "Egymást követő gyanús ablakok száma"
+        Int      suspicionScore        "1.7.2 óta nem használt (mindig 0)"
         Int      softClampCount        "LÉNYEGES csendes korrekciók száma a jelenlegi ablakban"
         DateTime softClampWindowStartedAt "A gördülő csendes-korrekció-ablak kezdete (NULL, ha még sosem volt lényeges korrekció)"
         Int      highRateWindows       "Egymást követő magas-ráta ablakok száma"

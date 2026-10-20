@@ -228,7 +228,8 @@ function play(s: (typeof SCENARIOS)[number]): { pairs: Pair[]; order: string[] }
 function sampleEvenly<T>(items: T[], n: number): T[] {
   if (items.length <= n) return items;
   if (n === 1) return [items[Math.floor(items.length / 2)]!];
-  return Array.from({ length: n }, (_, i) => items[Math.round((i * (items.length - 1)) / (n - 1))]!);
+  const at = (i: number) => Math.round((i * (items.length - 1)) / (n - 1));
+  return Array.from({ length: n }, (_, i) => items[at(i)]!);
 }
 
 describe.skipIf(!RUN)("save cadence simulation", () => {
