@@ -192,12 +192,17 @@ describe("ClickerCircle", () => {
   // rate. A repeated keydown is now cancelled before it can activate.
   it("regression: a held (repeating) Enter/Space keydown is cancelled; a fresh press is not", () => {
     const wrapper = mount(ClickerCircle);
-    for (const code of ["Enter", "Space"]) {
-      const fresh = new KeyboardEvent("keydown", { code, bubbles: true, cancelable: true });
+    const keys = [
+      { key: "Enter", code: "Enter" },
+      { key: "Enter", code: "NumpadEnter" }, // the numpad's Enter — same activation
+      { key: " ", code: "Space" }
+    ];
+    for (const k of keys) {
+      const fresh = new KeyboardEvent("keydown", { ...k, bubbles: true, cancelable: true });
       wrapper.element.dispatchEvent(fresh);
       expect(fresh.defaultPrevented).toBe(false);
       const repeat = new KeyboardEvent("keydown", {
-        code,
+        ...k,
         repeat: true,
         bubbles: true,
         cancelable: true

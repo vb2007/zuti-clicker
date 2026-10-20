@@ -152,13 +152,16 @@ function handleKeyDown(e: KeyboardEvent) {
   // <button> every repeated Enter keydown fires another trusted click, so
   // holding Enter would click at the OS repeat rate (user-adjustable, 100+/s
   // on Linux) with no tool at all. Only a fresh press counts. (Space only
-  // activates on keyup, but it is held to the same rule.)
-  if (e.repeat && (e.code === "Enter" || e.code === "Space")) {
+  // activates on keyup, but it is held to the same rule.) The numpad's Enter
+  // ("NumpadEnter") activates the button too, so it is covered as well.
+  const isEnter = e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter";
+  const isSpace = e.key === " " || e.code === "Space";
+  if (e.repeat && (isEnter || isSpace)) {
     e.preventDefault();
     return;
   }
-  if (e.code === "Enter") lastKeyMethod = "enter";
-  else if (e.code === "Space") lastKeyMethod = "space";
+  if (isEnter) lastKeyMethod = "enter";
+  else if (isSpace) lastKeyMethod = "space";
 }
 
 function handleClick(e: MouseEvent) {
