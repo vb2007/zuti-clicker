@@ -11,6 +11,7 @@ export const UNIT_DEFINITIONS: UnitDefinition[] = [
   { id: "theta", baseCost: 330_000_000, baseProduction: 30_000, costGrowth: 1.15 }
 ];
 
+// keep in sync with api/src/services/saveValidator.ts's CLIENT_TICK_RATE
 export const TICK_RATE = 20;
 export const BASE_TOKENS_PER_CLICK = 1;
 

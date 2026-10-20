@@ -5,6 +5,8 @@ import {
   type IncomingSave
 } from "../services/saveValidator.js";
 import { emptyCareerModifiers } from "../services/careerCore.js";
+import { getBulkCost } from "../services/economy.js";
+import { getUnitDefinition } from "../constants/gameBalance.js";
 
 // Regression (live review of 1.7.4): the client adds every click and every
 // tick's production to `tokens` and to `totalTokensEarned` separately, and at
@@ -82,6 +84,24 @@ describe("float accumulation at huge lifetime totals", () => {
       );
     }
   );
+
+  // An auto-buyer's purchases subtract from tokens too, each rounding at the
+  // balance's own size (never coarser than the lifetime total's).
+  it("an auto-buyer buying unit after unit at 5e15 is never a material clamp", () => {
+    const prev = { ...prevSave(5e15), tokens: 4e14 };
+    const incoming = play(prev);
+    const alpha = getUnitDefinition("alpha")!;
+    let tokens = incoming.tokens;
+    for (let owned = 100; owned < 160; owned++) tokens -= getBulkCost(alpha, owned, 1, 1);
+    const verdict = evaluateSaveEnvelope(prev, USER_CREATED_AT, NOW, {
+      ...incoming,
+      tokens,
+      units: [{ unitId: "alpha", owned: 160 }]
+    });
+    expect(verdict.outcome === "accept" || (verdict.outcome === "clamp" && !verdict.material)).toBe(
+      true
+    );
+  });
 
   it("still clamps tokens nobody earned, well past the rounding", () => {
     const prev = prevSave(5e15);

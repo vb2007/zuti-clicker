@@ -222,6 +222,23 @@ describe("grace lead — ANTICHEAT_MODE=enforce", () => {
       expect(events).toHaveLength(1);
     });
 
+    it("a reject more than 7 days after the reset strikes again", async () => {
+      const account = await registerAndLogin();
+      await monthOld(account);
+      expect((await api.delete("/save").set("Cookie", account.cookie)).status).toBe(200);
+      expect((await api.put("/save").set("Cookie", account.cookie).send(save(5))).status).toBe(200);
+      await prisma.user.update({
+        where: { id: account.id },
+        data: { saveResetAt: new Date(Date.now() - 8 * DAY * 1000) }
+      });
+      const res = await api
+        .put("/save")
+        .set("Cookie", account.cookie)
+        .send(save(10 * DAY, 1000));
+      expect(res.status).toBe(Responses.SAVE.IMPLAUSIBLE.status);
+      expect(await strikes(account.cookie)).toBe(1);
+    });
+
     it("a reject after a strike that came after the reset still strikes", async () => {
       const account = await registerAndLogin();
       await monthOld(account);

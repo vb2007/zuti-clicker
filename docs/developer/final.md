@@ -572,8 +572,12 @@ Ezt a „előnyt" a mentés tárolja (`GameSave.graceLeadSecs`), és a
   időtúllépése fölött) fölé menne, `429 save_rate_limited`; különben az új előnyt
   a mentéssel együtt írja.
 
-Egy mentés-spammelő így összesen legfeljebb 30 mp-cel, plusz az idő 5%-ával
-futhat a valóság elé (korábban ~5000%-kal). Becsületes kliens egyetlen módon
+Egy mentés-spammelő így **játékidőben és kattintásban** összesen legfeljebb
+30 mp-cel, plusz az idő 5%-ával futhat a valóság elé (korábban ~5000%-kal). A
+**bevétel** 1.7.4-ben ezt még nem kapja meg: mentésenként továbbra is 5 mp
+türelem jár rá (mint korábban), így a bevétel-spammelés — és vele a token-ranglista
+felfújása — a régi szinten nyitva marad, amíg a `SAVE_LEAD_ENFORCE_EARNINGS` be
+nem kapcsol (lásd lent; az árnyék-előny ezt méri). Becsületes kliens egyetlen módon
 juthat a keret fölé: ha egy mentése 30 mp-nél később ér a szerverhez, mint
 ahogy készült (szerver-oldali elakadás). Ezt a burok korrigálja (korábban
 elutasítás és strike volt); mivel a kliens a korrigált játékidőt nem kapja
@@ -619,7 +623,14 @@ másik eszköz mentése nem első mentés, hanem messze a friss előtt jár —
 elutasítás. A játékos saját (legutóbbi strike-ja utáni) törlését követő
 `SAVE_RESET_STALE_COPY_DAYS` (7) napig egy ilyen elutasítás **nem strike**
 (`reset_stale_copy` info-esemény); a `save_implausible` válaszra a kliens a friss
-mentést veszi át. Csak elutasításnál olvassuk (`getSaveResetAt`); a törlés idejét
+mentést veszi át. Szándékosan **bármely** elutasításra vonatkozik, nem csak a
+játékidőben „túl előre járókra": egy régi példány kis játékidővel, de
+elutasított bevétellel is jöhet. Az ára csak a strike elrettentése egy hétig egy
+olyan játékosnál, aki épp maga törölte az összes haladását — egy elutasított
+mentés semmit nem ír. Elfogadott, ritka maradékok: egy másik eszköz, amely még a
+friss mentés *előtt* küld, a `save_first_unverifiable` ablakot kapja (új kezdés /
+vendégként tovább); egy kis haladású régi példány a friss mentés fölé is
+elfogadódhat; a törlés egy `429`-es újraküldési körre (≤ ~20 mp) is várhat. Csak elutasításnál olvassuk (`getSaveResetAt`); a törlés idejét
 mindig frissen, nem a hitelesített kérés felhasználó-sorából, amelyet egy
 párhuzamos `DELETE /save` megelőzhet. A kliens a törlést a mentés-zár alatt
 végzi (`saveStore.resetSave`), egy úton lévő mentés után, így a saját autosave-je
