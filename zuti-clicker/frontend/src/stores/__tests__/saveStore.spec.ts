@@ -7,7 +7,14 @@ import { useGameStore } from "@/stores/gameStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { SyncFlushError } from "@/stores/saveStore";
-import { api, ApiError, SAVE_STALE_CODE, SAVE_FIRST_UNVERIFIABLE_CODE } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  SAVE_STALE_CODE,
+  SAVE_FIRST_UNVERIFIABLE_CODE,
+  SAVE_IMPLAUSIBLE_CODE
+} from "@/lib/api";
+import { i18n } from "@/i18n";
 import { useUiStore } from "@/stores/uiStore";
 
 // Only `api` is replaced; the real ApiError / isStaleSaveError stay, so a test
@@ -191,6 +198,33 @@ describe("saveStore", () => {
       expect(save.syncError).toBeNull();
       expect(useToastStore().toasts).toHaveLength(1);
       expect(useToastStore().toasts[0]!.kind).toBe("error");
+    });
+
+    // Regression (2026-10-20): after a refused save the client kept resending
+    // the same progress, and each resend after a restriction ended was struck
+    // again — a ban loop. It now takes the server's last verified save.
+    it("regression: a refused (implausible) save reloads the stored one, never resends", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.phdCount = 100; // the refused local progress
+      vi.mocked(api.save.store).mockRejectedValue(
+        new ApiError(409, "could not be verified", { code: SAVE_IMPLAUSIBLE_CODE })
+      );
+      vi.mocked(api.save.load).mockResolvedValue(loadedSave);
+
+      const save = useSaveStore();
+      await save.sync();
+
+      expect(api.save.load).toHaveBeenCalledTimes(1);
+      expect(game.phdCount).toBe(40);
+      expect(save.syncError).toBeNull();
+      expect(useToastStore().toasts.map((t) => t.message)).toEqual([
+        i18n.global.t("save.implausibleReloaded")
+      ]);
+
+      // A pre-action flush on the same refusal aborts the action (the state it
+      // was meant to protect was just replaced) and says nothing more.
+      await expect(save.withSyncLock(async () => "ran")).rejects.toMatchObject({ stale: true });
     });
 
     it("regression: the envelope's own 409 (no stale code) is a real sync error and does NOT reload", async () => {

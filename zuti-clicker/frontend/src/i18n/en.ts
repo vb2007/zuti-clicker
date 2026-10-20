@@ -411,6 +411,8 @@ export default {
     logout: "Log out",
     loginToSave: "Login to save",
     staleReloaded: "Your progress changed elsewhere (another tab?), so the latest save was loaded.",
+    implausibleReloaded:
+      "Your latest progress couldn't be verified, so your last verified save was loaded.",
     firstSaveRejected: {
       title: "Your guest progress couldn't move to this account",
       body:

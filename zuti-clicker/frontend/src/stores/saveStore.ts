@@ -3,6 +3,7 @@ import { ref, watch } from "vue";
 import {
   api,
   isFirstSaveUnverifiableError,
+  isImplausibleSaveError,
   isStaleSaveError,
   type ApiError
 } from "@/lib/api";
@@ -148,6 +149,16 @@ export const useSaveStore = defineStore("save", () => {
         // Only claim a reload if one happened: a failed reload leaves the stale
         // state in place, and the next sync would loop on the same refusal.
         if (await load()) toast.push("error", i18n.global.t("save.staleReloaded"));
+        else syncError.value = (e as ApiError).message;
+        return "stale";
+      }
+      // The envelope refused this progress. Resending it would be refused
+      // again — and struck again each time a restriction ended (the 2026-10-20
+      // ban loop) — so take the server's last verified save instead, the same
+      // way a stale save does. Reported as "stale": the server's state has been
+      // adopted, and a caller waiting on the flush must not go ahead.
+      if (isImplausibleSaveError(e)) {
+        if (await load()) toast.push("error", i18n.global.t("save.implausibleReloaded"));
         else syncError.value = (e as ApiError).message;
         return "stale";
       }

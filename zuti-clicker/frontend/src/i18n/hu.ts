@@ -413,6 +413,8 @@ export default {
     loginToSave: "Bejelentkezés a mentéshez",
     staleReloaded:
       "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be.",
+    implausibleReloaded:
+      "A legutóbbi haladásodat nem tudtuk ellenőrizni, ezért a legutóbb ellenőrzött mentésedet töltöttük be.",
     firstSaveRejected: {
       title: "A vendégként elért haladásod nem került át ebbe a fiókba",
       body:

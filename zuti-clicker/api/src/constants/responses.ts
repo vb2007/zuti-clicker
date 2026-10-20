@@ -47,9 +47,13 @@ export class Responses {
     // since the last save. 409, not 400: the request is well-formed, it's
     // the claimed progress that couldn't be verified. Nothing is written;
     // the client's next GET /save returns the last verified state unchanged.
+    // `code` lets the client reload the stored save on its own (frontend/src/
+    // lib/api.ts's SAVE_IMPLAUSIBLE_CODE — keep in sync): resending the same
+    // progress would only be refused, and struck, again.
     IMPLAUSIBLE: {
       status: 409,
       body: {
+        code: "save_implausible",
         error:
           "This save could not be verified as achievable since your last sync and was rejected. Reload to continue from your last verified save."
       }

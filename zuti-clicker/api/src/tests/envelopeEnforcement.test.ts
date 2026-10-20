@@ -220,7 +220,7 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=enforce", () =
         .send({ ...TEN_MINUTE_GUEST, tokens: 1e12, totalTokensEarned: 1e12 });
       expect(res.status).toBe(Responses.SAVE.IMPLAUSIBLE.status);
       expect(res.body.error).toBe(Responses.SAVE.IMPLAUSIBLE.body.error);
-      expect(res.body.code).toBeUndefined();
+      expect(res.body.code).toBe(Responses.SAVE.IMPLAUSIBLE.body.code);
       expect((await strikes(cookie)).strikeCount).toBe(1);
     });
   });

@@ -83,6 +83,20 @@ export function isStaleSaveError(e: unknown): boolean {
   );
 }
 
+// PUT /save's 409 for a save the plausibility envelope rejected. The client
+// reloads the stored save instead of resending the same progress, which would
+// only be refused (and struck) again each time a restriction ended. Keep in
+// sync with api/src/constants/responses.ts's SAVE.IMPLAUSIBLE.
+export const SAVE_IMPLAUSIBLE_CODE = "save_implausible";
+
+export function isImplausibleSaveError(e: unknown): boolean {
+  return (
+    e instanceof ApiError &&
+    e.status === 409 &&
+    (e.body as { code?: string } | undefined)?.code === SAVE_IMPLAUSIBLE_CODE
+  );
+}
+
 // PUT /save's 409 for an account's FIRST save (progress made as a guest) that
 // the plausibility envelope couldn't verify — never a strike; the player is
 // offered a choice instead. Keep in sync with api/src/constants/responses.ts's
