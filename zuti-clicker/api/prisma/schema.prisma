@@ -16,6 +16,10 @@ model User {
   email           String           @unique
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
+  // When this account's save was last deleted (DELETE /save, or the strike
+  // ladder's wipe). The next save is a first save again, and its plausibility
+  // envelope is anchored here rather than at createdAt — see saveValidator.ts.
+  saveResetAt     DateTime?
   authentication  Authentication?
   gameSave        GameSave?
   settings        UserSettings?
@@ -71,7 +75,13 @@ model GameSave {
   phdTotal          Float           @default(0)
   careerWindowOpen  Boolean         @default(false)
   careerWindowId    Int             @default(0)
+  // savedAt is when the envelope evaluated this save (the anchor of the next
+  // save's interval). graceLeadSecs is how far this save chain's claims run
+  // ahead of the server's clock in total — the clock grace each save may
+  // draw on comes out of one budget, so saving many times can't multiply it
+  // (see SAVE_LEAD_CAP_SECS in constants/antiCheat.ts).
   savedAt           DateTime        @default(now())
+  graceLeadSecs     Float           @default(0)
   updatedAt         DateTime        @updatedAt
   units             UnitSave[]
   upgrades          UpgradeSave[]
