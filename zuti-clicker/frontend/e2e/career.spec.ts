@@ -1,5 +1,6 @@
 import { test, expect, type AppHelper } from "./fixtures";
 import type { Page } from "@playwright/test";
+import { CAREER_NODES_BY_ID, careerBuyRefusal, refundClosure } from "../src/utils/careerCore";
 
 // The Academic Career overlay on every device class: how it opens and refuses
 // to close, and the pan/zoom canvas driven by real mouse, touch and pinch
@@ -9,8 +10,67 @@ import type { Page } from "@playwright/test";
 const coarse = (page: Page) => page.evaluate(() => matchMedia("(pointer: coarse)").matches);
 const compact = (page: Page) => page.viewportSize()!.width < 760;
 
-/** A guest whose prestige just opened the purchase window (as gameStore.prestige() does). */
+/**
+ * Stands in for POST /career/{buy,refund,close}: the tree needs an account, and
+ * the server settles every change. Applies the same rules (utils/careerCore.ts)
+ * to its own copy of the window and replies the way the API does.
+ */
+async function mockCareerServer(page: Page, phd: number, owned: string[], windowId: number) {
+  let phdCount = phd;
+  let seq = 0;
+  let windowOpen = true;
+  const nodes = owned.map((nodeId) => ({ nodeId, cost: 1, refundable: false }));
+  const state = () => ({
+    phdCount,
+    upgraderSeq: seq,
+    career: {
+      windowOpen,
+      windowId,
+      phdInvested: nodes.reduce((sum, n) => sum + n.cost, 0),
+      nodes: nodes.map((n) => ({ ...n }))
+    }
+  });
+  await page.route("**/api/career/*", async (route) => {
+    const action = new URL(route.request().url()).pathname.split("/").pop();
+    const { nodeId } = (route.request().postDataJSON() ?? {}) as { nodeId?: string };
+    const ids = nodes.map((n) => n.nodeId);
+    const reply = (status: number, body: object) =>
+      route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (action === "buy") {
+      if (careerBuyRefusal(nodeId!, ids, phdCount) !== null) return reply(409, state());
+      const cost = CAREER_NODES_BY_ID.get(nodeId!)!.cost;
+      phdCount -= cost;
+      seq++;
+      nodes.push({ nodeId: nodeId!, cost, refundable: true });
+      return reply(200, { message: "Node bought.", ...state() });
+    }
+    if (action === "refund") {
+      const refundable = nodes.filter((n) => n.refundable).map((n) => n.nodeId);
+      const removed = refundClosure(nodeId!, ids, refundable);
+      if (removed === null) return reply(409, state());
+      let refunded = 0;
+      for (const id of removed) {
+        const i = nodes.findIndex((n) => n.nodeId === id);
+        refunded += nodes[i]!.cost;
+        nodes.splice(i, 1);
+      }
+      phdCount += refunded;
+      seq++;
+      return reply(200, {
+        message: "Refunded.",
+        refundedNodeIds: removed,
+        phdRefunded: refunded,
+        ...state()
+      });
+    }
+    windowOpen = false;
+    return reply(200, { message: "Closed.", ...state() });
+  });
+}
+
+/** A player whose prestige just opened the purchase window (as gameStore.prestige() does). */
 async function openWindow(app: AppHelper, phd = 60, owned: string[] = []) {
+  await mockCareerServer(app.page, phd, owned, 3);
   await app.open();
   await app.dismissGuestWarning();
   await app.seed((s) => {
@@ -80,8 +140,10 @@ async function pinch(page: Page, mid: { x: number; y: number }, fromGap: number,
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 }
 
+// Logged in throughout: prestige and the tree need an account (a guest is
+// sent to log in instead — see guest.spec.ts).
 test.describe("Academic Career", () => {
-  test.use({ loggedIn: false });
+  test.use({ loggedIn: true });
 
   test("a prestige opens the purchase window after the ceremony", async ({ app, page }) => {
     await app.open();
@@ -119,7 +181,7 @@ test.describe("Academic Career", () => {
     await expect(page.locator(".career-overlay")).toHaveCount(0);
   });
 
-  test("tap selects without buying; Buy, then Undo with cascade, settle locally for a guest", async ({
+  test("tap selects without buying; Buy, then Undo with cascade, settled by the server", async ({
     app,
     page
   }) => {
@@ -143,7 +205,7 @@ test.describe("Academic Career", () => {
     await expect(page.locator(`[data-node="${child}"]`)).toBeInViewport();
     await page.keyboard.press("Enter");
     await page.locator(".node-panel .btn-primary").last().click();
-    expect(await app.seed((s) => s.game.careerNodes.length)).toBe(2);
+    await expect.poll(() => app.seed((s) => s.game.careerNodes.length)).toBe(2);
     // On a phone the sheet covers the lower canvas: close it to reach the root.
     if (await page.locator(".career-sheet").count())
       await page.locator(".node-panel .close").click();
@@ -154,7 +216,7 @@ test.describe("Academic Career", () => {
     const undo = page.locator(".node-panel .btn-secondary").last();
     await expect(undo).toContainText("2");
     await undo.click();
-    expect(await app.seed((s) => s.game.careerNodes.length)).toBe(0);
+    await expect.poll(() => app.seed((s) => s.game.careerNodes.length)).toBe(0);
     expect(await app.seed((s) => s.game.phdCount)).toBe(60);
   });
 
