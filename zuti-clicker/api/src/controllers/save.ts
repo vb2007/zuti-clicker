@@ -9,7 +9,7 @@ import {
   type PrevSaveSnapshot,
   type IncomingSave
 } from "../services/saveValidator";
-import { applyStrike, recordSoftClamp } from "../database/models/antiCheat";
+import { applyStrike, logAntiCheatEvent, recordSoftClamp } from "../database/models/antiCheat";
 import { PHD_MAX } from "../constants/upgrader";
 import { getCareerModifiers } from "../services/careerCore";
 import { toCareerState } from "../database/models/career";
@@ -239,7 +239,11 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *           strike, with code "save_stale") when upgraderSeq does not match
  *           the account's current value — the save was made before a later
  *           wheel spin (or from a copy of the game that predates the
- *           save's current state), so the client must reload.
+ *           save's current state), so the client must reload. On an
+ *           account's FIRST save (no stored save yet — progress made as a
+ *           guest) an envelope rejection is never a strike and carries code
+ *           "save_first_unverifiable": the client offers to start the account
+ *           fresh or to log out and keep the guest progress.
  *         content:
  *           application/json:
  *             schema:
@@ -411,8 +415,9 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
         upgrades: resolvedUpgrades
       };
 
-      // identity.createdAt anchors a first-ever save's dt, closing "register
-      // then immediately PUT a maxed save".
+      // identity.createdAt anchors a first-ever save's dt (together with the
+      // guest playtime it claims, capped — see FIRST_SAVE_PLAYTIME_CREDIT_SECS),
+      // so "register then immediately PUT a maxed save" gets no more than that.
       const verdict = evaluateSaveEnvelope(
         prevSnapshot,
         identity.createdAt,
@@ -421,7 +426,21 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       );
 
       const enforced = ANTICHEAT_MODE === "enforce";
-      if (verdict.outcome === "reject") {
+      // A first save carries progress made as a guest, before the account
+      // existed — unwitnessed, so a rejection is logged but never a strike: a
+      // brand-new account has no standing to lose, and a cheat would simply
+      // register again, so a strike would only ever land on honest players.
+      const firstSave = previous === null;
+      if (verdict.outcome === "reject" && firstSave) {
+        await logAntiCheatEvent({
+          userId,
+          kind: "first_save_reject",
+          severity: "info",
+          mode: ANTICHEAT_MODE,
+          detail: { reason: verdict.reason, ...verdict.detail },
+          enforced
+        }).catch((e: unknown) => console.error("Failed to log first-save rejection:", e));
+      } else if (verdict.outcome === "reject") {
         // A rejection is already >REJECT_MULTIPLIER times what's achievable
         // or a monotonicity break — certain enough to strike immediately,
         // unlike a soft clamp (see recordSoftClamp) which needs a pattern.
@@ -438,7 +457,7 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
 
       if (enforced) {
         if (verdict.outcome === "reject") {
-          const r = Responses.SAVE.IMPLAUSIBLE;
+          const r = firstSave ? Responses.SAVE.FIRST_SAVE_UNVERIFIABLE : Responses.SAVE.IMPLAUSIBLE;
           res.status(r.status).json(r.body);
           return;
         }

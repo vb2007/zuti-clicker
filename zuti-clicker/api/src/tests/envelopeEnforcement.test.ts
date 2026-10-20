@@ -11,6 +11,7 @@ import {
 } from "../constants/gameBalance.js";
 import { EARNED_ACCEPT_MARGIN, REJECT_MULTIPLIER } from "../constants/antiCheat.js";
 import { startTestServer, stopTestServer } from "./testServerHelper.js";
+import { prisma } from "../database/prisma.js";
 
 // This file spawns its OWN, isolated server instances with an explicit
 // ANTICHEAT_MODE, one per describe block — every other *.test.ts file runs
@@ -82,11 +83,102 @@ describe("Save plausibility envelope over HTTP — ANTICHEAT_MODE=enforce", () =
         elapsedSeconds: 1,
         units: []
       });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe(Responses.SAVE.IMPLAUSIBLE.body.error);
+    // A first save: rejected under its own code, and never a strike.
+    expect(res.status).toBe(Responses.SAVE.FIRST_SAVE_UNVERIFIABLE.status);
+    expect(res.body.code).toBe(Responses.SAVE.FIRST_SAVE_UNVERIFIABLE.body.code);
+    expect(res.body.error).toBe(Responses.SAVE.FIRST_SAVE_UNVERIFIABLE.body.error);
 
     const getRes = await api.get("/save").set("Cookie", cookie);
     expect(getRes.body.save).toBeNull();
+  });
+
+  // Regression: a guest who registered after playing had every save rejected
+  // (elapsed_exceeds_wallclock against the account's seconds-old age) and was
+  // struck for it — restricted as "suspected automation" for honest play.
+  describe("a guest's first save after registering", () => {
+    const strikes = async (cookie: string) =>
+      (await api.get("/anticheat/status").set("Cookie", cookie)).body as {
+        strikeCount: number;
+        isRestricted: boolean;
+      };
+
+    // Ten minutes of honest guest play, captured from the real game store
+    // (3 clicks/s, greedy buying) — far longer than the account is old.
+    const TEN_MINUTE_GUEST = {
+      tokens: 33402.62,
+      totalTokensEarned: 459923.8,
+      totalClicks: 1800,
+      elapsedSeconds: 600,
+      runTokensEarned: 459923.8,
+      runClicks: 1800,
+      runSeconds: 600,
+      units: [
+        { unitId: "alpha", owned: 20 },
+        { unitId: "beta", owned: 15 },
+        { unitId: "gamma", owned: 13 },
+        { unitId: "delta", owned: 7 },
+        { unitId: "epsilon", owned: 1 }
+      ],
+      upgrades: ["chalk", "firmHandshake", "redPen", "morningCoffee", "laserPointer", "luckyGuess"]
+    };
+
+    it("is accepted unchanged, with no strike", async () => {
+      const cookie = await registerAndLogin();
+      const res = await api.put("/save").set("Cookie", cookie).send(TEN_MINUTE_GUEST);
+      expect(res.status).toBe(200);
+      expect(res.body.message).toBe(Responses.SAVE.SAVE_SUCCESS.body.message);
+
+      const saved = (await api.get("/save").set("Cookie", cookie)).body.save;
+      expect(saved.elapsedSeconds).toBe(600);
+      expect(saved.totalTokensEarned).toBe(TEN_MINUTE_GUEST.totalTokensEarned);
+      expect(await strikes(cookie)).toMatchObject({ strikeCount: 0, isRestricted: false });
+    });
+
+    it("a forged one is refused with FIRST_SAVE_UNVERIFIABLE, logged, but never struck", async () => {
+      const user = TestData.generateUser();
+      await api.post("/auth/register").send(user);
+      const login = await api
+        .post("/auth/login")
+        .send({ email: user.email, password: user.password });
+      const cookie = (login.headers["set-cookie"] as unknown as string[])[0].split(";")[0];
+
+      const forged = { ...TEN_MINUTE_GUEST, tokens: 1e12, totalTokensEarned: 1e12 };
+      for (let i = 0; i < 3; i++) {
+        const res = await api.put("/save").set("Cookie", cookie).send(forged);
+        expect(res.status).toBe(Responses.SAVE.FIRST_SAVE_UNVERIFIABLE.status);
+        expect(res.body.code).toBe(Responses.SAVE.FIRST_SAVE_UNVERIFIABLE.body.code);
+      }
+      expect(await strikes(cookie)).toMatchObject({ strikeCount: 0, isRestricted: false });
+
+      const { id } = await prisma.user.findUniqueOrThrow({
+        where: { email: user.email },
+        select: { id: true }
+      });
+      const events = await prisma.antiCheatEvent.findMany({ where: { userId: id } });
+      expect(events.map((e) => [e.kind, e.severity])).toEqual([
+        ["first_save_reject", "info"],
+        ["first_save_reject", "info"],
+        ["first_save_reject", "info"]
+      ]);
+      expect(await api.get("/save").set("Cookie", cookie)).toMatchObject({
+        body: { save: null }
+      });
+    });
+
+    it("once a save exists, an implausible one is IMPLAUSIBLE and struck as before", async () => {
+      const cookie = await registerAndLogin();
+      expect((await api.put("/save").set("Cookie", cookie).send(TEN_MINUTE_GUEST)).status).toBe(
+        200
+      );
+      const res = await api
+        .put("/save")
+        .set("Cookie", cookie)
+        .send({ ...TEN_MINUTE_GUEST, tokens: 1e12, totalTokensEarned: 1e12 });
+      expect(res.status).toBe(Responses.SAVE.IMPLAUSIBLE.status);
+      expect(res.body.error).toBe(Responses.SAVE.IMPLAUSIBLE.body.error);
+      expect(res.body.code).toBeUndefined();
+      expect((await strikes(cookie)).strikeCount).toBe(1);
+    });
   });
 
   it("rejects a monotonicity violation and keeps the last verified save intact", async () => {
