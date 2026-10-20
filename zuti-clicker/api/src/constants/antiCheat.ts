@@ -215,16 +215,12 @@ export const NO_FATIGUE_STREAK = 5;
 export const SINGLE_METHOD_MAX_CPS = 20;
 export const SINGLE_METHOD_CONCENTRATION = 0.95;
 
-// A verdict needs at least this total weighted score from at least this many
-// DISTINCT signal categories — raw click rate alone can never reach either
-// threshold by itself.
+// A window is logged as `flagged` (for review only — the statistical layer
+// never strikes, see processDigest) at this total weighted score from at
+// least this many DISTINCT signal categories — raw click rate alone can never
+// reach either threshold by itself.
 export const MIN_SCORE_TO_FLAG = 3;
 export const MIN_DISTINCT_SIGNALS_TO_FLAG = 2;
-
-// A flagged window only becomes a strike after this many CONSECUTIVE
-// flagged windows — a single borderline window is noise; a pattern is not.
-// Tracked via AntiCheatState.suspicionScore, reset to 0 by any clean window.
-export const SUSPICIOUS_WINDOWS_TO_STRIKE = 2;
 
 // ---- Floating-point tolerance ---------------------------------------------
 //

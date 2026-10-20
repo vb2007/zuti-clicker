@@ -36,10 +36,8 @@ function emptyBuckets(): number[] {
 
 // A flat, fixed-interval "autoclicker" digest — flags every one of
 // narrowSupport/lowVariance/metronome/unimodalSpike (see
-// antiCheatDigest.test.ts). Not a zero-false-positive signal (no
-// untrustedClicks/integrityFlags), so it needs SUSPICIOUS_WINDOWS_TO_STRIKE
-// consecutive reports before actually striking — this fixture is sent in
-// pairs throughout this file for exactly that reason.
+// antiCheatDigest.test.ts). Statistical evidence only, so it is logged as
+// flagged but never strikes (see processDigest).
 const AUTOCLICKER_DIGEST = {
   windowMs: 5_000,
   clicks: 100,
@@ -51,6 +49,24 @@ const AUTOCLICKER_DIGEST = {
   })(),
   maxRunLength: 99,
   untrustedClicks: 0,
+  hiddenClicks: 0,
+  droppedClicks: 0,
+  integrityFlags: [] as string[],
+  weakSignals: [] as string[]
+};
+
+// The only digest evidence that still restricts: a click the browser marked
+// untrusted (a script dispatched it).
+const UNTRUSTED_DIGEST = {
+  windowMs: 60_000,
+  clicks: 1,
+  purchases: 0,
+  buckets: (() => {
+    const b = new Array(HISTOGRAM_BUCKET_COUNT).fill(0) as number[];
+    return b;
+  })(),
+  maxRunLength: 0,
+  untrustedClicks: 1,
   hiddenClicks: 0,
   droppedClicks: 0,
   integrityFlags: [] as string[],
@@ -129,182 +145,142 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
   // same realistic non-integer windowMs a real browser sends, actually gets
   // caught. This is the literal scenario from the incident: a ~44.5 CPS
   // autoclicker held flat for two consecutive heartbeat windows.
-  it("regression: a realistic sustained-autoclicker session (fractional windowMs + suspicious shape) is actually restricted end-to-end", async () => {
+  // Regression (2026-10-20): the statistical click-timing layer used to strike
+  // after two flagged windows. A fast, steady human clicker — the leading
+  // player — trips its weak signals on nearly every heartbeat, one window
+  // short of a strike. Statistical evidence is now logged, never acted on.
+  async function reportTwice(cookie: string, digest: object) {
+    await api.post("/anticheat/report").set("Cookie", cookie).send(digest);
+    return api.post("/anticheat/report").set("Cookie", cookie).send(digest);
+  }
+
+  async function digestEvents(cookie: string) {
+    const me = await api.get("/auth/me").set("Cookie", cookie);
+    return prisma.antiCheatEvent.findMany({
+      where: { userId: me.body.user.id },
+      orderBy: { id: "asc" }
+    });
+  }
+
+  it("regression: a sustained autoclicker-shaped session is logged as flagged but never restricts", async () => {
     const cookie = await registerAndLogin();
     const liveDigest = { ...AUTOCLICKER_DIGEST, windowMs: 60001.200000000186 };
-    await api.post("/anticheat/report").set("Cookie", cookie).send(liveDigest);
-    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(liveDigest);
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("restricted");
-    expect(res.body.strikeCount).toBe(1);
-
+    for (let i = 0; i < 5; i++) {
+      const res = await api.post("/anticheat/report").set("Cookie", cookie).send(liveDigest);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("clean");
+    }
     const status = await api.get("/anticheat/status").set("Cookie", cookie);
-    expect(status.body.isRestricted).toBe(true);
+    expect(status.body).toMatchObject({ isRestricted: false, strikeCount: 0 });
+
+    const events = await digestEvents(cookie);
+    expect(events).toHaveLength(5);
+    for (const e of events) {
+      expect(e.kind).toBe("statistical_digest");
+      expect(e.severity).toBe("info");
+      expect(e.enforced).toBe(false);
+      expect((e.detail as { flagged: boolean }).flagged).toBe(true);
+    }
   });
 
-  // The scenario that motivated the singleMethodExceedsHumanLimit signal: a
-  // casual auto-clicker bound to exactly one input method (commonly
-  // right-click) — sustaining >20 CPS from ONE method alone is beyond even
-  // the most extreme documented human clicking technique (see
-  // SINGLE_METHOD_MAX_CPS's own comment), unlike the aggregate 45 CPS
-  // envelope ceiling, which has to accommodate several simultaneous input
-  // channels (e.g. two people mashing mouse + keyboard together).
-  //
-  // Deliberately shaped to isolate JUST this signal: intervals spread evenly
-  // across every histogram bucket (not narrow, not a long run, not
-  // unimodal) so none of lowVariance/narrowSupport/unimodalSpike/
-  // uniformShape/metronome/sustainedRate fire — only
-  // singleMethodExceedsHumanLimit (weight 2) does. That alone is still not
-  // decisive (needs MIN_SCORE_TO_FLAG=3 from MIN_DISTINCT_SIGNALS_TO_FLAG=2
-  // categories — by design, same as every other statistical signal here),
-  // so one weak pointer-physics signal (weight 1, real hardware can
-  // occasionally produce these) is what actually crosses the flag
-  // threshold — mirroring the real incident's own second strike, which
-  // combined sustainedRate with two weak signals the same way.
+  // An auto-clicker bound to one input method (commonly right-click),
+  // sustaining over SINGLE_METHOD_MAX_CPS from it alone. Shaped to isolate
+  // singleMethodExceedsHumanLimit plus one weak pointer-physics signal.
   const RIGHT_CLICK_AUTOCLICKER_DIGEST = {
     windowMs: 60_000,
     clicks: 1260, // exactly 21 cps from one method — over the 20 CPS human ceiling, under the 22 CPS aggregate sustainedRate threshold
     purchases: 0,
     buckets: (() => {
-      // Spread evenly across all 24 buckets — wide span, low top-fraction,
-      // high variance and skew (log-spaced bucket midpoints), nothing
-      // resembling a fixed-interval autoclicker's usual narrow shape.
       const b = new Array(HISTOGRAM_BUCKET_COUNT).fill(52) as number[];
       b[HISTOGRAM_BUCKET_COUNT - 1] += 1259 - 52 * HISTOGRAM_BUCKET_COUNT;
       return b;
     })(),
-    maxRunLength: 1, // no long run — rules out metronome
+    maxRunLength: 1,
     untrustedClicks: 0,
     hiddenClicks: 0,
     droppedClicks: 0,
     integrityFlags: [] as string[],
-    weakSignals: ["frozenPressure"], // the one corroborator needed to cross the flag threshold
+    weakSignals: ["frozenPressure"],
     methodCounts: { primary: 0, secondary: 1260, enter: 0, space: 0 }
   };
 
-  it("regression: a realistic pure-right-click autoclicker session (isolated shape, over the single-method ceiling) is restricted end-to-end", async () => {
+  it("regression: a single-method high-rate session is logged as flagged but never restricts", async () => {
     const cookie = await registerAndLogin();
-    await api.post("/anticheat/report").set("Cookie", cookie).send(RIGHT_CLICK_AUTOCLICKER_DIGEST);
-    const res = await api
-      .post("/anticheat/report")
-      .set("Cookie", cookie)
-      .send(RIGHT_CLICK_AUTOCLICKER_DIGEST);
+    const res = await reportTwice(cookie, RIGHT_CLICK_AUTOCLICKER_DIGEST);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe("restricted");
-    expect(res.body.strikeCount).toBe(1);
+    expect(res.body.status).toBe("clean");
+    expect(res.body.strikeCount).toBe(0);
   });
 
-  // Regression (found live, post-deploy): a stale cached client still
-  // shipping the OLD methodCounts shape (before enter/space were split
-  // out of one combined "keyboard" field) sends a well-formed but
-  // differently-shaped object. This used to 400 the ENTIRE report — not
-  // just skip singleMethodExceedsHumanLimit, skip every signal, including
-  // ones that had nothing to do with methodCounts — because the shape
-  // check lived inside the overall isValidShape/parseDigest condition.
-  // Reproducing the exact incident: the SAME shape/pattern that
-  // RIGHT_CLICK_AUTOCLICKER_DIGEST above proves gets restricted must still
-  // work when methodCounts is shaped like an old client's.
-  it("regression: a stale client's outdated methodCounts shape never blocks the OTHER signals from still restricting", async () => {
+  // Still accepted (never a 400) with a stale client's older methodCounts shape.
+  it("a stale client's outdated methodCounts shape is still accepted and scored", async () => {
     const cookie = await registerAndLogin();
     const staleShapeDigest = {
-      ...AUTOCLICKER_DIGEST, // flags on metronome/narrowSupport alone, nothing to do with methodCounts
+      ...AUTOCLICKER_DIGEST,
       methodCounts: { primary: 0, secondary: 100, keyboard: 0 } // old shape — no enter/space
     };
-    await api.post("/anticheat/report").set("Cookie", cookie).send(staleShapeDigest);
-    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(staleShapeDigest);
+    const res = await reportTwice(cookie, staleShapeDigest);
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe("restricted");
-    expect(res.body.strikeCount).toBe(1);
-  });
-
-  it("a single flagged (non-decisive) digest is not enough to strike on its own", async () => {
-    const cookie = await registerAndLogin();
-    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("clean"); // suspicionScore is now 1, not yet 2
-
-    const status = await api.get("/anticheat/status").set("Cookie", cookie);
-    expect(status.body.isRestricted).toBe(false);
-  });
-
-  it("two CONSECUTIVE flagged digests escalate to a real strike", async () => {
-    const cookie = await registerAndLogin();
-    await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
-    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("restricted");
-    expect(res.body.strikeCount).toBe(1);
-
-    const status = await api.get("/anticheat/status").set("Cookie", cookie);
-    expect(status.body.isRestricted).toBe(true);
-    expect(status.body.strikeCount).toBe(1);
-  });
-
-  it("a clean digest in between resets the suspicion streak (self-healing)", async () => {
-    const cookie = await registerAndLogin();
-    await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
-    await api.post("/anticheat/report").set("Cookie", cookie).send(CLEAN_DIGEST);
-    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("clean"); // the clean report in between reset the streak to 0
+    expect(res.body.status).toBe("clean");
+    const events = await digestEvents(cookie);
+    expect((events.at(-1)!.detail as { flagged: boolean }).flagged).toBe(true);
   });
 
   it("an immediate strike on any untrusted click, with no repetition needed", async () => {
     const cookie = await registerAndLogin();
+    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(UNTRUSTED_DIGEST);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("restricted");
+    expect(res.body.strikeCount).toBe(1);
+    const events = await digestEvents(cookie);
+    expect(events.map((e) => [e.kind, e.severity])).toContainEqual(["certain_evidence", "strike"]);
+  });
+
+  it("an immediate strike on a honeypot hit", async () => {
+    const cookie = await registerAndLogin();
     const res = await api
       .post("/anticheat/report")
       .set("Cookie", cookie)
-      .send({ ...CLEAN_DIGEST, clicks: 1, untrustedClicks: 1 });
+      .send({ ...CLEAN_DIGEST, integrityFlags: ["honeypot:clickTrap"] });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("restricted");
     expect(res.body.strikeCount).toBe(1);
   });
 
-  // A well-SHAPED but internally-inconsistent digest (bucket sum contradicts
-  // the claimed click count) is decisive immediately, exactly like an
-  // untrusted click — a self-review during this same round of fixes briefly
-  // folded this into the ordinary "2 consecutive flagged windows" rule
-  // instead (on the theory it deserved the same leniency as a statistical
-  // signal), but that opened a real evasion: alternating one inconsistent
-  // digest with one clean digest resets suspicionScore on every clean
-  // window, so the pattern would never reach 2 consecutive and never
-  // strike at all. Unlike an unscoreable digest (malformed shape, or a
-  // window the browser suspended through — genuinely no information), a
-  // digest that contradicts its own numbers has no innocent explanation.
-  it("an immediate strike on a well-shaped but internally-inconsistent digest, with no repetition needed", async () => {
+  // Regression: browser extensions (ad-blocker scriptlets, anti-fingerprinting
+  // add-ons) legitimately patch the natives this check looks at — logged only.
+  it("regression: a patched native (patched:*) is logged but never restricts", async () => {
     const cookie = await registerAndLogin();
-    const res = await api
-      .post("/anticheat/report")
-      .set("Cookie", cookie)
-      .send({ ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }); // sum(buckets)=0, claims 50 clicks
+    const res = await reportTwice(cookie, {
+      ...CLEAN_DIGEST,
+      integrityFlags: ["patched:setInterval", "patched:dateNow"]
+    });
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe("restricted");
-    expect(res.body.strikeCount).toBe(1);
+    expect(res.body.status).toBe("clean");
+    expect(res.body.strikeCount).toBe(0);
   });
 
-  // Regression: alternating an inconsistent digest with a clean one must
-  // not let the pattern evade the strike ladder — this is exactly the
-  // evasion the above test's history warns about, verified end to end.
-  it("regression: alternating inconsistent and clean digests does not evade the strike (inconsistency stays decisive)", async () => {
+  // Regression (2026-09-21: a client digest bug struck one account four times
+  // and reset its save): a digest whose own numbers disagree is a client
+  // bookkeeping problem, not evidence of cheating — logged, never a strike.
+  it("regression: an internally-inconsistent digest is logged but never restricts", async () => {
     const cookie = await registerAndLogin();
-    const inconsistentDigest = { ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() };
-
-    await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistentDigest);
-    // If decisiveness were ever lost again, this alternation would reset
-    // suspicionScore to 0 every other report and never strike.
-    await api.post("/anticheat/report").set("Cookie", cookie).send(CLEAN_DIGEST);
-
-    const status = await api.get("/anticheat/status").set("Cookie", cookie);
-    expect(status.body.isRestricted).toBe(true);
-    expect(status.body.strikeCount).toBe(1);
+    const inconsistent = { ...CLEAN_DIGEST, clicks: 50, buckets: emptyBuckets() }; // sum 0, claims 50
+    for (let i = 0; i < 3; i++) {
+      const res = await api.post("/anticheat/report").set("Cookie", cookie).send(inconsistent);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("clean");
+    }
+    const events = await digestEvents(cookie);
+    expect(events.map((e) => [e.kind, e.severity])).toEqual([
+      ["digest_inconsistent", "info"],
+      ["digest_inconsistent", "info"],
+      ["digest_inconsistent", "info"]
+    ]);
   });
 
-  // Regression, the literal production incident ("banned for opening the
-  // prestige modal for a few seconds" on iOS/WebKit): a window the
-  // browser's own timer was suspended through — backgrounded tab, locked
-  // screen — reports an oversized windowMs with 0 clicks. This must be
-  // completely inert: no strike, not even after repetition, and it must
-  // not reset a genuinely flagged streak either (see the next test).
+  // Regression ("banned for opening the prestige modal for a few seconds" on
+  // iOS/WebKit): a window the browser's timer was suspended through is inert.
   it("regression: an oversized windowMs (a backgrounded/suspended window) is never a strike, however many times it repeats", async () => {
     const cookie = await registerAndLogin();
     const suspendedDigest = { ...CLEAN_DIGEST, windowMs: 300_000, clicks: 0 };
@@ -320,23 +296,6 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
     expect(status.body.strikeCount).toBe(0);
   });
 
-  // An unscoreable window must be NEUTRAL, not "clean" — laundering a
-  // flagged streak through a bogus/suspended digest would let a real
-  // cheater dodge the 2-consecutive-window rule by interleaving one.
-  it("an unscoreable window does not reset an in-progress suspicion streak", async () => {
-    const cookie = await registerAndLogin();
-    await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST); // suspicionScore -> 1
-    await api
-      .post("/anticheat/report")
-      .set("Cookie", cookie)
-      .send({ ...CLEAN_DIGEST, windowMs: 300_000, clicks: 0 }); // unscoreable, not a clean window
-
-    const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("restricted"); // the streak survived the unscoreable window
-    expect(res.body.strikeCount).toBe(1);
-  });
-
   it("a restricted account is blocked from PUT /save with 403, but can still GET it", async () => {
     const cookie = await registerAndLogin();
     await api
@@ -344,9 +303,8 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
       .set("Cookie", cookie)
       .send({ tokens: 1, totalTokensEarned: 1, totalClicks: 1, elapsedSeconds: 1, units: [] });
 
-    // Two consecutive flagged windows to force a strike.
-    await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
-    await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
+    // An untrusted click forces a strike.
+    await api.post("/anticheat/report").set("Cookie", cookie).send(UNTRUSTED_DIGEST);
 
     const putRes = await api
       .put("/save")
@@ -399,8 +357,7 @@ describe("Anti-cheat report/status and strike ladder — ANTICHEAT_MODE=enforce"
 
     const durations: number[] = [];
     for (let strike = 1; strike <= SAVE_RESET_STRIKE; strike++) {
-      await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
-      const res = await api.post("/anticheat/report").set("Cookie", cookie).send(AUTOCLICKER_DIGEST);
+      const res = await api.post("/anticheat/report").set("Cookie", cookie).send(UNTRUSTED_DIGEST);
       expect(res.body.strikeCount).toBe(strike);
       durations.push(new Date(res.body.restrictedUntil).getTime() - Date.now());
     }
