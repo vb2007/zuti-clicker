@@ -52,9 +52,12 @@ function openDeleteConfirm() {
   ui.confirmDeleteOpen = true;
 }
 
+// Saves first, then resets the game to a fresh guest (see saveStore.logout);
+// if the save fails, ask before logging out and losing it — unless it failed
+// as a refused first save, whose own dialog already offers the way out.
 async function logout() {
   userMenuOpen.value = false;
-  await auth.logout();
+  if (!(await save.logout()) && !save.carryOverRejected) ui.logoutUnsavedOpen = true;
 }
 </script>
 

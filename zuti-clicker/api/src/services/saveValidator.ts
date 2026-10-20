@@ -34,6 +34,7 @@ import {
 import { emptyCareerModifiers, keptUnitCount, type CareerModifiers } from "./careerCore";
 import {
   CLOCK_GRACE_SECS,
+  FIRST_SAVE_PLAYTIME_CREDIT_SECS,
   ENVELOPE_MAX_CPS,
   REJECT_MULTIPLIER,
   EARNED_ACCEPT_MARGIN,
@@ -227,7 +228,17 @@ export function evaluateSaveEnvelope(
   const prevPrestigeCount = prev?.prestigeCount ?? 0;
   const prevUnits = unitMap(prev?.units ?? []);
   const mods = prev?.career ?? emptyCareerModifiers();
-  const anchor = prev?.savedAt ?? userCreatedAt;
+  // A first-ever save is anchored to whichever is longer: the account's age,
+  // or the playtime it claims (a guest's, from before the account existed) up
+  // to FIRST_SAVE_PLAYTIME_CREDIT_SECS. Every later save uses the wall clock.
+  const anchor =
+    prev?.savedAt ??
+    new Date(
+      Math.min(
+        userCreatedAt.getTime(),
+        now.getTime() - Math.min(incoming.elapsedSeconds, FIRST_SAVE_PLAYTIME_CREDIT_SECS) * 1000
+      )
+    );
 
   // --- Hard monotonicity — these can never legitimately decrease. ---------
   if (

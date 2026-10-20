@@ -1,11 +1,17 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
-import { api, isStaleSaveError, type ApiError } from "@/lib/api";
+import {
+  api,
+  isFirstSaveUnverifiableError,
+  isStaleSaveError,
+  type ApiError
+} from "@/lib/api";
 import { i18n } from "@/i18n";
 import { useAuthStore } from "./authStore";
 import { useGameStore } from "./gameStore";
 import { useSettingsStore } from "./settingsStore";
 import { useToastStore } from "./toastStore";
+import { useUiStore } from "./uiStore";
 
 /**
  * The save flush that withSyncLock needs before its work could not be completed.
@@ -27,10 +33,16 @@ export const useSaveStore = defineStore("save", () => {
   const game = useGameStore();
   const settings = useSettingsStore();
   const toast = useToastStore();
+  const ui = useUiStore();
 
   const lastSyncedAt = ref<Date | null>(null);
   const isSyncing = ref(false);
   const syncError = ref<string | null>(null);
+  // The account's first save — progress made as a guest — was refused as
+  // unverifiable (see isFirstSaveUnverifiableError). Every sync is held until
+  // the player picks one of FirstSaveRejectedModal's two ways out: resending
+  // the same progress would only be refused again.
+  const carryOverRejected = ref(false);
 
   let _timer: ReturnType<typeof setInterval> | null = null;
 
@@ -75,6 +87,7 @@ export const useSaveStore = defineStore("save", () => {
       if (loggedIn && game.forfeitGuestCareer()) {
         toast.push("error", i18n.global.t("career.guestTreeDropped"));
       }
+      carryOverRejected.value = false;
     }
   );
 
@@ -126,6 +139,11 @@ export const useSaveStore = defineStore("save", () => {
       }
       return "ok";
     } catch (e) {
+      if (isFirstSaveUnverifiableError(e)) {
+        carryOverRejected.value = true;
+        syncError.value = (e as ApiError).message;
+        return "error";
+      }
       if (isStaleSaveError(e)) {
         // Only claim a reload if one happened: a failed reload leaves the stale
         // state in place, and the next sync would loop on the same refusal.
@@ -141,7 +159,7 @@ export const useSaveStore = defineStore("save", () => {
   }
 
   async function sync(): Promise<void> {
-    if (!auth.isLoggedIn) return;
+    if (!auth.isLoggedIn || carryOverRejected.value) return;
     if (isSyncing.value || _lockDepth > 0) {
       _queued = true;
       return;
@@ -233,10 +251,69 @@ export const useSaveStore = defineStore("save", () => {
     syncError.value = null;
   }
 
+  /**
+   * Logs out, then resets the game to a fresh guest: a guest's progress must
+   * only ever be progress made without an account — the server credits it to
+   * an account's first save as a single, unwitnessed run, and guests can't
+   * prestige. The current state is flushed first; if that fails (offline, a
+   * restriction) nothing happens and this resolves false, so the caller can
+   * ask before `force`-ing it and losing what wasn't saved. A stale flush has
+   * already reloaded the server's newer state, so there's nothing to lose.
+   *
+   * `keepProgress` logs out WITHOUT the flush or the reset: the "keep playing
+   * as a guest" way out of a refused first save, whose progress never
+   * reached the server and stays a guest's.
+   */
+  async function logout({
+    force = false,
+    keepProgress = false
+  }: { force?: boolean; keepProgress?: boolean } = {}): Promise<boolean> {
+    if (!auth.isLoggedIn) return true;
+    // Logged out and reset while still holding the sync lock: a sync that
+    // asks meanwhile (autosave, a queued one) runs only after the release —
+    // when there is no account any more — instead of landing on the fresh
+    // guest's state halfway through.
+    const leave = async () => {
+      if (_inflight) await _inflight;
+      await auth.logout();
+      if (!keepProgress) {
+        game.hardReset();
+        ui.careerOpen = false;
+        ui.upgraderOpen = false;
+        ui.prestigeConfirmOpen = false;
+        ui.prestigeCeremonyOpen = false;
+      }
+      carryOverRejected.value = false;
+      lastSyncedAt.value = null;
+      syncError.value = null;
+    };
+    try {
+      await withSyncLock(leave, { flush: !force && !keepProgress });
+    } catch (e) {
+      if (!(e instanceof SyncFlushError && e.stale)) return false;
+      await withSyncLock(leave, { flush: false });
+    }
+    return true;
+  }
+
+  /**
+   * FirstSaveRejectedModal's other way out: drop the guest progress the server
+   * couldn't verify and start the account from a fresh game, saved right away.
+   */
+  async function startAccountFresh(): Promise<void> {
+    game.hardReset();
+    carryOverRejected.value = false;
+    syncError.value = null;
+    await sync();
+  }
+
   return {
     lastSyncedAt,
     isSyncing,
     syncError,
+    carryOverRejected,
+    logout,
+    startAccountFresh,
     load,
     sync,
     withSyncLock,

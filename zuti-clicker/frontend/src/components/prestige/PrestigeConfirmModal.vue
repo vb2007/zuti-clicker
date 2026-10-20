@@ -2,7 +2,6 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
-import { useAuthStore } from "@/stores/authStore";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { getPrestigeOutcome } from "@/utils/prestige";
@@ -12,7 +11,6 @@ import BaseModal from "@/components/modals/BaseModal.vue";
 
 const { t } = useI18n();
 const game = useGameStore();
-const auth = useAuthStore();
 const antiCheat = useAntiCheatStore();
 const { cancelPrestige, confirmPrestige } = usePrestige();
 
@@ -74,10 +72,6 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
 
     <p class="modal-body">{{ t("confirm.prestigeLose") }}</p>
     <p v-if="careerKeeps" class="career-keeps">{{ careerKeeps }}</p>
-
-    <p v-if="!auth.isLoggedIn" class="guest-warning">
-      {{ t("confirm.prestigeGuestWarning") }}
-    </p>
 
     <template #actions>
       <div class="modal-actions">
@@ -142,17 +136,6 @@ const costAfter = computed(() => `-${formatPercent((1 - outcome.value.costMultip
   line-height: 1.5;
   color: var(--accent-text);
   font-weight: 600;
-}
-
-.guest-warning {
-  font-size: 12px;
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  line-height: 1.5;
-  margin-bottom: 20px;
 }
 
 .modal-actions {

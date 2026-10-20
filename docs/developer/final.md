@@ -207,7 +207,7 @@ router/ → controllers/ → database/models/ → Prisma → MariaDB
 
 A `PUT /save` öt prestige-mezője (`phdCount`, `prestigeCount`, `runTokensEarned`, `runClicks`, `runSeconds`) **opcionális**: egy régebbi kliens, amely nem ismeri ezeket, biztonságosan tud menteni — a hiányzó mezőket a szerver a már tárolt értéken hagyja (nem nullázza), első mentésnél pedig az életút-mezőkből tölti fel őket.
 
-Egy formailag helyes, de az előző mentéshez és az eltelt időhöz képest fizikailag elérhetetlen mentést a végpont `409`-cel utasít el (semmi nem íródik), vagy — ha csak kismértékben lépi túl a lehetségest — csendben az elérhető határértékre korrigál és `200`-at ad vissza; lásd lent, "Anti-cheat modell".
+Egy formailag helyes, de az előző mentéshez és az eltelt időhöz képest fizikailag elérhetetlen mentést a végpont `409`-cel utasít el (semmi nem íródik), vagy — ha csak kismértékben lépi túl a lehetségest — csendben az elérhető határértékre korrigál és `200`-at ad vissza; lásd lent, "Anti-cheat modell". A fiók **első** mentésének elutasítása `code: "save_first_unverifiable"`-t hordoz és sosem strike (lásd ott, "Vendég → fiók").
 
 Egy hatodik, szintén opcionális mező, az `upgrades` (megszerzett fejlesztés-azonosítók tömbje) ugyanezt a mintát követi: hiányzása esetén a szerver a már tárolt fejlesztéseket változatlanul hagyja, jelenléte esetén viszont — az `units` mezőhöz hasonlóan — teljesen felülírja őket. Minden elemének egy ismert fejlesztés-azonosítónak kell lennie (`api/src/constants/upgrades.ts`'s `KNOWN_UPGRADE_IDS`), különben a végpont `400`-at ad vissza. A `GET /save` válasza az `upgrades` mellett egy csak-olvasható `activeBoosters` tömböt is tartalmaz (a jelenleg aktív boosterek, `remainingMs` hátralévő idővel) — ezt a `PUT /save` sosem fogadja el, kizárólag a `POST /boosters/claim` hozhatja létre vagy frissítheti.
 
@@ -226,13 +226,15 @@ App.vue
   ├── useUpgrader()          → egy Upgrader-pörgetés végigvitele (előzetes mentés → szerver-pörgetés → eredmény alkalmazása); UpgraderModal.vue használja
   ├── useCareer()            → Tudományos pálya: vásárlás/visszaváltás/bezárás (előzetes mentés → szerver → állapot átvétele); a CareerOverlay.vue használja
   ├── useAutoBuyer()         → az automatikus egység-/fejlesztésvásárlók másodpercenkénti köre (autoBuyStore: a kapcsolók localStorage-ban)
+  ├── useGuestReminders()    → vendég-emlékeztető a függő PhD-nyereség 1, 5, 25, … határainál (bejelentkezés gombos toast)
   ├── useBreakpoint()        → isCompact (matchMedia, < 760px) — a useMediaQuery() vékony burkolója
   ├── useOverlayStack()      → melyik nyitott lap/modál záródik Esc-re és a böngésző/Android Vissza gombra — lásd lent, "Overlayek és a Vissza gomb"
   ├── authStore              → session check, login/register/logout
   ├── settingsStore          → téma, nyelv, autosave, ceremónia — localStorage + szerver szinkron
   ├── saveStore               → load/sync/reset (autosave-időzítő a settingsStore-ból olvas) + withSyncLock (sorba állító lock, lásd lent, "Az Upgrader" és "Tudományos pálya") + reload
+  │                             + logout (mentés, majd friss vendég) + carryOverRejected / startAccountFresh (elutasított első mentés)
   ├── uiStore                → modál állapotok (köztük careerOpen — a fa nézet módban), mobilePanel ("none" | "stats" | "units"), shopTab ("units" | "upgrades")
-  ├── toastStore             → átmeneti értesítések (pl. beállítások mentése, booster begyűjtése)
+  ├── toastStore             → átmeneti értesítések (pl. beállítások mentése, booster begyűjtése); opcionális gombbal (`action`)
   ├── leaderboardStore       → mérőszámonkénti rangsor lekérése (nincs localStorage-gyorsítótár, mindig a szerver a forrás)
   ├── antiCheatStore         → recordClick()/recordPurchase(), isRestricted/restrictedUntil/strikeCount, telemetria-puffer
   └── gameStore              → tokenek, egységek, fejlesztések (upgrades), aktív boosterek, statisztikák, prestige állapot,
@@ -418,6 +420,7 @@ with" kommentekkel) segítségével:
 
 - **Monotonitás** (életút-számlálók sosem csökkenhetnek) → mindig azonnali elutasítás.
 - **Eltelt idő**: `Δelapsedseconds ≤ dt` (nincs offline progresszió, a tick csak csatolt fül mellett fut).
+- **Első mentés** (a fióknak még nincs mentése, és sosem kapott strike-ot): a `dt` kezdőpontja a fiók létrehozása **vagy** a mentés saját, vendégként játszott ideje közül a korábbi — ez utóbbi legfeljebb `FIRST_SAVE_PLAYTIME_CREDIT_SECS` (24 óra) erejéig (lásd lent, "Vendég → fiók").
 - **Kattintásszám**: `Δclicks ≤ 45 · dt` (a burkoló-réteg saját, nagyvonalú felső korlátja — nem a statisztikai detektor jelzési küszöbe, lásd lent).
 - **Bevétel**: a legkedvezőbb lehetséges termelési/kattintás-érték × `dt`, 1.5-szörös ráhagyással.
 - **Elköltés**: az újonnan megszerzett egységek/fejlesztések legolcsóbb lehetséges ára (legjobb PhD-kedvezmény × legjobb booster-kedvezmény) — ez fogja meg az "ingyen egység" hamisítást.
@@ -459,6 +462,20 @@ valódi játékos sose szoruljon korlátozásba. Kimenet:
 | a határon belül | elfogadás változatlanul |
 | a határ 1×–2×-szerese közt | csendes korrekció a határértékre, `200`, `AntiCheatEvent` info-bejegyzés |
 | a határ 2×-szerese fölött, vagy monotonitás-sértés | `409`, semmi nem íródik, azonnali *strike* (lásd 4. réteg) |
+| ugyanez — vagy egy *érdemi* (material) korrekció — a fiók **első** mentésénél (nincs tárolt mentés, és a fiók sosem kapott strike-ot) | `409` `code: "save_first_unverifiable"`, semmi nem íródik, **nincs strike** — csak egy `first_save_reject` info-esemény |
+
+**Vendég → fiók.** Egy vendég a fiók létrehozása *előtt* játszik, így az első
+mentése rendszerint több játékidőt hordoz, mint amennyi idős a fiók. Korábban
+a burok ezt a fiók korától mérte, ezért minden vendég, aki a regisztráció előtt
+tovább játszott, `elapsed_exceeds_wallclock` elutasítást és **strike-ot** kapott
+(és minden további autosave újabbat — a büntetési létra mentés-törlésig vitte
+volna). Most:
+
+- Az első mentés `dt`-je `max(fiók kora, min(elapsedSeconds, 24 óra)) + CLOCK_GRACE_SECS`. A vendég játékideje nem tanúsított, ezért csak a plafonig hitelesítünk: egy hamisított első mentés így sem kaphat többet, mint egy eldobható fiók, amely ennyit egyszerűen *várt* (ugyanaz a burok, mint két mentés közt bármely hosszú szünet — autosave kikapcsolva ez ma is lehetséges), a ranglistán pedig legfeljebb 24 óra játékidőt állíthat. A plafon fölött a szokásos kétszintű ellenőrzés jár (2×-ig korrekció, fölötte elutasítás).
+- **Vendég nem szerezhet fokozatot és nem vásárolhat a Tudományos pályán** (`usePrestige`, `useCareer`; a `PrestigePanel` gombja vendégnek „Védéshez jelentkezz be" és a bejelentkezést nyitja). Egy fokozatszerzés lenullázza a menetet, és a korábbi menetek csúcs-gazdaságát a szerver nem ismeri — a 72 órás szimuláció szerint egy fokozatot szerzett vendég első mentése ~10 óra után 45–800×-osan túllépte volna a bevétel-korlátot. Így a hitelesítendő vendég-haladás mindig **egyetlen menet**, amit a kiterjesztett `dt` pontosan fed (a valódi frontend-store-ral játszott 10 perces, 6 órás és 30 órás vendég-állapotok a `saveValidator.test.ts`-ben).
+- Az első mentés elutasítása sosem strike: egy vadonatúj fióknak nincs mit veszítenie, egy csaló egyszerűen újra regisztrálna, így a strike csak becsületes játékost érne. Egy **érdemi korrekciót** igénylő első mentést (pl. 24–48 óra vendég-játékidő) szintén elutasítunk, nem írunk be korrigálva: a kliens a korrigált értékeket nem kapja meg, így a következő mentése újra a korrigálatlanokat küldené — az már nem első mentés, tehát strike lenne. Az „első mentés" feltétele: nincs tárolt mentés **és** a fiók `strikeCount`-ja 0 — egy a büntetési létra által törölt (5. strike) mentés után így nem válik minden további elutasítás ingyenessé. A kliens a `save_first_unverifiable` kódra (`isFirstSaveUnverifiableError`) megállítja a mentéseket (`saveStore.carryOverRejected`) és a nem bezárható `FirstSaveRejectedModal` két kiutat kínál: **játék folytatása vendégként** (kijelentkezés a haladás megtartásával, `saveStore.logout({ keepProgress: true })`) vagy **új kezdés a fiókkal** (`startAccountFresh`: nullázás és azonnali mentés).
+- **Kijelentkezés = mentés, majd nullázás** (`saveStore.logout()`): előbb a `withSyncLock` flush-a menti az aktuális állapotot (ha ez nem sikerül, a játékos megerősítést kap: „Kijelentkezel mentés nélkül?"), aztán friss vendégként indul a játék. Így a vendég-haladás mindig fiók nélkül szerzett haladás — egy fiók fokozatai, PhD-jai és fája sosem „vándorolhat" egy következő fiók első mentésébe.
+- A vendéget a `useGuestReminders` emlékezteti: amikor a függő PhD-nyeresége először éri el az 1, 5, 25, 125, … (×5) határt, egy „Bejelentkezés / Regisztráció" gombos értesítés jelenik meg (a `toastStore` opcionális `action`-nel bővült).
 
 ### 2. réteg — kliens-oldali bemenet-hitelesség
 
@@ -825,7 +842,7 @@ Nulla csomóponttal a burok **bitre azonos** a korábbival (egy reviewer 50 000 
 3. A szerver válaszából a `phdCount`-ot és az `upgraderSeq`-et átvesszük (`applyCareerState`), nem számoljuk újra. A bezárás (`close`) is a lock alatt, előzetes mentéssel fut, és csak a karrier-részt veszi át (az egyenleg egy, a fokozatszerzés mentése előtti állapotot tükrözhetne).
 4. Egy `PUT /save` válaszának ablak-állapotát csak akkor vesszük át, ha a mentés óta nem történt fokozatszerzés (egy úton lévő autosave válasza különben becsukná az épp megnyílt ablakot).
 
-**Vendég → fiók.** A vendég fáját a szerver nem ismeri, ezért bejelentkezéskor (`forfeitGuestCareer`, csak ha a fa helyben változott) minden csomópontot visszaváltunk, a vendég PhD-nyereség-bónuszával szerzett PhD-ket levonjuk, és szólunk. **Ismert, a bevezetés előtt is létező hiba:** egy vendég, aki a fiókja létrehozásánál tovább játszott, az első mentésénél `elapsed_exceeds_wallclock` elutasítást (és `enforce` alatt strike-ot) kap, mert a burok a fiók létrehozásától méri az időt — külön javításként követjük, ez a változtatás nem érinti.
+**Vendég → fiók.** 1.7.1 óta vendég nem szerezhet fokozatot és nem vásárolhat a fán (lásd fent, "1. réteg" → "Vendég → fiók"), így vendég-fa a gyakorlatban nem jön létre. A bejelentkezéskori `forfeitGuestCareer` (minden csomópont visszaváltása, a vendég PhD-nyereség-bónuszával szerzett PhD-k levonása, értesítés — csak ha a fa helyben változott) védelmi tartalékként marad: ma csak egy 1.7.1 előtti, még nyitva lévő lap vendég-fáját érhetné el.
 
 **A felület** (`components/career/`): teljes képernyős overlay (`CareerOverlay`, z-index 1150) — vásárlási ablak módban Esc, Vissza és a vászonra kattintás sem zárja be (csak a kijelölést törli), csak a Kihagyás / Kész; nézet módban (a Fokozat panel „Tudományos pálya" gombja) bezárható. A vászon (`CareerCanvas`) egyetlen transzformált rétegen SVG-éleket és valódi `<button>` csomópontokat tartalmaz; a bevitel kizárólag Pointer Events (egér, érintés, toll egy kódúton): húzás `DRAG_SLOP` felett pásztáz és sosem jelöl ki, két ujj a középpont körül nagyít, görgő a kurzor körül, dupla koppintás ott nagyít; a nyilak a fában lépkednek (roving tabindex). A geometria tiszta, tesztelt függvényekben él (`utils/panZoom.ts`, `utils/careerLayout.ts`). Egérrel a teljes legyezőt (a gyökeret és mind a hat ágat) mutatva nyílik; érintéssel szándékosan 1-es nagyítással (44 px-es célpontok — a teljes fát „Az egész fa” gomb, a jelmagyarázatot a „?” mutatja), a részletpanel alsó lap (alacsony fekvő képernyőn jobb oldali), és a vászon a kijelölt csomópontot a lap fölé hozza.
 

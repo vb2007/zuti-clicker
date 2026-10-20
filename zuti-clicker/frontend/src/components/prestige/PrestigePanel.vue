@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useGameStore } from "@/stores/gameStore";
 import { useUiStore } from "@/stores/uiStore";
+import { useAuthStore } from "@/stores/authStore";
 import { usePrestige } from "@/composables/usePrestige";
 import { formatNumber } from "@/utils/formatters";
 import { PHD_TOKEN_SCALE, UNIT_REVEAL_FRACTION } from "@/utils/gameConstants";
@@ -11,6 +12,7 @@ import { CAREER_NODES } from "@/utils/careerCore";
 const { t } = useI18n();
 const game = useGameStore();
 const ui = useUiStore();
+const auth = useAuthStore();
 const { requestPrestige } = usePrestige();
 
 // Same progressive-reveal idiom as the unit shop: once the player is close
@@ -69,7 +71,9 @@ const progressLabel = computed(() =>
         :disabled="!game.canPrestige"
         @click="requestPrestige"
       >
-        <span>{{ t("prestige.button") }}</span>
+        <!-- A guest can't prestige (see usePrestige): the same button, ready
+             and showing the gain, sends them to log in or register. -->
+        <span>{{ auth.isLoggedIn ? t("prestige.button") : t("prestige.loginToPrestige") }}</span>
         <!-- The pending gain used to be its own "+N PhD ready to defend"
              line above this button — moved onto the button itself so the
              number sits next to the action that grants it. Runs through
@@ -77,6 +81,7 @@ const progressLabel = computed(() =>
              4-5+ digits, and the button must not overflow. -->
         <span v-if="ready" class="btn-gain">×{{ formatNumber(game.phdGain) }}</span>
       </button>
+      <p v-if="!auth.isLoggedIn" class="guest-note">{{ t("prestige.guestNote") }}</p>
 
       <!-- Keyed to prestigeCount (monotonic) rather than the PhD balance, so it
            is a one-way discovery gate like the panel itself: spending or losing
@@ -182,6 +187,14 @@ const progressLabel = computed(() =>
   background: var(--accent);
   transform-origin: left;
   transition: transform var(--transition-base);
+}
+
+.guest-note {
+  margin: -2px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-wrap: pretty;
 }
 
 .prestige-btn {

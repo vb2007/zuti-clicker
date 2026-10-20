@@ -20,7 +20,7 @@ A personal, characterful take on the idle-clicker genre, built around commemorat
 
 ## Operating Context
 
-Runs entirely in the browser, no installation. Playable immediately as a guest — progress lives only in memory and is lost on refresh/close, with an explicit warning and a beforeunload confirmation once progress exists. Authenticated play adds server-backed persistence (MariaDB via an Express/Prisma API): manual "Sync," optional autosave on a selectable interval (15s/30s/1m/5m), and permanent save deletion. UI is bilingual (English/Hungarian) with instant switching, and supports dark/light themes.
+Runs entirely in the browser, no installation. Playable immediately as a guest — progress lives only in memory and is lost on refresh/close, with an explicit warning and a beforeunload confirmation once progress exists. Prestige (and with it the Academic Career) needs an account: a guest who reaches a PhD is nudged to log in or register, and the guest's run carries over into a new account. Authenticated play adds server-backed persistence (MariaDB via an Express/Prisma API): manual "Sync," optional autosave on a selectable interval (15s/30s/1m/5m), and permanent save deletion. UI is bilingual (English/Hungarian) with instant switching, and supports dark/light themes.
 
 ## Capabilities and Constraints
 

@@ -83,6 +83,20 @@ export function isStaleSaveError(e: unknown): boolean {
   );
 }
 
+// PUT /save's 409 for an account's FIRST save (progress made as a guest) that
+// the plausibility envelope couldn't verify — never a strike; the player is
+// offered a choice instead. Keep in sync with api/src/constants/responses.ts's
+// SAVE.FIRST_SAVE_UNVERIFIABLE.
+export const SAVE_FIRST_UNVERIFIABLE_CODE = "save_first_unverifiable";
+
+export function isFirstSaveUnverifiableError(e: unknown): boolean {
+  return (
+    e instanceof ApiError &&
+    e.status === 409 &&
+    (e.body as { code?: string } | undefined)?.code === SAVE_FIRST_UNVERIFIABLE_CODE
+  );
+}
+
 // The `code` of every POST /career/* 409 — keep in sync with
 // api/src/constants/responses.ts's CAREER section.
 export const CAREER_CODES = {

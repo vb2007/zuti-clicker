@@ -16,6 +16,12 @@ export default defineConfig({
   // No retries: Playwright's JUnit report counts a retried pass as a pass, which would hide
   // a flaky layout assertion from the CI summary. A flake should fail loudly and be fixed.
   retries: 0,
+  // The self-hosted runner shares its memory with the database and other
+  // services: at Playwright's default (half the cores = 4 Chromiums plus the
+  // Vite server) a run swapped, page loads blew the 30 s test timeout across
+  // unrelated specs, and the kernel OOM-killed a node process mid-run. Locally
+  // the default stays.
+  workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI
     ? [["list"], ["junit", { outputFile: process.env.E2E_JUNIT ?? "reports/junit-e2e.xml" }]]
     : "list",

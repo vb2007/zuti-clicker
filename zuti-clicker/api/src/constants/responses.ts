@@ -54,6 +54,22 @@ export class Responses {
           "This save could not be verified as achievable since your last sync and was rejected. Reload to continue from your last verified save."
       }
     },
+    // The same reject tier (or a material clamp) on an account's FIRST save —
+    // progress made as a guest, before the account existed, that the envelope
+    // couldn't verify. Nothing is written.
+    // Never a strike (a brand-new account has nothing to protect, and a cheat
+    // just registers again), and the client offers a choice instead of a
+    // reload: start the account fresh, or log out and keep the guest progress.
+    // `code` is what the client keys on (frontend/src/lib/api.ts's
+    // SAVE_FIRST_UNVERIFIABLE_CODE — keep in sync).
+    FIRST_SAVE_UNVERIFIABLE: {
+      status: 409,
+      body: {
+        code: "save_first_unverifiable",
+        error:
+          "The progress you made before creating this account could not be verified, so it was not saved to the account."
+      }
+    },
     INVALID_PRESTIGE: {
       status: 400,
       body: {

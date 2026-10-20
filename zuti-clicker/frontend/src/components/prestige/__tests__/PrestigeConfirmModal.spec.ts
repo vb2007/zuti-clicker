@@ -1,13 +1,26 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { mount, DOMWrapper } from "@vue/test-utils";
 import PrestigeConfirmModal from "@/components/prestige/PrestigeConfirmModal.vue";
 import { useGameStore } from "@/stores/gameStore";
-import { useAuthStore } from "@/stores/authStore";
 import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { getProductionMultiplier, getCostMultiplier } from "@/utils/prestige";
 import { formatPercent } from "@/utils/formatters";
 import { dispatchTrusted } from "@/__tests__/testEvents";
+import { useAuthStore } from "@/stores/authStore";
+import { api } from "@/lib/api";
+
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    api: { ...actual.api, save: { load: vi.fn(), store: vi.fn(), reset: vi.fn() } }
+  };
+});
+
+function login() {
+  useAuthStore().user = { id: 1, username: "u", email: "u@example.com" };
+}
 
 // PrestigeConfirmModal renders via <Teleport to="body">, so its content lives
 // under document.body rather than under the mounted wrapper's own element —
@@ -68,20 +81,6 @@ describe("PrestigeConfirmModal", () => {
     expect(costRow.startsWith("-0.5%")).toBe(true);
   });
 
-  it("shows the guest warning only when not logged in", () => {
-    const game = useGameStore();
-    game.runTokensEarned = 4_000_000;
-    const auth = useAuthStore();
-
-    mount(PrestigeConfirmModal);
-    expect(body().find(".guest-warning").exists()).toBe(true);
-    document.body.innerHTML = "";
-
-    auth.user = { id: 1, username: "u", email: "u@example.com" };
-    mount(PrestigeConfirmModal);
-    expect(body().find(".guest-warning").exists()).toBe(false);
-  });
-
   it("cancel does not call game.prestige", async () => {
     const game = useGameStore();
     game.runTokensEarned = 4_000_000;
@@ -93,7 +92,12 @@ describe("PrestigeConfirmModal", () => {
     expect(game.runTokensEarned).toBe(4_000_000); // untouched
   });
 
-  it("confirm calls game.prestige exactly once", async () => {
+  it("confirm calls game.prestige exactly once, and saves it right away", async () => {
+    login();
+    vi.mocked(api.save.store).mockResolvedValue({
+      message: "ok",
+      savedAt: new Date().toISOString()
+    });
     const game = useGameStore();
     game.runTokensEarned = 4_000_000;
     mount(PrestigeConfirmModal);
@@ -102,6 +106,21 @@ describe("PrestigeConfirmModal", () => {
 
     expect(game.phdCount).toBe(2);
     expect(game.runTokensEarned).toBe(0);
+    expect(api.save.store).toHaveBeenCalledTimes(1);
+  });
+
+  // Prestige needs an account — even a confirm reached some other way (the
+  // panel sends guests to log in instead) never prestiges a guest.
+  it("a guest's confirm does not prestige and closes the dialog", async () => {
+    const game = useGameStore();
+    game.runTokensEarned = 4_000_000;
+    mount(PrestigeConfirmModal);
+
+    await dispatchTrusted(body().find(".btn-confirm").element, "click");
+
+    expect(game.phdCount).toBe(0);
+    expect(game.runTokensEarned).toBe(4_000_000);
+    expect(api.save.store).not.toHaveBeenCalled();
   });
 
   it("an untrusted (synthetic) confirm click does not prestige", async () => {

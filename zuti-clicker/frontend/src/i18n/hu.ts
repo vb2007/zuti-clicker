@@ -355,6 +355,7 @@ export default {
       insufficient: "Nincs elég PhD-d ehhez a csomóponthoz.",
       changed: "A Tudományos pályád máshol megváltozott — frissítettük.",
       generic: "Ez nem sikerült — próbáld újra.",
+      loginRequired: "A Tudományos pályán vásárláshoz jelentkezz be vagy regisztrálj.",
       unconfirmed: "Nem sikerült megerősíteni a változtatást — a haladásodat újratöltöttük.",
       newWindow: "Egy újabb fokozatszerzés új ablakot nyitott — ott folytathatod a befektetést.",
       closeFailed: "Nem sikerült bezárni a Tudományos pályát — próbáld újra."
@@ -411,14 +412,31 @@ export default {
     logout: "Kijelentkezés",
     loginToSave: "Bejelentkezés a mentéshez",
     staleReloaded:
-      "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be."
+      "A haladásod máshol (pl. egy másik lapon) megváltozott, ezért a legfrissebb mentést töltöttük be.",
+    firstSaveRejected: {
+      title: "A vendégként elért haladásod nem került át ebbe a fiókba",
+      body:
+        "A fiók létrehozása előtt elért haladásodat nem tudtuk ellenőrizni, ezért nem mentettük el a fiókba. Ez nem számít ellened, és a fiókod ellen sem.",
+      keepBtn: "Játék folytatása vendégként",
+      keepNote: "Kijelentkezel. A haladásod a lap bezárásáig megmarad.",
+      freshBtn: "Új kezdés ezzel a fiókkal",
+      freshNote: "A vendéghaladásod elvész, a fiók nulláról indul."
+    },
+    logoutUnsaved: {
+      title: "Kijelentkezel mentés nélkül?",
+      body:
+        "A legfrissebb haladásodat nem sikerült menteni. Ha most kijelentkezel, az utolsó mentés óta elért haladásod elvész.",
+      confirmBtn: "Kijelentkezés így is"
+    }
   },
   guest: {
     warningTitle: "A haladásod nem kerül mentésre",
     warningBody:
-      "Vendégként játszasz. Jelentkezz be vagy regisztrálj, hogy felhőbe mentsd a játékod.",
+      "Vendégként játszol. Jelentkezz be vagy regisztrálj, hogy felhőbe mentsd a játékod és fokozatot szerezhess — ez a menet veled jön.",
     loginBtn: "Bejelentkezés / Regisztráció",
-    continueBtn: "Folytatás mentés nélkül"
+    continueBtn: "Folytatás mentés nélkül",
+    reminderPhd:
+      "Kész a disszertációd: +{n} PhD. Jelentkezz be vagy regisztrálj a megvédéséhez — ez a menet veled jön."
   },
   confirm: {
     deleteSaveTitle: "Törlöd a mentést?",
@@ -428,8 +446,6 @@ export default {
     prestigeTitle: "Megvéded a disszertációdat?",
     prestigeGain: "{gain} PhD fokozatot szerzel.",
     prestigeLose: "A tokenjeid, egységeid és a menet eddigi haladása visszaáll.",
-    prestigeGuestWarning:
-      "Vendégként játszol — a PhD fokozataid elvesznek a lap bezárásakor. Jelentkezz be a megőrzésükhöz.",
     prestigeConfirmBtn: "Disszertáció megvédése"
   },
   upgrader: {
@@ -487,6 +503,9 @@ export default {
     production: "Termelés",
     costDiscount: "Egységár",
     button: "Disszertáció megvédése",
+    loginToPrestige: "Védéshez jelentkezz be",
+    guestNote:
+      "A fokozatszerzéshez fiók kell. Regisztrálj vagy jelentkezz be — ez a menet veled jön.",
     ceremonyGained: "Megszerzett PhD",
     ceremonySubtext: "A kutatásod tartósan megerősíti minden jövőbeli menetet.",
     continueBtn: "Új kezdet"

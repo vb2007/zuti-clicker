@@ -13,6 +13,8 @@ export type ShopTab = "units" | "upgrades";
 export const useUiStore = defineStore("ui", () => {
   const authModalOpen = ref(false);
   const confirmDeleteOpen = ref(false);
+  // Logging out couldn't save the latest progress first: "log out anyway?"
+  const logoutUnsavedOpen = ref(false);
   const guestWarningDismissed = ref(false);
   const settingsModalOpen = ref(false);
   const leaderboardModalOpen = ref(false);
@@ -29,6 +31,7 @@ export const useUiStore = defineStore("ui", () => {
   return {
     authModalOpen,
     confirmDeleteOpen,
+    logoutUnsavedOpen,
     guestWarningDismissed,
     settingsModalOpen,
     leaderboardModalOpen,

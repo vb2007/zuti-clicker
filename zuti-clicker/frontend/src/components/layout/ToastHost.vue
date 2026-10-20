@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { useToastStore } from "@/stores/toastStore";
+import { useToastStore, type ToastEntry, type ToastKind } from "@/stores/toastStore";
 
 const toast = useToastStore();
+
+const ICONS: Record<ToastKind, string> = { success: "✓", booster: "⚡", info: "🎓", error: "⚠" };
+
+function act(entry: ToastEntry) {
+  entry.action?.run();
+  toast.dismiss(entry.id);
+}
 </script>
 
 <template>
@@ -12,12 +19,13 @@ const toast = useToastStore();
           v-for="entry in toast.toasts"
           :key="entry.id"
           class="toast-item"
-          :class="entry.kind"
+          :class="[entry.kind, { 'has-action': entry.action }]"
         >
-          <span class="toast-icon">{{
-            entry.kind === "success" ? "✓" : entry.kind === "booster" ? "⚡" : "⚠"
-          }}</span>
+          <span class="toast-icon">{{ ICONS[entry.kind] }}</span>
           <span class="toast-msg">{{ entry.message }}</span>
+          <button v-if="entry.action" class="toast-action" type="button" @click="act(entry)">
+            {{ entry.action.label }}
+          </button>
           <button class="toast-close" @click="toast.dismiss(entry.id)" aria-label="Dismiss">
             ✕
           </button>
@@ -57,9 +65,28 @@ const toast = useToastStore();
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
 }
 
+/* With a button: icon | message | ✕ on top, the button under the message, so
+   a long message keeps its full width instead of wrapping beside it. */
+.toast-item.has-action {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  row-gap: 10px;
+}
+.toast-item.has-action .toast-action {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+}
+.toast-item.has-action .toast-icon,
+.toast-item.has-action .toast-close {
+  margin-top: 2px;
+}
+
 .toast-item.success { border-color: var(--success); }
 .toast-item.error { border-color: var(--danger); }
 .toast-item.booster { border-color: var(--booster); }
+.toast-item.info { border-color: var(--accent); }
 
 .toast-icon {
   font-size: 14px;
@@ -72,8 +99,28 @@ const toast = useToastStore();
 .toast-msg {
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.45;
   color: var(--text-primary);
   flex: 1;
+  text-wrap: pretty;
+}
+
+.toast-action {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--btn-buy-bg);
+  color: var(--btn-buy-text);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background var(--transition-fast);
+}
+@media (hover: hover) {
+  .toast-action:hover { background: var(--accent-dim); }
+}
+@media (max-width: 480px), (pointer: coarse) {
+  .toast-action { min-height: 44px; }
 }
 
 .toast-close {
