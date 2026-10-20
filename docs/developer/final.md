@@ -418,7 +418,7 @@ valós idővel, a szerver-oldali gazdaság-tükör (`services/economy.ts`,
 `upgrades.ts` és `gameConstants.ts` kézzel tartott másolata, "keep in sync
 with" kommentekkel) segítségével:
 
-- **Monotonitás** (életút-számlálók sosem csökkenhetnek) → mindig azonnali elutasítás.
+- **Monotonitás** (életút-számlálók sosem csökkenhetnek) → elutasítás. 1.7.3 óta ez `409` `code: "save_stale"` és **sosem strike**: a tároltnál alacsonyabb érték az, amit egy második lap vagy eszköz küld (a korábban betöltött haladást) — elavult másolat, nem csalás; semmi nem íródik, és egy életút-érték csökkentésével nem lehet nyerni semmit (`stale_copy` info-esemény).
 - **Eltelt idő**: `Δelapsedseconds ≤ dt` (nincs offline progresszió, a tick csak csatolt fül mellett fut).
 - **Első mentés** (a fióknak még nincs mentése, és sosem kapott strike-ot): a `dt` kezdőpontja a fiók létrehozása **vagy** a mentés saját, vendégként játszott ideje közül a korábbi — ez utóbbi legfeljebb `FIRST_SAVE_PLAYTIME_CREDIT_SECS` (24 óra) erejéig (lásd lent, "Vendég → fiók").
 - **Kattintásszám**: `Δclicks ≤ 45 · dt` (a burkoló-réteg saját, nagyvonalú felső korlátja — nem a statisztikai detektor jelzési küszöbe, lásd lent).
@@ -494,15 +494,27 @@ valódi játékos sose szoruljon korlátozásba. Kimenet:
 |---|---|
 | a határon belül | elfogadás változatlanul |
 | a határ 1×–2×-szerese közt | csendes korrekció a határértékre, `200`, `AntiCheatEvent` info-bejegyzés |
-| a határ 2×-szerese fölött, vagy monotonitás-sértés | `409`, semmi nem íródik, azonnali *strike* (lásd 4. réteg) |
+| a határ 2×-szerese fölött | `409` `code: "save_implausible"`, semmi nem íródik, azonnali *strike* (lásd 4. réteg) |
+| monotonitás-sértés (a tároltnál alacsonyabb életút-érték — második lap/eszköz) | `409` `code: "save_stale"`, semmi nem íródik, **nincs strike** |
 | ugyanez — vagy egy *érdemi* (material) korrekció — a fiók **első** mentésénél (nincs tárolt mentés, és a fiók sosem kapott strike-ot) | `409` `code: "save_first_unverifiable"`, semmi nem íródik, **nincs strike** — csak egy `first_save_reject` info-esemény |
 
 Egy elutasított mentésre (`409`, `code: "save_implausible"`) a kliens 1.7.3 óta
 **újratölti** a szerver utolsó ellenőrzött mentését (mint egy `save_stale`-nél),
 ahelyett, hogy ugyanazt a haladást küldené újra — korábban minden korlátozás
-lejártakor újabb strike jött ugyanarra (a 2026-10-20-i ban-hurok). A játékos csak
-a nem mentett másodperceket veszíti; a szerver hiteles marad, az első strike
-megmarad.
+lejártakor újabb strike jött ugyanarra (a 2026-10-20-i ban-hurok). A játékos az
+utolsó *elfogadott* mentés óta elért haladást veszíti (autosave mellett ez
+másodperceknyi); a szerver hiteles marad, az első strike megmarad. Ha az
+újratöltés nem sikerül (pl. nincs internet), a kliens a következő mentési
+alkalommal újra a betöltést próbálja, és sosem küldi újra az elutasított
+haladást; ha a szervernek nincs mentése (az 5. strike törli), friss játékkal
+indul (`adoptServerSave`).
+
+A maradék-token ellenőrzés (`tokens ≤ költségvetés − minimális költés`)
+lebegőpontos toleranciája 1.7.3 óta a **költés** nagyságával arányos, nem a
+maradékkal: két nagy szám különbségének hibája velük arányos — egy ~10¹⁴-et
+összegyűjtő, majd a költség-boosterrel szinte mindet elköltő játékosnál
+tucatnyi token sodródás korábban elutasítást és strike-ot okozott, pusztán
+kerekítésből.
 
 **Vendég → fiók.** Egy vendég a fiók létrehozása *előtt* játszik, így az első
 mentése rendszerint több játékidőt hordoz, mint amennyi idős a fiók. Korábban
