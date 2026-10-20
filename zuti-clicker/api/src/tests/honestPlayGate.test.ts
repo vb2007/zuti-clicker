@@ -58,7 +58,7 @@ interface Stream {
             : `material clamp ${verdict.reasons.join("+")}`;
         failures.push(
           `${pair.source} @${pair.hours}h (${pair.prestiged ? "prestige" : "plain"}): ${what} ` +
-            JSON.stringify(verdict.outcome === "accept" ? {} : verdict.detail)
+            JSON.stringify(verdict.detail)
         );
       }
     }
