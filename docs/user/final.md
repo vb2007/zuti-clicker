@@ -23,6 +23,10 @@ Ez azt jelenti, hogy ha bezárod vagy frissíted az oldalt, a játékod elvész.
 - **„Bejelentkezés / Regisztráció"** – Megnyílik a bejelentkezési ablak, ahol fiókot hozhatsz létre vagy bejelentkezhetsz.
 - **„Folytatás mentés nélkül"** – A figyelmeztetés eltűnik, de a játék nem kerül mentésre.
 
+Vendégként mindent játszhatsz, **kivéve a fokozatszerzést** (és így a Tudományos pályát) — ehhez fiók kell. Amikor a függő PhD-nyereséged először eléri az 1, 5, 25, 125, … PhD-t, egy értesítés szól, egy **„Bejelentkezés / Regisztráció"** gombbal. Ha regisztrálsz vagy bejelentkezel, a vendégként játszott menet **veled jön** a fiókba (legfeljebb 24 óra játékidőig).
+
+Ha a fiók létrehozása előtti haladásodat a szerver valamiért nem tudja ellenőrizni (például egy több mint egy napja futó vendég-lapnál), a mentés nem kerül a fiókba — ez **nem számít ellened**. Egy ablak két lehetőséget kínál: **„Játék folytatása vendégként"** (kijelentkezel, a haladásod a lap bezárásáig megmarad) vagy **„Új kezdés ezzel a fiókkal"** (a vendéghaladás elvész, a fiók nulláról indul). Ezt az ablakot nem lehet véletlenül bezárni, és amíg nem választasz, a játék nem ment.
+
 ---
 
 ## Fiók létrehozása és bejelentkezés
@@ -33,7 +37,7 @@ A fejléc jobb oldalán, a „💾 Login to save" gombra kattintva megnyílik a 
 1. Válaszd a **„Register"** / **„Regisztráció"** fület.
 2. Add meg a felhasználónevedet, e-mail címedet és jelszavadat.
 3. Kattints a **„Create account"** / **„Fiók létrehozása"** gombra.
-4. Sikeres regisztráció után az alkalmazás automatikusan bejelentkeztet, és betölti a korábbi mentésedet (ha van).
+4. Sikeres regisztráció után az alkalmazás automatikusan bejelentkeztet. Egy új fiók a vendégként addig játszott menetet viszi tovább; egy meglévő fiók a saját mentését tölti be.
 
 ### Bejelentkezés
 1. Válaszd a **„Log in"** / **„Bejelentkezés"** fület.
@@ -263,7 +267,7 @@ minden jövőbeli menetedben érvényesülnek. Egy éppen aktív booster viszont
 túléli a fokozatszerzést — az egy időzített esemény, nem a menethez kötött
 haladás.
 
-Vendégként is fokozatot szerezhetsz — ilyenkor a megerősítő ablak egy külön figyelmeztetést mutat, hogy a PhD-id (a többi haladásoddal együtt) elvesznek, ha bezárod a lapot bejelentkezés nélkül.
+A fokozatszerzéshez **fiók kell**. Vendégként a gomb felirata „Védéshez jelentkezz be" (a megszerezhető PhD-k számával), és a bejelentkezési ablakot nyitja meg; a menetedet a fiók átveszi, így bejelentkezés után ott folytathatod, ahol tartottál.
 
 Sikeres fokozatszerzés után egy teljes képernyős „ünneplés" jelenik meg: a megszerzett PhD-k száma animálva számol fel, majd egy „Begin Anew" (Új kezdet) gombbal térhetsz vissza a (már visszaállított) játékhoz. Utána megnyílik a **Tudományos pálya** vásárlási ablaka (lásd lent): itt befektetheted a PhD-ket, vagy megtarthatod őket — az új menet akkor indul, amikor végeztél. Ez az ünneplés a Beállítások panelben „Brief"-re (Rövidre) kapcsolható, ekkor csak a megerősítő ablak jelenik meg, teljes képernyős animáció nélkül.
 
@@ -288,7 +292,7 @@ Az első fokozatszerzésed után a „Fokozat" panelen, a „Defend Thesis" gomb
 
 **Pörgetés közben** a vezérlők zárolva vannak, és a vásárlás/fokozatszerzés is szünetel. A bal oldali PhD-számláló a kerék megállásáig a régi értéket mutatja, hogy ne áruljon el semmit előre. Az eredmény (nyertél/vesztettél, az új PhD-készleted) a kerék megállása után jelenik meg, a „Spin again" gombbal pedig újra pörgethetsz.
 
-**Bejelentkezve** a pörgetés előtt a játék automatikusan elmenti az állapotodat, és az eredmény a szerveren is rögzül. Ha ugyanazt a fiókot egy másik lapon is használod, és ott pörgettél, ezen a lapon a következő mentés „a haladásod máshol megváltozott" értesítést kap, és a legfrissebb mentést tölti be. **Vendégként** a pörgetés csak a játékban él — a nyert vagy elvesztett PhD-k a többi haladásoddal együtt elvesznek, ha bezárod a lapot (az ablak ezt ki is írja). Ha vendégként pörgettél, majd bejelentkezel, a keréken nyert vagy elvesztett PhD-k **nem kerülnek át a fiókodba** (a játék értesít erről) — a fiókod haladása csak a fokozatszerzésből származó PhD-ket tartalmazza.
+**Bejelentkezve** a pörgetés előtt a játék automatikusan elmenti az állapotodat, és az eredmény a szerveren is rögzül. Ha ugyanazt a fiókot egy másik lapon is használod, és ott pörgettél, ezen a lapon a következő mentés „a haladásod máshol megváltozott" értesítést kap, és a legfrissebb mentést tölti be. Mivel PhD-t csak fokozatszerzéssel lehet szerezni, a fokozatszerzés pedig fiókhoz kötött, a kerék a gyakorlatban **bejelentkezve** használható.
 
 A PhD-ranglista a birtokolt és a Tudományos pályába befektetett PhD-id összegét mutatja, ezért az Upgrader nyeresége és vesztesége közvetlenül befolyásolja a helyezésedet (a befektetés viszont nem). Egy pörgetés tétje legfeljebb 2 147 483 647 PhD lehet.
 
@@ -324,7 +328,7 @@ A „?" gomb (a nagyítás fölött) ugyanezt a jelmagyarázatot mutatja.
 - **Új boosterek**: a **Kutatási Bónusz** azonnal jóváír néhány perc termelést, a **Heuréka-pillanat** egy ideig +50% kritikus esélyt ad.
 - **Disszertáció ág**: több PhD fokozatszerzésenként, és erősebb bónusz minden birtokolt PhD után.
 
-**Vendégként** a fa csak a játékban él. Ha vendégként vásároltál, majd bejelentkezel, a vendég-fa **nem kerül át a fiókodba**: a csomópontok árát visszakapod — kivéve azokat a PhD-ket, amelyeket maga a fa hozott (a játék szól), a fiók pedig a következő fokozatszerzésnél nyit neked vásárlási ablakot.
+A Tudományos pálya — a fokozatszerzéshez hasonlóan — **fiókhoz kötött**: vendégként nem lehet vásárolni rajta.
 
 A **PhD-ranglista** a birtokolt és a befektetett PhD-id **összegét** mutatja, így a fába fektetés nem ront a helyezéseden.
 
@@ -342,7 +346,7 @@ Az automatikus mentés be/ki kapcsolása és az időköz beállítása a **Beál
 ### Felhasználói menü (`Felhasználónév`)
 A felhasználónevedre kattintva legördülő menü jelenik meg:
 - **„Delete save"** / **„Mentés törlése"**: Megerősítés után a mentési fájl véglegesen törlődik az adatbázisból. **Ez nem vonható vissza.**
-- **„Log out"** / **„Kijelentkezés"**: Kijelentkezés a fiókból. A munkamenet megszűnik, de a játék helyben fut tovább (vendég módban).
+- **„Log out"** / **„Kijelentkezés"**: Kijelentkezés a fiókból. Előbb a játék elmenti a legfrissebb állapotodat, aztán kijelentkezel, és a játék **friss vendégként** indul újra (a fiókod haladása a szerveren vár). Ha a mentés nem sikerül (pl. nincs internet), a játék megkérdezi, hogy mentés nélkül is kijelentkezel-e — ilyenkor az utolsó mentés óta elért haladás elvész.
 
 Néhány telepítésen (csak ha az üzemeltető kifejezetten bekapcsolta) az **Alt+X**
 billentyűkombináció megerősítés nélkül azonnal végrehajtja a fenti két
