@@ -148,6 +148,15 @@ function handlePointerDown(e: PointerEvent) {
 // the player never pressed was the actual bug this replaces.
 let lastKeyMethod: "enter" | "space" | null = null;
 function handleKeyDown(e: KeyboardEvent) {
+  // A held key is the OS repeating it, not the player pressing it: on a native
+  // <button> every repeated Enter keydown fires another trusted click, so
+  // holding Enter would click at the OS repeat rate (user-adjustable, 100+/s
+  // on Linux) with no tool at all. Only a fresh press counts. (Space only
+  // activates on keyup, but it is held to the same rule.)
+  if (e.repeat && (e.code === "Enter" || e.code === "Space")) {
+    e.preventDefault();
+    return;
+  }
   if (e.code === "Enter") lastKeyMethod = "enter";
   else if (e.code === "Space") lastKeyMethod = "space";
 }
