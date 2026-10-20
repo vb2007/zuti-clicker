@@ -8,7 +8,6 @@ import {
   SOFT_CLAMP_STRIKE_THRESHOLD,
   ANTICHEAT_STATE_WINDOW_HOURS,
   NO_FATIGUE_STREAK,
-  SUSPICIOUS_WINDOWS_TO_STRIKE,
   MIN_SCORE_TO_FLAG,
   MIN_DISTINCT_SIGNALS_TO_FLAG
 } from "../../constants/antiCheat";
@@ -287,11 +286,10 @@ export interface DigestResult {
 }
 
 /**
- * Scores a reported click-timing digest (services/antiCheat.ts) and applies
- * the "2 consecutive flagged windows" escalation — except for the
- * zero-false-positive signals (untrusted input, integrity flags) and outright
- * digest inconsistency, which are decisive on the very first report (see
- * evaluateDigest's own comments).
+ * Scores a reported click-timing digest (services/antiCheat.ts) and logs the
+ * verdict. Only certain evidence — an untrusted click or a honeypot hit —
+ * strikes, on the very first report; everything else is logged for review
+ * (`flagged` in the event detail) and never acted on. See the comment below.
  */
 export async function processDigest(
   userId: number,
@@ -339,23 +337,23 @@ export async function processDigest(
     return { status, flagged: false, struck: false };
   }
 
-  // A zero-false-positive signal (untrusted input, an integrity flag) is
-  // decisive immediately. A digest that contradicts its OWN numbers
-  // (`!verdict.consistent` — bucket_sum_mismatch, rate_exceeds_envelope) is
-  // ALSO decisive immediately, same as it always was: unlike the unscoreable
-  // case above (a structurally malformed body, or a window the browser
-  // suspended through — genuinely no information), a well-shaped digest
-  // whose own numbers contradict each other has no innocent production
-  // incident behind it and no legitimate client bug is known to produce it
-  // — there is nothing to give a "second window to recover" grace period
-  // for. (An earlier version of this fix folded !verdict.consistent into
-  // the ordinary 2-consecutive-window `flagged` path instead, on the theory
-  // that it deserved the same leniency as a statistical signal — but that
-  // opens a real evasion: alternating one inconsistent digest with one
-  // clean digest resets suspicionScore on every clean window, so the
-  // pattern never reaches 2 consecutive and never strikes at all.)
-  const decisiveNow =
-    !verdict.consistent || digest.untrustedClicks > 0 || digest.integrityFlags.length > 0;
+  // Only CERTAIN evidence restricts an account from here: a click the browser
+  // itself marked untrusted (a script dispatching it — every click handler
+  // checks the original event's isTrusted), or a honeypot hit (the hidden
+  // trap button, the fake window.__zutiGame.addTokens) that no pointer,
+  // keyboard or assistive-technology path can reach. Everything else this
+  // layer computes — the statistical click-timing signals, a digest whose
+  // own numbers disagree, a native function that isn't native — is logged
+  // for review and never strikes: each has struck legitimate players in
+  // production (a fast, steady human clicker's timing; four client digest
+  // bugs; and browser extensions legitimately patch the natives checked),
+  // and an auto-clicker's earnings are already capped by the save envelope.
+  // See docs/developer/final.md's "Anti-cheat modell" → 3. réteg.
+  const certainSignals = [
+    ...(digest.untrustedClicks > 0 ? ["untrustedInput"] : []),
+    ...digest.integrityFlags.filter((f) => f.startsWith("honeypot:")).map((f) => `integrity:${f}`)
+  ];
+  const certain = certainSignals.length > 0;
 
   const sawSustainedRate = verdict.consistent && verdict.signals.includes("sustainedRate");
   const highRateWindows = sawSustainedRate ? current.highRateWindows + 1 : 0;
@@ -366,23 +364,32 @@ export async function processDigest(
     score += 1;
   }
   const distinctSignals = new Set(signals).size;
+  // What the statistical layer WOULD have called suspicious — kept in the
+  // log as `flagged` for review, but no longer acted on.
   const flagged =
-    decisiveNow ||
-    (verdict.consistent &&
-      (verdict.flagged || (score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG)));
+    !verdict.consistent ||
+    verdict.flagged ||
+    (score >= MIN_SCORE_TO_FLAG && distinctSignals >= MIN_DISTINCT_SIGNALS_TO_FLAG);
 
   await logAntiCheatEvent({
     userId,
     // kind is VARCHAR(32) — the reason goes in `detail`, never appended here
     // (e.g. "digest_inconsistent:rate_exceeds_envelope" alone is 42 chars).
     kind: verdict.consistent ? "statistical_digest" : "digest_inconsistent",
-    severity: flagged ? "strike" : "info",
+    severity: certain ? "strike" : "info",
     mode,
-    detail: { score, signals, distinctSignals, flagged, decisiveNow, inconsistencyReason: verdict.inconsistencyReason },
-    enforced: enforced && flagged
+    detail: {
+      score,
+      signals,
+      distinctSignals,
+      flagged,
+      certainSignals,
+      inconsistencyReason: verdict.inconsistencyReason
+    },
+    enforced: enforced && certain
   });
 
-  if (!flagged) {
+  if (!certain) {
     if (enforced) {
       await prisma.antiCheatState.update({
         where: { id: current.id },
@@ -390,26 +397,12 @@ export async function processDigest(
       });
     }
     const status = await getAntiCheatStatus(userId, enforced);
-    return { status, flagged: false, struck: false };
+    return { status, flagged, struck: false };
   }
 
-  const suspicionScore = current.suspicionScore + 1;
-  if (decisiveNow || suspicionScore >= SUSPICIOUS_WINDOWS_TO_STRIKE) {
-    await applyStrike(userId, verdict.consistent ? "statistical_verdict" : "digest_inconsistent", mode, enforced, {
-      score,
-      signals,
-      inconsistencyReason: verdict.inconsistencyReason
-    });
-    const status = await getAntiCheatStatus(userId, enforced);
-    return { status, flagged: true, struck: enforced };
-  }
-
-  if (enforced) {
-    await prisma.antiCheatState.update({
-      where: { id: current.id },
-      data: { suspicionScore, highRateWindows, lastCleanAt: now }
-    });
-  }
+  await applyStrike(userId, "certain_evidence", mode, enforced, {
+    signals: certainSignals
+  });
   const status = await getAntiCheatStatus(userId, enforced);
-  return { status, flagged: true, struck: false };
+  return { status, flagged: true, struck: enforced };
 }

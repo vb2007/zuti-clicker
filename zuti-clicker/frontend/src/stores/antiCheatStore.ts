@@ -89,8 +89,8 @@ function guestRestrictionMinutes(strike: number): number {
  *
  * Guests (never authenticated, so POST /anticheat/report has nothing to
  * report to) get a deliberately narrower, LOCAL-ONLY path: only the
- * zero-false-positive signals (untrusted/synthetic clicks, a
- * honeypot/integrity trip) can restrict a guest, tracked in localStorage —
+ * zero-false-positive signals (untrusted/synthetic clicks, a honeypot hit)
+ * can restrict a guest — never a patched native — tracked in localStorage —
  * see the plan's "guest mode" decision. A logged-in account's restriction
  * always comes from the server; nothing here ever sets it locally for one.
  */
@@ -230,10 +230,12 @@ export const useAntiCheatStore = defineStore("antiCheat", () => {
    */
   async function sendHeartbeat(): Promise<boolean> {
     if (!auth.isLoggedIn) {
-      // No server digest to send, but a guest's honeypot/integrity trip is
-      // still a zero-false-positive local detection and must still strike.
-      const integrityFlags = [...new Set([...honeypot.drainFlags(), ...checkNativeIntegrity()])];
-      const guestSaveReset = integrityFlags.length > 0 && applyGuestStrike();
+      // No server digest to send, but a guest's honeypot trip is a
+      // zero-false-positive local detection and still strikes. A patched
+      // native (checkNativeIntegrity) never does: browser extensions patch
+      // those legitimately — the same rule the server applies to accounts
+      // (api/src/database/models/antiCheat.ts's processDigest).
+      const guestSaveReset = honeypot.drainFlags().length > 0 && applyGuestStrike();
       resetWindow();
       // A logged-in account gets a fresh isRestricted every heartbeat (the
       // server recomputes it from its own clock on every report) even if

@@ -426,7 +426,15 @@ véd. A rendszer szándékosan **nagyvonalú**: két kéz egyszerre használata
 menet önmagában sosem elég a beavatkozáshoz — csak egyértelmű,
 automatizálásra utaló minta.
 
-Ha a rendszer ilyen mintát észlel:
+Korlátozást csak **biztos** jel vált ki: egy szkript által küldött kattintás,
+vagy egy a játékba rejtett csapda megérintése, amihez egér, billentyűzet vagy
+kisegítő eszköz sosem ér hozzá. A kattintásaid ritmusát a rendszer figyeli, de
+egy gyors vagy szokatlanul egyenletes kattintás önmagában **soha** nem vezet
+korlátozáshoz, és a böngésződ bővítményei sem. Ha egy mentés az adott idő alatt
+elérhetetlen haladást mutat, a szerver nem fogadja el (vagy a lehetséges
+értékre igazítja).
+
+Ha a rendszer ilyen jelet észlel:
 
 - Egy felugró ablak jelzi, hogy a fiókodon szokatlan aktivitást találtunk.
 - A kattintás, a vásárlás és a fokozatszerzés az ablakban jelzett

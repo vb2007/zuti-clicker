@@ -4,6 +4,7 @@ import { useAntiCheatStore } from "@/stores/antiCheatStore";
 import { useAuthStore } from "@/stores/authStore";
 import { api } from "@/lib/api";
 import { BURST_CPS_CAP, MAX_DIGEST_WINDOW_MS } from "@/utils/antiCheatConstants";
+import { checkNativeIntegrity } from "@/utils/integrityChecks";
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -43,6 +44,10 @@ describe("antiCheatStore", () => {
     setActivePinia(createPinia());
     localStorage.clear();
     document.body.innerHTML = "";
+    // The honeypot global is installed once per window and bound to the store
+    // that installed it — a fresh store per test needs a fresh one.
+    delete (window as unknown as Record<string, unknown>)["__zutiGame"];
+    vi.mocked(checkNativeIntegrity).mockReturnValue([]);
     vi.mocked(api.anticheat.report).mockReset().mockResolvedValue({
       message: "ok",
       status: "clean",
@@ -116,6 +121,28 @@ describe("antiCheatStore", () => {
       store.recordClick(true);
       await store.sendHeartbeat();
       expect(store.isRestricted).toBe(false);
+    });
+
+    // Regression (2026-10-20): browser extensions legitimately patch the natives
+    // checkNativeIntegrity looks at (this very test environment's happy-dom
+    // does too) — only certain evidence may restrict a player.
+    it("regression: a patched native never restricts a guest", async () => {
+      vi.mocked(checkNativeIntegrity).mockReturnValue(["patched:setInterval", "patched:dateNow"]);
+      const store = useAntiCheatStore();
+      store.initialize();
+      await store.sendHeartbeat();
+      await store.sendHeartbeat();
+      expect(store.isRestricted).toBe(false);
+      expect(store.strikeCount).toBe(0);
+    });
+
+    it("a honeypot hit still restricts a guest", async () => {
+      const store = useAntiCheatStore();
+      store.initialize();
+      (window as unknown as { __zutiGame: { addTokens: () => void } }).__zutiGame.addTokens();
+      await store.sendHeartbeat();
+      expect(store.isRestricted).toBe(true);
+      expect(store.strikeCount).toBe(1);
     });
   });
 

@@ -1,0 +1,136 @@
+{
+  "_comment": "Production incident 2026-10-20: the leading player's stored save (the start of a run: kept units and the start fund) and what is known of the save the envelope then rejected 11.4 s of play later, after a whole run and another prestige. Game state only.",
+  "prev": {
+    "tokens": 1000,
+    "totalTokensEarned": 21364977121706.855,
+    "totalClicks": 54437,
+    "elapsedSeconds": 108187.7500040534,
+    "phdCount": 18980,
+    "prestigeCount": 72,
+    "upgraderNet": -629,
+    "phdInvested": 13067,
+    "savedAt": "2026-10-20T12:13:40.331Z",
+    "units": [
+      {
+        "unitId": "alpha",
+        "owned": 9
+      },
+      {
+        "unitId": "beta",
+        "owned": 8
+      },
+      {
+        "unitId": "gamma",
+        "owned": 7
+      },
+      {
+        "unitId": "delta",
+        "owned": 6
+      },
+      {
+        "unitId": "epsilon",
+        "owned": 4
+      },
+      {
+        "unitId": "zeta",
+        "owned": 3
+      },
+      {
+        "unitId": "eta",
+        "owned": 3
+      },
+      {
+        "unitId": "theta",
+        "owned": 3
+      }
+    ],
+    "upgrades": []
+  },
+  "careerNodeIds": [
+    "administration.departmentBudget",
+    "administration.procurement.1",
+    "administration.procurement.2",
+    "administration.procurement.3",
+    "administration.procurement.4",
+    "administration.procurement.5",
+    "administration.seedFunding",
+    "administration.tenure.1",
+    "administration.tenureTrack",
+    "conferences.callForPapers",
+    "conferences.conferenceSeason",
+    "conferences.frenzyPotency.1",
+    "conferences.frenzyPotency.2",
+    "conferences.frenzyPotency.3",
+    "conferences.frenzyPotency.4",
+    "conferences.frenzyPotency.5",
+    "conferences.keynoteSpeaker",
+    "conferences.mailingList.1",
+    "conferences.mailingList.2",
+    "conferences.mailingList.3",
+    "conferences.mailingList.4",
+    "conferences.mailingList.5",
+    "conferences.mailingList.6",
+    "conferences.networking.1",
+    "conferences.networking.2",
+    "conferences.networking.3",
+    "conferences.networking.4",
+    "conferences.networking.5",
+    "conferences.networking.6",
+    "conferences.networking.7",
+    "conferences.networking.8",
+    "conferences.popQuizPotency.1",
+    "conferences.popQuizPotency.2",
+    "conferences.popQuizPotency.3",
+    "conferences.posterBoard.1",
+    "conferences.posterBoard.2",
+    "conferences.posterSession",
+    "habilitation",
+    "lab.purchasingOfficer",
+    "lab.taTraining.1",
+    "lab.taTraining.2",
+    "lab.taTraining.3",
+    "lab.taTraining.4",
+    "lab.teachingAssistant",
+    "lab.upgradeClerk",
+    "lecturing.appliedTheory.1",
+    "lecturing.lectureMomentum",
+    "lecturing.lecturer",
+    "lecturing.momentum.1",
+    "lecturing.momentum.2",
+    "lecturing.momentum.3",
+    "lecturing.rhetoric.1",
+    "lecturing.rhetoric.2",
+    "lecturing.rhetoric.3",
+    "lecturing.rhetoric.4",
+    "lecturing.rhetoric.5",
+    "lecturing.seminarLeader",
+    "research.alphaStudies.1",
+    "research.betaStudies.1",
+    "research.grantWriting.1",
+    "research.grantWriting.2",
+    "research.grantWriting.3",
+    "research.grantWriting.4",
+    "research.grantWriting.5",
+    "research.institute",
+    "research.labAccess",
+    "research.researchGroup",
+    "thesis.academicPrestige",
+    "thesis.citations.1",
+    "thesis.citations.2",
+    "thesis.citations.3",
+    "thesis.doctoralSchool",
+    "thesis.fundingCommittee",
+    "thesis.reputation.1",
+    "thesis.reputation.2",
+    "thesis.reputation.3",
+    "thesis.scholarships.1",
+    "thesis.scholarships.2"
+  ],
+  "refused": {
+    "wallClockSecs": 11.678,
+    "deltaElapsed": 11.400000000663567,
+    "deltaClicks": 81,
+    "deltaEarned": 810485170458.3594,
+    "prestigeCount": 73
+  }
+}

@@ -1,11 +1,11 @@
-// Script-integrity and honeypot checks — Layer 2's zero-false-positive
-// signals. A legitimate player never monkey-patches a native browser
-// function, and never interacts with an off-screen, aria-hidden,
+// Script-integrity and honeypot checks. Both feed
+// AntiCheatDigest.integrityFlags. A honeypot hit (`honeypot:*`) is certain
+// evidence: no legitimate player interacts with an off-screen, aria-hidden,
 // zero-opacity element that no pointer, keyboard, or assistive-technology
-// path can reach. Feeds AntiCheatDigest.integrityFlags, which the server
-// treats as decisive on the very first report (see
-// api/src/services/antiCheat.ts) — nothing here contributes to the scored,
-// corroboration-needed signals the way pointerPhysics.ts's do.
+// path can reach, and it restricts on the very first report (see
+// api/src/database/models/antiCheat.ts's processDigest). A patched native
+// (`patched:*`) is only logged: browser extensions (ad-blocker scriptlets,
+// anti-fingerprinting add-ons) patch these natives legitimately.
 
 const NATIVE_CODE_MARKER = "[native code]";
 
