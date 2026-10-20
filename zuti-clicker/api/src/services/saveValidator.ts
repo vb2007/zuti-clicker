@@ -591,7 +591,13 @@ export function evaluateSaveEnvelope(
     return { outcome: "reject", reason: "spend_exceeds_available_budget", detail };
   }
 
-  const maxTokensAfter = availableBudget - minSpend;
+  // The leftover is a difference of two large numbers, so its float error is
+  // proportional to THEM, not to the (possibly tiny) leftover: a client that
+  // saved up ~1e14 and spent nearly all of it carries tens of tokens of drift.
+  // checkBound's own tolerance only scales with the leftover, so the spend's
+  // tolerance is added to the bound — a cheat gains at most 1e-9 of a spend.
+  const maxTokensAfter =
+    availableBudget - minSpend + (minSpend > 0 ? floatTolerance(availableBudget, minSpend) : 0);
   const tokensCheck = checkBound(incoming.tokens, maxTokensAfter);
   detail["spend"] = {
     minSpend,
