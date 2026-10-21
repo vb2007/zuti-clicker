@@ -146,6 +146,15 @@ function isKeptUpgrade(upgradeId: string, mods: CareerModifiers): boolean {
 // for the production incident that made a fixed floor insufficient once
 // balances grew large.
 const REJECT_ABS_SLACK = 1e-3;
+
+// The client's tick rate — keep in sync with frontend/src/utils/gameConstants.ts's
+// TICK_RATE. Every tick adds its production to tokens and totalTokensEarned.
+const CLIENT_TICK_RATE = 20;
+
+// The gap between two adjacent doubles around x — generous by up to 2x.
+function floatStep(x: number): number {
+  return x > 0 ? 2 ** (Math.ceil(Math.log2(x)) - 52) : 0;
+}
 function checkBound(
   actual: number,
   rawBound: number
@@ -343,11 +352,87 @@ function affordablePeakState(
   return { units, upgrades: [...upgrades], phdCount };
 }
 
+// The strongest production rate, auto income and click value an interval
+// from `prev` to `incoming` could have run at — the economy step of the
+// earnings bound below (see its comment for why a prestiged interval takes the
+// best of three economies). Independent of the interval's length, so the
+// grace-lead check (graceLeadNeeds) shares it.
+function intervalEconomy(
+  prev: PrevSaveSnapshot | null,
+  incoming: IncomingSave,
+  mods: CareerModifiers
+): { maxTps: number; maxClickValue: number; maxAutoIncome: number } {
+  const prevPhdCount = prev?.phdCount ?? 0;
+  const prestiged = incoming.prestigeCount > (prev?.prestigeCount ?? 0);
+  const deltaPrestige = Math.max(0, incoming.prestigeCount - (prev?.prestigeCount ?? 0));
+  const deltaEarned = incoming.totalTokensEarned - (prev?.totalTokensEarned ?? 0);
+  const postEconomy = maxEconomy(
+    {
+      units: incoming.units,
+      upgrades: incoming.upgrades,
+      phdCount: incoming.phdCount
+    },
+    mods
+  );
+  const peakBudget = (prev?.tokens ?? 0) + deltaEarned + mods.startingTokens * deltaPrestige;
+  const economies = prestiged
+    ? [
+        postEconomy,
+        maxEconomy(
+          {
+            units: prev?.units ?? [],
+            upgrades: prev?.upgrades ?? [],
+            phdCount: prevPhdCount
+          },
+          mods
+        ),
+        maxEconomy(affordablePeakState(prev, incoming, peakBudget, deltaPrestige, mods), mods)
+      ]
+    : [postEconomy];
+  return {
+    maxTps: Math.max(...economies.map((e) => e.maxTps)),
+    maxClickValue: Math.max(...economies.map((e) => e.maxClickValue)),
+    maxAutoIncome: Math.max(...economies.map((e) => e.maxAutoIncome))
+  };
+}
+
+/**
+ * How far past the wall clock (dtRealSecs, the server's interval WITHOUT any
+ * grace) this save's claims reach, in seconds, per bound that scales with
+ * time: the grace each one would need to pass. Negative = it would pass in a
+ * shorter interval. The grace-lead ledger (services/graceLead.ts) charges the
+ * largest of these to the save chain's one shared budget. Earnings: the
+ * interval length at which the earnings bound below would just hold.
+ */
+export function graceLeadNeeds(
+  prev: PrevSaveSnapshot,
+  incoming: IncomingSave,
+  dtRealSecs: number
+): { elapsed: number; clicks: number; earnings: number } {
+  const deltaClicks = incoming.totalClicks - prev.totalClicks;
+  const deltaEarned = incoming.totalTokensEarned - prev.totalTokensEarned;
+  const { maxTps, maxClickValue, maxAutoIncome } = intervalEconomy(prev, incoming, prev.career);
+  const rate = maxTps + maxAutoIncome;
+  const fromTime = deltaEarned / EARNED_ACCEPT_MARGIN - Math.max(0, deltaClicks) * maxClickValue;
+  const earningsSecs =
+    rate > 0 ? fromTime / rate : fromTime > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+  return {
+    elapsed: incoming.elapsedSeconds - prev.elapsedSeconds - dtRealSecs,
+    clicks: deltaClicks / ENVELOPE_MAX_CPS - dtRealSecs,
+    earnings: earningsSecs - dtRealSecs
+  };
+}
+
 export function evaluateSaveEnvelope(
   prev: PrevSaveSnapshot | null,
   userCreatedAt: Date,
   now: Date,
-  incoming: IncomingSave
+  incoming: IncomingSave,
+  // The clock grace this save may use: CLOCK_GRACE_SECS, or more when the
+  // save chain's grace lead leaves room for it (see services/graceLead.ts) —
+  // and the grace the earnings bound may use, which can be less.
+  graceSecs: number = CLOCK_GRACE_SECS,
+  earningsGraceSecs: number = graceSecs
 ): EnvelopeVerdict {
   const prevTokens = prev?.tokens ?? 0;
   const prevTotalTokensEarned = prev?.totalTokensEarned ?? 0;
@@ -399,7 +484,8 @@ export function evaluateSaveEnvelope(
     };
   }
 
-  const dtSecs = Math.max(0, (now.getTime() - anchor.getTime()) / 1000) + CLOCK_GRACE_SECS;
+  const wallSecs = Math.max(0, (now.getTime() - anchor.getTime()) / 1000);
+  const dtSecs = wallSecs + graceSecs;
 
   const clamped: EnvelopeClamped = {};
   const reasons: string[] = [];
@@ -473,37 +559,12 @@ export function evaluateSaveEnvelope(
   //     a bound of 2.1e11 built from two run-start states, rejected and
   //     struck in a loop). The third economy, affordablePeakState, is the
   //     strongest one the interval's own budget could have bought. ---------
-  const deltaPrestige = Math.max(0, incoming.prestigeCount - prevPrestigeCount);
   const deltaEarned = incoming.totalTokensEarned - prevTotalTokensEarned;
-  const postEconomy = maxEconomy(
-    {
-      units: incoming.units,
-      upgrades: incoming.upgrades,
-      phdCount: incoming.phdCount
-    },
-    mods
-  );
-  const peakBudget = prevTokens + deltaEarned + mods.startingTokens * deltaPrestige;
-  const economies = prestiged
-    ? [
-        postEconomy,
-        maxEconomy(
-          {
-            units: prev?.units ?? [],
-            upgrades: prev?.upgrades ?? [],
-            phdCount: prevPhdCount
-          },
-          mods
-        ),
-        maxEconomy(affordablePeakState(prev, incoming, peakBudget, deltaPrestige, mods), mods)
-      ]
-    : [postEconomy];
-  const maxTps = Math.max(...economies.map((e) => e.maxTps));
-  const maxClickValue = Math.max(...economies.map((e) => e.maxClickValue));
-  const maxAutoIncome = Math.max(...economies.map((e) => e.maxAutoIncome));
+  const { maxTps, maxClickValue, maxAutoIncome } = intervalEconomy(prev, incoming, mods);
 
   const earnedBound =
-    ((maxTps + maxAutoIncome) * dtSecs + effectiveDeltaClicks * maxClickValue) *
+    ((maxTps + maxAutoIncome) * (wallSecs + earningsGraceSecs) +
+      effectiveDeltaClicks * maxClickValue) *
     EARNED_ACCEPT_MARGIN;
   const earnedCheck = checkBound(deltaEarned, earnedBound);
   detail["earned"] = { deltaEarned, bound: earnedBound, outcome: earnedCheck.outcome, prestiged };
@@ -580,12 +641,28 @@ export function evaluateSaveEnvelope(
   // and nothing else can lower phdCount between two saves (every other PhD
   // change is server-written and already in `prev`) — so a bare
   // prestigeCount bump earns no fund.
+  const deltaPrestige = Math.max(0, incoming.prestigeCount - prevPrestigeCount);
   const startFunds = Math.min(
     deltaPrestige,
     Math.max(0, incoming.phdCount - prevPhdCount),
     Math.floor(Math.max(0, effectiveDeltaEarned) / PHD_TOKEN_SCALE) + 1
   );
-  const availableBudget = prevTokens + effectiveDeltaEarned + mods.startingTokens * startFunds;
+  // The client adds every click and every tick to tokens and to the lifetime
+  // total separately, and each addition rounds at that number's own size: by
+  // ~1e15 lifetime tokens a float step is a whole token, so the two drift
+  // apart by up to a step per addition (a real false strike, found in the
+  // 1.7.4 review: honest clicking at 5e15, a material clamp every save).
+  // Bounded by the additions the interval can hold — a cheat gains at most
+  // that many float steps.
+  const additions =
+    Math.max(0, effectiveDeltaClicks) +
+    Math.max(0, Math.min(deltaElapsed, dtSecs)) * CLIENT_TICK_RATE +
+    2;
+  const roundingSlack =
+    additions *
+    floatStep(Math.max(incoming.totalTokensEarned, incoming.tokens, prevTotalTokensEarned));
+  const availableBudget =
+    prevTokens + effectiveDeltaEarned + mods.startingTokens * startFunds + roundingSlack;
   detail["spendBudget"] = { minSpend, availableBudget };
   if (minSpend > availableBudget + floatTolerance(minSpend, availableBudget)) {
     return { outcome: "reject", reason: "spend_exceeds_available_budget", detail };

@@ -3,21 +3,64 @@ import { getSave, upsertSave, deleteSave, type UnitInput } from "../database/mod
 import { Responses } from "../constants/responses";
 import { isKnownUpgradeId } from "../constants/upgrades";
 import { isKnownUnitId, MAX_UNIT_OWNED } from "../constants/gameBalance";
-import { ANTICHEAT_MODE, floatTolerance } from "../constants/antiCheat";
+import {
+  ANTICHEAT_MODE,
+  floatTolerance,
+  SAVE_LEAD_ENFORCE_EARNINGS,
+  SAVE_RATE_LIMIT_LOG_INTERVAL_MS,
+  SAVE_RESET_STALE_COPY_DAYS
+} from "../constants/antiCheat";
 import {
   evaluateSaveEnvelope,
+  graceLeadNeeds,
   type PrevSaveSnapshot,
   type IncomingSave
 } from "../services/saveValidator";
+import { decideGraceLead, type GraceLeadDecision } from "../services/graceLead";
 import {
   applyStrike,
-  getStoredStrikeCount,
+  getStoredStrikeState,
   logAntiCheatEvent,
   recordSoftClamp
 } from "../database/models/antiCheat";
 import { PHD_MAX } from "../constants/upgrader";
 import { getCareerModifiers } from "../services/careerCore";
 import { toCareerState } from "../database/models/career";
+import { getSaveResetAt } from "../database/models/user";
+
+// Grace-lead events (save_rate_limited, lead_earnings_would_refuse) logged per
+// account and kind: the first one, then at most one per
+// SAVE_RATE_LIMIT_LOG_INTERVAL_MS with how many were left out — a refused
+// script would otherwise write an audit row per request. In memory: one API
+// process, and losing the throttle on a restart costs one extra row.
+const leadEventLog = new Map<string, { loggedAt: number; suppressed: number }>();
+
+async function logLeadEvent(
+  userId: number,
+  kind: "save_rate_limited" | "lead_earnings_would_refuse",
+  enforced: boolean,
+  nowMs: number,
+  detail: Record<string, unknown>
+): Promise<void> {
+  for (const [key, entry] of leadEventLog) {
+    if (nowMs - entry.loggedAt > 2 * SAVE_RATE_LIMIT_LOG_INTERVAL_MS) leadEventLog.delete(key);
+  }
+  const key = `${kind}:${userId}`;
+  const entry = leadEventLog.get(key);
+  if (entry && nowMs - entry.loggedAt < SAVE_RATE_LIMIT_LOG_INTERVAL_MS) {
+    entry.suppressed++;
+    return;
+  }
+  leadEventLog.set(key, { loggedAt: nowMs, suppressed: 0 });
+  await logAntiCheatEvent({
+    userId,
+    kind,
+    severity: "info",
+    mode: ANTICHEAT_MODE,
+    detail: { ...detail, suppressedSinceLastLog: entry?.suppressed ?? 0 },
+    enforced
+  }).catch((e: unknown) => console.error(`Failed to log ${kind}:`, e));
+}
 
 interface SaveBody {
   tokens?: unknown;
@@ -252,11 +295,29 @@ export const loadSave = async (req: express.Request, res: express.Response) => {
  *           made as a guest) an envelope rejection or a material clamp is
  *           never a strike, writes nothing and carries code
  *           "save_first_unverifiable": the client offers to start the account
- *           fresh or to log out and keep the guest progress.
+ *           fresh or to log out and keep the guest progress. The same goes
+ *           for the first save after the player deleted their own save
+ *           (DELETE /save) since their last strike — a second device may still
+ *           hold the old progress. A first save after a reset is anchored at
+ *           the reset, never at the account's creation.
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
+ *       '429':
+ *         description: >
+ *           The save's claims would run further ahead of the server's clock
+ *           than the save chain's clock-grace budget allows (saving many
+ *           times in quick succession, each claiming the full grace — see
+ *           docs/developer/final.md's "Anti-cheat modell" section). Code
+ *           "save_rate_limited"; never a strike, nothing is written. Resend
+ *           the save (with the then-current progress) after retryAfterMs,
+ *           also given in seconds as the Retry-After header. Only in
+ *           ANTICHEAT_MODE=enforce.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SaveRateLimitedResponse'
  *       '500':
  *         $ref: '#/components/responses/InternalError'
  */
@@ -372,6 +433,11 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
     let effectiveElapsedSeconds = elapsedSeconds;
     let effectivePhdCount = phdCount;
     let effectivePrestigeCount = prestigeCount;
+    // Set when the envelope ran: the evaluation time (the next save's anchor)
+    // and the save chain's grace lead after this save.
+    let evaluatedAt: Date | undefined;
+    let nextGraceLead: number | undefined;
+    let nextEarningsLead: number | undefined;
 
     if (ANTICHEAT_MODE !== "off") {
       const previous = await getSave(userId);
@@ -427,11 +493,40 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       // identity.createdAt anchors a first-ever save's dt (together with the
       // guest playtime it claims, capped — see FIRST_SAVE_PLAYTIME_CREDIT_SECS),
       // so "register then immediately PUT a maxed save" gets no more than that.
+      // A save that was deleted since (DELETE /save, the strike ladder's wipe)
+      // makes the next one a first save again — anchored at the reset, like a
+      // brand-new account's, never at the account's creation: an old account
+      // could otherwise wipe its save and claim its whole age as playtime.
+      const now = new Date();
+      evaluatedAt = now;
+      const resetAt = previous === null ? await getSaveResetAt(userId) : null;
+      const firstSaveAnchor =
+        resetAt && resetAt.getTime() > identity.createdAt.getTime() ? resetAt : identity.createdAt;
+
+      // The clock grace comes out of one budget per save chain (see
+      // services/graceLead.ts): how far the chain's claims already run ahead
+      // of the server's clock decides how much grace this save may use, and
+      // whether it fits at all. A first save starts a new chain.
+      // Earnings only draw on a shadow lead for now (SAVE_LEAD_ENFORCE_EARNINGS):
+      // stored, never enforced, logged whenever it would have refused a save.
+      let lead: GraceLeadDecision | null = null;
+      let earningsLead: GraceLeadDecision | null = null;
+      if (previous && prevSnapshot) {
+        const dtRealSecs = Math.max(0, (now.getTime() - previous.savedAt.getTime()) / 1000);
+        const needs = graceLeadNeeds(prevSnapshot, incomingSnapshot, dtRealSecs);
+        lead = decideGraceLead(previous.graceLeadSecs, dtRealSecs, needs);
+        earningsLead = decideGraceLead(previous.earningsLeadSecs, dtRealSecs, needs, true);
+      }
+      nextGraceLead = lead ? lead.nextLead : 0;
+      nextEarningsLead = earningsLead ? earningsLead.nextLead : 0;
+
       const verdict = evaluateSaveEnvelope(
         prevSnapshot,
-        identity.createdAt,
-        new Date(),
-        incomingSnapshot
+        firstSaveAnchor,
+        now,
+        incomingSnapshot,
+        lead?.graceSecs,
+        lead?.earningsGraceSecs
       );
 
       const enforced = ANTICHEAT_MODE === "enforce";
@@ -442,10 +537,19 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       // ever land on honest players. "Can't verify" includes a MATERIAL clamp:
       // the client never learns the clamped values, so its next save would
       // carry the unclamped ones again — no longer a first save, and struck.
-      // Only an account that was never struck qualifies: a save wiped by the
-      // strike ladder (or deleted by a struck player) must not turn every
-      // later reject into a free one.
-      const firstSave = previous === null && (await getStoredStrikeCount(userId)) === 0;
+      // Only an account that was never struck qualifies — a save wiped by the
+      // strike ladder must not turn every later reject into a free one — or
+      // one whose player deleted their save themselves after their last
+      // strike: what such an account sends next may be the old progress from
+      // a second device that hasn't heard of the reset, never a reason to
+      // strike. The ladder's own wipe is recorded at the strike's own time.
+      const strikeState = previous === null ? await getStoredStrikeState(userId) : null;
+      const firstSave =
+        strikeState !== null &&
+        (strikeState.strikeCount === 0 ||
+          (resetAt !== null &&
+            (strikeState.lastStrikeAt === null ||
+              resetAt.getTime() > strikeState.lastStrikeAt.getTime())));
       const refuseFirstSave =
         firstSave &&
         (verdict.outcome === "reject" || (verdict.outcome === "clamp" && verdict.material));
@@ -457,6 +561,25 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       // struck.
       const staleCopy =
         !firstSave && verdict.outcome === "reject" && verdict.reason === "monotonicity_violation";
+      // The same second device, one save later: the player deleted their save,
+      // the device they did it on already saved the fresh game, and another
+      // device still running the old one now sends that — far ahead of the
+      // fresh save, rejected. Within SAVE_RESET_STALE_COPY_DAYS of the
+      // player's own reset (after their last strike, like the first-save rule
+      // above) a reject is refused without a strike: the save_implausible
+      // reply makes that device adopt the fresh save. Read only on a reject.
+      let resetCopy = false;
+      if (verdict.outcome === "reject" && !staleCopy && !firstSave && previous !== null) {
+        const [ownResetAt, strikes] = await Promise.all([
+          getSaveResetAt(userId),
+          getStoredStrikeState(userId)
+        ]);
+        resetCopy =
+          ownResetAt !== null &&
+          now.getTime() - ownResetAt.getTime() < SAVE_RESET_STALE_COPY_DAYS * 86_400_000 &&
+          (strikes.lastStrikeAt === null ||
+            ownResetAt.getTime() > strikes.lastStrikeAt.getTime());
+      }
       if (staleCopy) {
         await logAntiCheatEvent({
           userId,
@@ -478,6 +601,15 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
               : { reasons: verdict.reasons, ...verdict.detail },
           enforced
         }).catch((e: unknown) => console.error("Failed to log first-save rejection:", e));
+      } else if (verdict.outcome === "reject" && resetCopy) {
+        await logAntiCheatEvent({
+          userId,
+          kind: "reset_stale_copy",
+          severity: "info",
+          mode: ANTICHEAT_MODE,
+          detail: { reason: verdict.reason, ...verdict.detail },
+          enforced
+        }).catch((e: unknown) => console.error("Failed to log a pre-reset copy:", e));
       } else if (verdict.outcome === "reject") {
         // A rejection is already >REJECT_MULTIPLIER times what's achievable
         // or a monotonicity break — certain enough to strike immediately,
@@ -486,11 +618,33 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
           reason: verdict.reason,
           ...verdict.detail
         }).catch((e: unknown) => console.error("Failed to record anti-cheat strike:", e));
-      } else if (verdict.outcome === "clamp") {
-        await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, verdict.material, {
-          reasons: verdict.reasons,
-          ...verdict.detail
-        }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));
+      } else {
+        // Too far ahead of the server's clock for the save chain's grace
+        // budget: refused below (enforce) for the client to resend later —
+        // never a strike, and not a soft clamp either: nothing is written.
+        // Monitor mode writes it, so a clamp there is still recorded.
+        const rateLimited = lead !== null && lead.overBy > 0;
+        if (rateLimited) {
+          await logLeadEvent(userId, "save_rate_limited", enforced, now.getTime(), { ...lead });
+        }
+        if (verdict.outcome === "clamp" && !(rateLimited && enforced)) {
+          await recordSoftClamp(userId, ANTICHEAT_MODE, enforced, verdict.material, {
+            reasons: verdict.reasons,
+            ...verdict.detail
+          }).catch((e: unknown) => console.error("Failed to record soft clamp:", e));
+        }
+        // Only where earnings alone would have refused it: when playtime or
+        // clicks already did, the shadow lead says nothing new.
+        if (
+          earningsLead &&
+          earningsLead.overBy > 0 &&
+          !rateLimited &&
+          !SAVE_LEAD_ENFORCE_EARNINGS
+        ) {
+          await logLeadEvent(userId, "lead_earnings_would_refuse", enforced, now.getTime(), {
+            ...earningsLead
+          });
+        }
       }
 
       if (enforced) {
@@ -507,6 +661,12 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
         if (verdict.outcome === "reject") {
           const r = Responses.SAVE.IMPLAUSIBLE;
           res.status(r.status).json(r.body);
+          return;
+        }
+        if (lead && lead.overBy > 0) {
+          const r = Responses.SAVE.RATE_LIMITED;
+          res.setHeader("Retry-After", Math.ceil(lead.retryAfterMs / 1000));
+          res.status(r.status).json({ ...r.body, retryAfterMs: lead.retryAfterMs });
           return;
         }
         if (verdict.outcome === "clamp") {
@@ -549,7 +709,10 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
       runSeconds,
       units,
       upgrades,
-      upgraderSeq
+      upgraderSeq,
+      savedAt: evaluatedAt,
+      graceLeadSecs: nextGraceLead,
+      earningsLeadSecs: nextEarningsLead
     });
 
     // Lost the race to a wheel spin between the check above and the write
@@ -582,6 +745,10 @@ export const storeSave = async (req: express.Request, res: express.Response) => 
  *     tags:
  *       - Save
  *     summary: Reset (delete) the current user's game save
+ *     description: >
+ *       Also records when the save was reset: the next PUT /save is a first
+ *       save again, verified against the time since this reset (plus the
+ *       capped guest credit), never against the account's age.
  *     security:
  *       - cookieAuth: []
  *     responses:

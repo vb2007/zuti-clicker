@@ -111,6 +111,28 @@ export function isFirstSaveUnverifiableError(e: unknown): boolean {
   );
 }
 
+// PUT /save's 429 for a save that would run further ahead of the server's
+// clock than the save chain's clock-grace budget allows — saving many times in
+// quick succession. Never a strike and nothing is written: the progress is
+// kept and resent after `retryAfterMs` (read from the body — Retry-After isn't
+// a header a cross-origin script can read). Keep in sync with
+// api/src/constants/responses.ts's SAVE.RATE_LIMITED.
+export const SAVE_RATE_LIMITED_CODE = "save_rate_limited";
+
+export function isSaveRateLimitedError(e: unknown): boolean {
+  return (
+    e instanceof ApiError &&
+    e.status === 429 &&
+    (e.body as { code?: string } | undefined)?.code === SAVE_RATE_LIMITED_CODE
+  );
+}
+
+/** How long a save_rate_limited reply asked to wait, in ms (0 if it didn't say). */
+export function saveRetryAfterMs(e: unknown): number {
+  const ms = e instanceof ApiError ? (e.body as { retryAfterMs?: unknown })?.retryAfterMs : 0;
+  return typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
 // The `code` of every POST /career/* 409 — keep in sync with
 // api/src/constants/responses.ts's CAREER section.
 export const CAREER_CODES = {

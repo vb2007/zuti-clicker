@@ -383,6 +383,22 @@ export const buildSwaggerSpec = (): object => {
               }
             ]
           },
+          SaveRateLimitedResponse: {
+            allOf: [
+              { $ref: "#/components/schemas/ErrorResponse" },
+              {
+                type: "object",
+                properties: {
+                  code: { type: "string", example: "save_rate_limited" },
+                  retryAfterMs: {
+                    type: "integer",
+                    minimum: 0,
+                    description: "How long to wait before resending the save (also in Retry-After)."
+                  }
+                }
+              }
+            ]
+          },
           CareerErrorResponse: {
             allOf: [
               { $ref: "#/components/schemas/ErrorResponse" },

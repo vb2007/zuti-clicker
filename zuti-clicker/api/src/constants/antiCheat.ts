@@ -74,6 +74,51 @@ export const CLOCK_GRACE_SECS = 5;
 // refused without a strike (see the PUT /save controller).
 export const FIRST_SAVE_PLAYTIME_CREDIT_SECS = 24 * 3600;
 
+// ---- Grace lead: one clock-grace budget per save chain (controllers/save.ts) --
+//
+// CLOCK_GRACE_SECS used to be granted to every save on its own, so a script
+// saving ten times a second claimed ~51x real playtime and clicks without a
+// single clamp. An honest client can't run ahead of the server's clock that
+// way: its playtime grows by a fixed tick per timer fire, one tab sends one
+// save at a time, and the server measures each interval from the previous
+// save's evaluation — so however often it saves, its claims run ahead of the
+// server's clock by at most one request's latency IN TOTAL (the honest-play
+// sim measured exactly 0 over ~126k intervals). The lead a chain has built up
+// is stored on the save (GameSave.graceLeadSecs); a save that would push it
+// past this cap is refused with 429 save_rate_limited — never a strike — and
+// the client resends it a little later. Above the client's own 20 s save
+// timeout, so even an upload that stalled until the client gave up fits. The
+// one honest way past it: a save evaluated more than this long after it was
+// taken (a server-side stall). It is clamped like before (no longer rejected
+// and struck), and as the client doesn't learn the clamped playtime, its next
+// saves are refused until the lead drains (≤ 100 s) — never a strike.
+export const SAVE_LEAD_CAP_SECS = 30;
+
+// How fast a built-up lead drains, in seconds per second of wall clock. An
+// honest chain never builds one (see above), so this only bounds how long a
+// refusal can last (retryAfterMs = excess / this) — and what a spammer gains
+// over time: at most this fraction of real time, on top of the cap once.
+export const SAVE_LEAD_DECAY_PER_SEC = 0.05;
+
+// Whether the earnings bound draws on the lead too. Playtime and clicks
+// always do. Earnings are only logged for now (lead_earnings_would_refuse):
+// the earnings model is the one most likely to miss an honest play style
+// (every false ban so far was such a miss), and here a miss would refuse an
+// honest player's saves. Switch on once production shows no would-refusals.
+export const SAVE_LEAD_ENFORCE_EARNINGS = false;
+
+// save_rate_limited events are logged once, then at most once per this
+// interval per account (with the number suppressed in between) — a refused
+// script would otherwise write ten audit rows a second.
+export const SAVE_RATE_LIMIT_LOG_INTERVAL_MS = 5 * 60_000;
+
+// For this long after a player deletes their own save (DELETE /save, after
+// their last strike), a save the envelope rejects is refused without a strike:
+// it may be another device still running the game from before the reset, its
+// tab asleep meanwhile. The player lost everything with the reset, so the
+// only thing given up is a strike's deterrent — never any progress.
+export const SAVE_RESET_STALE_COPY_DAYS = 7;
+
 // Hard ceiling on clicks/sec used to bound how many clicks could have been
 // registered in an interval. This is a generous envelope backstop, not the
 // statistical detector's flag threshold (see SUSTAINED_RATE_CPS below) — a

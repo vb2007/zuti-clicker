@@ -416,6 +416,7 @@ export default {
     implausibleReloaded:
       "A legutóbbi haladásodat nem tudtuk ellenőrizni, ezért a legutóbb ellenőrzött mentésedet töltöttük be.",
     implausibleReloadFailed: "A legutóbb ellenőrzött mentésedet még nem sikerült betölteni — újrapróbáljuk.",
+    rateLimited: "Túl gyors mentés — a haladásod megmarad, és hamarosan elmentjük.",
     firstSaveRejected: {
       title: "A vendégként elért haladásod nem került át ebbe a fiókba",
       body:

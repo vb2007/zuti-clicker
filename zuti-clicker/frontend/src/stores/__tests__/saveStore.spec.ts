@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { nextTick } from "vue";
 import { setActivePinia, createPinia } from "pinia";
 import { useSaveStore } from "@/stores/saveStore";
@@ -12,7 +12,8 @@ import {
   ApiError,
   SAVE_STALE_CODE,
   SAVE_FIRST_UNVERIFIABLE_CODE,
-  SAVE_IMPLAUSIBLE_CODE
+  SAVE_IMPLAUSIBLE_CODE,
+  SAVE_RATE_LIMITED_CODE
 } from "@/lib/api";
 import { i18n } from "@/i18n";
 import { useUiStore } from "@/stores/uiStore";
@@ -125,6 +126,39 @@ describe("saveStore", () => {
       expect(payload.tokens).toBe(0);
       expect(payload.totalTokensEarned).toBe(0);
       expect(payload.phdCount).toBe(0);
+    });
+
+    // Regression (review of 1.7.4): a save still on its way when the delete
+    // landed became the account's first save again — carrying the progress
+    // just deleted, refused as unverifiable (the "guest progress" dialog).
+    it("regression: waits for a save in flight, and a sync asked meanwhile sends the fresh game", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 999;
+      let finishInflight!: () => void;
+      vi.mocked(api.save.store)
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finishInflight = () => resolve({ message: "ok", savedAt: new Date().toISOString() });
+            })
+        )
+        .mockResolvedValue({ message: "ok", savedAt: new Date().toISOString() });
+      vi.mocked(api.save.reset).mockResolvedValue({ message: "ok" });
+
+      const save = useSaveStore();
+      void save.sync(); // the autosave in flight
+      await Promise.resolve();
+      const reset = save.resetSave();
+      void save.sync(); // asked while the reset holds the lock
+      await Promise.resolve();
+      expect(api.save.reset).not.toHaveBeenCalled();
+
+      finishInflight();
+      await reset;
+      await vi.waitFor(() => expect(api.save.store).toHaveBeenCalledTimes(2));
+      expect(api.save.reset).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(api.save.store).mock.calls[1]![0].tokens).toBe(0);
     });
   });
 
@@ -285,6 +319,93 @@ describe("saveStore", () => {
       expect(game.phdCount).toBe(100);
       expect(save.syncError).toBe("could not be verified");
       expect(useToastStore().toasts).toHaveLength(0);
+    });
+  });
+
+  // PUT /save's 429 save_rate_limited: this save would run further ahead of
+  // the server's clock than the grace budget allows. Not a refusal of the
+  // progress itself (never a strike) — it is kept and resent, never reloaded.
+  describe("sync() — saving too fast (429)", () => {
+    const tooFast = (retryAfterMs: number) =>
+      new ApiError(429, "too fast", { code: SAVE_RATE_LIMITED_CODE, retryAfterMs });
+    const ok = () => ({ message: "ok", savedAt: new Date().toISOString() });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("a flush waits as asked, resends the then-current progress, and the action runs", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 10;
+      vi.mocked(api.save.store).mockRejectedValueOnce(tooFast(2000)).mockResolvedValue(ok());
+
+      const save = useSaveStore();
+      const done = save.withSyncLock(async () => "ran");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.save.store).toHaveBeenCalledTimes(1);
+      game.tokens = 25; // played on while waiting
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(api.save.store).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(300);
+
+      await expect(done).resolves.toBe("ran");
+      expect(api.save.store).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(api.save.store).mock.calls[1]![0].tokens).toBe(25);
+      expect(api.save.load).not.toHaveBeenCalled();
+      expect(save.syncError).toBeNull();
+      expect(useToastStore().toasts).toHaveLength(0);
+    });
+
+    it("never waits longer than 10 s at a time", async () => {
+      loginAs();
+      vi.mocked(api.save.store).mockRejectedValueOnce(tooFast(90_000)).mockResolvedValue(ok());
+      const sync = useSaveStore().sync();
+      await vi.advanceTimersByTimeAsync(10_300);
+      await sync;
+      expect(api.save.store).toHaveBeenCalledTimes(2);
+    });
+
+    it("gives up after 3 attempts, keeps the progress, and tries once more later", async () => {
+      loginAs();
+      const game = useGameStore();
+      game.tokens = 10;
+      vi.mocked(api.save.store).mockRejectedValue(tooFast(30_000));
+
+      const save = useSaveStore();
+      const flush = save.withSyncLock(async () => "ran").catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(25_000);
+      const err = await flush;
+      expect(err).toBeInstanceOf(SyncFlushError);
+      expect((err as SyncFlushError).stale).toBe(false);
+      expect(api.save.store).toHaveBeenCalledTimes(3);
+      expect(save.syncError).toBe(i18n.global.t("save.rateLimited"));
+      expect(api.save.load).not.toHaveBeenCalled();
+      expect(game.tokens).toBe(10);
+
+      vi.mocked(api.save.store).mockResolvedValue(ok());
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(api.save.store).toHaveBeenCalledTimes(4);
+      expect(save.syncError).toBeNull();
+    });
+
+    it("a game reset while waiting is not followed by a resend of the old progress", async () => {
+      loginAs();
+      const game = useGameStore();
+      vi.mocked(api.save.store).mockRejectedValueOnce(tooFast(5000)).mockResolvedValue(ok());
+      const sync = useSaveStore().sync();
+      await vi.advanceTimersByTimeAsync(0);
+      game.hardReset();
+      await vi.advanceTimersByTimeAsync(5300);
+      await sync;
+      expect(api.save.store).toHaveBeenCalledTimes(1);
+      // No follow-up resend either (the 30 s autosave is still ahead).
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(api.save.store).toHaveBeenCalledTimes(1);
+      expect(useSaveStore().syncError).toBeNull();
     });
   });
 

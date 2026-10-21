@@ -36,6 +36,17 @@ export interface SaveInput {
   // to overwrite that spin's result (see upsertSave). Absent means 0, which
   // is correct for any client/account that has never spun.
   upgraderSeq?: number;
+  // When the envelope evaluated this save — the anchor the NEXT save's
+  // interval is measured from. Passing the evaluation time (rather than this
+  // write's own clock, a few ms later) keeps the server's intervals adding up
+  // exactly to its wall clock, which the grace lead relies on. Absent (the
+  // envelope didn't run): the time of the write.
+  savedAt?: Date;
+  // The save chain's grace lead after this save (see services/graceLead.ts).
+  // Absent means "leave whatever is stored" (0 on a first save).
+  graceLeadSecs?: number;
+  // Its shadow with earnings drawing on it too (recorded, never enforced).
+  earningsLeadSecs?: number;
 }
 
 // The Academic Career purchase window as this write left it. `opened` is
@@ -84,7 +95,11 @@ export const getSave = async (userId: number) => {
 
 export const upsertSave = async (userId: number, data: SaveInput): Promise<UpsertResult> => {
   const { tokens, totalTokensEarned, totalClicks, elapsedSeconds, units } = data;
-  const now = new Date();
+  const now = data.savedAt ?? new Date();
+  const lead = {
+    ...(data.graceLeadSecs !== undefined ? { graceLeadSecs: data.graceLeadSecs } : {}),
+    ...(data.earningsLeadSecs !== undefined ? { earningsLeadSecs: data.earningsLeadSecs } : {})
+  };
 
   // Omitted prestige fields are left out of the UPDATE entirely: a client that
   // predates the prestige system must never reset a player's PhDs to zero.
@@ -159,6 +174,7 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
             phdTotal: prestigeCreate.phdCount,
             careerWindowOpen: opened,
             careerWindowId: opened ? 1 : 0,
+            ...lead,
             savedAt: now
           }
         });
@@ -211,6 +227,7 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
             ...prestigeUpdate,
             phdTotal,
             ...windowUpdate,
+            ...lead,
             savedAt: now
           }
         });
@@ -248,9 +265,20 @@ export const upsertSave = async (userId: number, data: SaveInput): Promise<Upser
   );
 };
 
-export const deleteSave = async (userId: number) => {
+/**
+ * Deletes the account's save and records when (User.saveResetAt): the next
+ * save is a first save again, and its envelope is anchored at the reset
+ * rather than at the account's creation — otherwise an old account could
+ * wipe its save and claim its whole age as playtime. `resetAt` is the strike's
+ * own time when the strike ladder wipes the save (see applyStrike), which is
+ * how the PUT /save controller tells that wipe apart from the player's own.
+ */
+export const deleteSave = async (userId: number, resetAt: Date = new Date()) => {
   // deleteMany is idempotent — no error if no save exists.
   // Cascade in the DB removes associated UnitSave/UpgradeSave/ActiveBooster/
   // CareerNodeSave rows.
-  return prisma.gameSave.deleteMany({ where: { userId } });
+  return prisma.$transaction([
+    prisma.gameSave.deleteMany({ where: { userId } }),
+    prisma.user.update({ where: { id: userId }, data: { saveResetAt: resetAt } })
+  ]);
 };

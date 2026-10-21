@@ -103,6 +103,20 @@ export class Responses {
           "Your progress changed since this save was made (a wheel spin or an Academic Career change elsewhere). Reload to continue from your current progress."
       }
     },
+    // The save's claims would run further ahead of the server's clock than the
+    // save chain's grace budget allows (see SAVE_LEAD_CAP_SECS) — saving many
+    // times in quick succession, each claiming the full clock grace. Never a
+    // strike, nothing is written: the client keeps its progress and resends it
+    // after `retryAfterMs` (added by the controller). The code is how the
+    // client tells it apart (frontend lib/api.ts's SAVE_RATE_LIMITED_CODE —
+    // keep in sync).
+    RATE_LIMITED: {
+      status: 429,
+      body: {
+        code: "save_rate_limited",
+        error: "Saving too fast. Your progress is kept and will be saved again in a moment."
+      }
+    },
     // held + invested PhDs would pass 2^53 - 1, the largest whole number
     // GameSave.phdTotal (a DOUBLE) holds exactly. Only a forged phdCount gets
     // here — an honest one is bounded far below.

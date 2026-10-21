@@ -341,11 +341,13 @@ Ha be vagy jelentkezve, a fejlécben megjelennek a mentési vezérlők:
 ### „Sync" gomb
 Azonnali mentés. A jelenlegi játékállapot (tokenek, egységek, statisztikák) elküldésre kerül a szerverre. Sikeres mentés esetén a gomb „✓"-re vált néhány másodpercre.
 
+Ha a szerver egy mentést „túl gyorsnak" talál (sok mentés nagyon gyors egymásutánban, amelyek együtt több játékidőt állítanának, mint amennyi valóban eltelt), a játék néhány másodpercet vár, és magától újra elküldi — a haladásod nem vész el, és ez **sosem** számít szabálysértésnek. Normál játék (akár sok gyors vásárlás egymás után) mellett ez nem fordul elő; ha mégis, egy „Túl gyors mentés" üzenet jelzi, és a játék kicsit később újra próbálja.
+
 Az automatikus mentés be/ki kapcsolása és az időköz beállítása a **Beállítások** panelbe költözött (lásd lentebb) — a fejlécben csak a gyors „Sync" gomb és a felhasználói menü maradt.
 
 ### Felhasználói menü (`Felhasználónév`)
 A felhasználónevedre kattintva legördülő menü jelenik meg:
-- **„Delete save"** / **„Mentés törlése"**: Megerősítés után a mentési fájl véglegesen törlődik az adatbázisból. **Ez nem vonható vissza.**
+- **„Delete save"** / **„Mentés törlése"**: Megerősítés után a mentési fájl véglegesen törlődik az adatbázisból. **Ez nem vonható vissza.** A törlés után a fiók úgy indul, mint egy új fiók: a következő mentést a szerver a törléstől számítva ellenőrzi. Ha egy másik eszközön még a törlés előtti játék fut, annak mentését a szerver nem veszi át (büntetés nélkül), és a játék felajánlja, hogy azon az eszközön is újrakezdd.
 - **„Log out"** / **„Kijelentkezés"**: Kijelentkezés a fiókból. Előbb a játék elmenti a legfrissebb állapotodat, aztán kijelentkezel, és a játék **friss vendégként** indul újra (a fiókod haladása a szerveren vár). Ha a mentés nem sikerül (pl. nincs internet), a játék megkérdezi, hogy mentés nélkül is kijelentkezel-e — ilyenkor az utolsó mentés óta elért haladás elvész.
 
 Néhány telepítésen (csak ha az üzemeltető kifejezetten bekapcsolta) az **Alt+X**

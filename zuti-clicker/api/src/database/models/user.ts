@@ -49,3 +49,16 @@ export const updateSessionToken = async (userId: number, sessionToken: string) =
     data: { sessionToken }
   });
 };
+
+/**
+ * When the account's save was last deleted (null: never) — read fresh at the
+ * moment a PUT /save finds no stored save, not from the request's
+ * authenticated user row, which a DELETE /save racing that PUT could predate.
+ */
+export const getSaveResetAt = async (userId: number): Promise<Date | null> => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { saveResetAt: true }
+  });
+  return user?.saveResetAt ?? null;
+};

@@ -21,9 +21,9 @@ import {
 // `pnpm sim:save-cadence` (SAVE_CADENCE_SIM=1). It drives the REAL game store
 // and follows the real client's save cadence: an autosave every
 // AUTOSAVE_SECS (or none), the sync right after every prestige, and the flush
-// before a windfall claim. The server's side is mirrored the way it really
-// changes between saves: career purchases lower the stored PhDs, a windfall
-// adds to the stored tokens.
+// before every Academic Career purchase, spin and windfall claim. The
+// server's side is mirrored the way it really changes between saves: career
+// purchases lower the stored PhDs, a windfall adds to the stored tokens.
 //
 // The player is the shape behind the 2026-10-20 incident: fast runs (a
 // prestige as soon as the PhD rate peaks, from 10 s on), auto-buyers once the
@@ -33,7 +33,9 @@ import {
 const RUN = process.env["SAVE_CADENCE_SIM"] === "1";
 // SIM_FULL_OUT writes EVERY interval of every scenario there instead of the
 // sampled fixture; SIM_SCENARIOS (a JSON array of Scenario) and SIM_HOURS
-// replace the defaults — for wider sweeps than the committed fixture.
+// replace the defaults — for wider sweeps than the committed fixture. A full
+// stream keeps each scenario's saves in the order they were made, for the
+// gate's replay of a whole save chain (the grace lead).
 // SIM_PRESET=gate is CI's honest-play gate (.github/workflows/ci.yml): a
 // shorter, broader set whose every interval the API replays through the real
 // envelope (api/src/tests/honestPlayGate.test.ts).
@@ -148,13 +150,18 @@ function buyGreedy(game: Game) {
   }
 }
 
-function invest(game: Game, share: number) {
+// `beforeEach` is the flush the client makes before every purchase;
+// `afterEach` mirrors the server settling it on the stored save.
+function invest(game: Game, share: number, beforeEach: () => void, afterEach: () => void) {
   const keep = Math.floor(game.phdCount * (1 - share));
   for (;;) {
     const next = CAREER_NODES.filter(
       (n) => careerBuyRefusal(n.id, game.careerNodeIds, game.phdCount - keep) === null
     ).sort((a, b) => a.cost - b.cost)[0];
-    if (!next || !game.buyCareerNodeLocal(next.id)) return;
+    if (!next) return;
+    beforeEach();
+    if (!game.buyCareerNodeLocal(next.id)) return;
+    afterEach();
   }
 }
 
@@ -276,12 +283,19 @@ function play(s: Scenario): { pairs: Pair[]; order: string[] } {
         game.prestige();
         bestRate = 0;
         save(true);
-        // Bought in the window, settled by the server on the stored save.
-        invest(game, s.investShare ?? 0.5);
+        // Bought in the window, each after a flush, settled by the server on
+        // the stored save.
+        invest(
+          game,
+          s.investShare ?? 0.5,
+          () => save(),
+          () => {
+            prev = { ...prev!, phdCount: game.phdCount, phdInvested: game.phdInvested };
+            for (const id of game.careerNodeIds) if (!order.includes(id)) order.push(id);
+            nodes = game.careerNodeIds.length;
+          }
+        );
         game.closeCareerWindowLocal();
-        prev = { ...prev!, phdCount: game.phdCount, phdInvested: game.phdInvested };
-        for (const id of game.careerNodeIds) if (!order.includes(id)) order.push(id);
-        nodes = game.careerNodeIds.length;
       }
     }
     if (s.autosaveSecs > 0 && t - prevAt >= s.autosaveSecs) save();
@@ -292,7 +306,7 @@ function play(s: Scenario): { pairs: Pair[]; order: string[] } {
 }
 
 function sampleEvenly<T>(items: T[], n: number): T[] {
-  if (FULL_OUT || items.length <= n) return items;
+  if (items.length <= n) return items;
   if (n === 1) return [items[Math.floor(items.length / 2)]!];
   const at = (i: number) => Math.round((i * (items.length - 1)) / (n - 1));
   return Array.from({ length: n }, (_, i) => items[at(i)]!);
@@ -309,9 +323,13 @@ describe.skipIf(!RUN)("save cadence simulation", () => {
         purchaseOrder.slice(0, order.length)
       );
       if (order.length > purchaseOrder.length) purchaseOrder = order;
+      if (FULL_OUT) {
+        pairs.push(...all);
+        continue;
+      }
       // From the hours the tree makes runs fast enough to fit between saves.
       // Whole runs between two saves first (the hard case), then other prestiges.
-      const late = FULL_OUT ? all : all.filter((p) => p.hours >= 3);
+      const late = all.filter((p) => p.hours >= 3);
       const whole = late.filter((p) => p.wholeRun);
       const wholeTaken = sampleEvenly(whole, Math.ceil((scenario.prestiged * 3) / 4));
       const others = late.filter((p) => p.prestiged && !p.wholeRun);
